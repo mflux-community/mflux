@@ -150,6 +150,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def boogu_image_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["boogu-image-turbo"]
+
+    @staticmethod
+    @lru_cache
     def fibo() -> "ModelConfig":
         return AVAILABLE_MODELS["fibo"]
 
@@ -697,6 +702,18 @@ AVAILABLE_MODELS = {
         num_train_steps=None,
         max_sequence_length=2048,
         supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "boogu-image-turbo": ModelConfig(
+        priority=28,
+        aliases=["boogu-image-turbo", "boogu-turbo", "boogu-image", "boogu"],
+        model_name="Boogu/Boogu-Image-0.1-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=False,
         requires_sigma_shift=False,
     ),
 }
