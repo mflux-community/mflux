@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ✨ Improvements
 
 - **Atomic `--lora` and `--image` flags**: Pair each path with its value on a single, repeatable flag — `--lora A.safetensors 0.7 --lora B.safetensors` (scale defaults to `1.0`) and `--image photo.jpg 0.6` (strength defaults to the model default). This removes the positional-alignment footgun of the parallel `--lora-paths`/`--lora-scales` and `--image-path`/`--image-strength` lists, which remain fully supported and are marked deprecated in `--help`. (#357)
+- **`--vae-tiling` and `--vae-tile-size` flags**: Restore user-facing control over tiled VAE decoding, decoupled from `--low-ram` (previously the only way to enable it). `--vae-tiling` enables tiled decode with the default 512px tiles; `--vae-tile-size 256` shrinks the tiles to further reduce peak decode memory and implies `--vae-tiling`. Both compose with `--low-ram`, whose implicit tiling defaults they override. The original `--vae-tiling`/`--vae-tiling-split` flags were removed in the Z-Image refactor (#284); this restores the capability on top of the generalized `VAETiler`. (#311, #407)
 
 ## [0.18.0] - 2026-06-07
 

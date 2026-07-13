@@ -65,6 +65,8 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--battery-percentage-stop-limit", "-B", type=lambda v: max(min(int(v), 99), 1), default=ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT, help=f"On Macs powered by battery, stop image generation when battery reaches this percentage. Default: {ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT}")
         self.add_argument("--low-ram", action="store_true", help="Enable low-RAM mode to reduce memory usage (may impact performance).")
         self.add_argument("--mlx-cache-limit-gb", type=positive_float, default=None, help="Limit MLX cache size in GB without enabling full low-RAM mode (e.g. 8 or 16).")
+        self.add_argument("--vae-tiling", action="store_true", help="Decode the image in overlapping tiles to reduce peak memory during the VAE decode phase, without enabling full low-RAM mode. Implied by --low-ram.")
+        self.add_argument("--vae-tile-size", type=int, default=None, help="Tile size in pixels for tiled VAE decoding (default: 512). Smaller tiles (e.g. 256) further reduce peak memory. Implies --vae-tiling.")
 
     def add_seedvr2_upscale_arguments(self) -> None:
         self.supports_image_generation = True

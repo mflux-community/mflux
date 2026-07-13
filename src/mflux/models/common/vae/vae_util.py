@@ -53,10 +53,11 @@ class VAEUtil:
 
             spatial_scale = getattr(vae, "spatial_scale", 8)
             overlap_px = int(tiling_config.vae_decode_overlap) * spatial_scale
+            tile_size = int(tiling_config.vae_decode_tile_size)
             return VAETiler.decode_image_tiled(
                 latent=latent,
                 decode_fn=vae.decode,
-                tile_size=(512, 512),
+                tile_size=(tile_size, tile_size),
                 tile_overlap=(overlap_px, overlap_px),
                 spatial_scale=spatial_scale,
             )
