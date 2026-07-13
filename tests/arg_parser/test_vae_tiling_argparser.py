@@ -32,3 +32,25 @@ def test_vae_tile_size_parses(parser: CommandLineParser):
     with patch("sys.argv", ["mflux-generate", "--vae-tile-size", "256"]):
         args = parser.parse_args()
         assert args.vae_tile_size == 256
+
+
+@pytest.mark.fast
+def test_vae_tile_size_accepts_minimum_128(parser: CommandLineParser):
+    with patch("sys.argv", ["mflux-generate", "--vae-tile-size", "128"]):
+        args = parser.parse_args()
+        assert args.vae_tile_size == 128
+
+
+@pytest.mark.fast
+def test_vae_tile_size_rejects_below_minimum(parser: CommandLineParser):
+    # A tile <= the fixed 64px overlap would make the tiling stride <= 0
+    with patch("sys.argv", ["mflux-generate", "--vae-tile-size", "64"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args()
+
+
+@pytest.mark.fast
+def test_vae_tile_size_rejects_non_multiple_of_16(parser: CommandLineParser):
+    with patch("sys.argv", ["mflux-generate", "--vae-tile-size", "200"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args()

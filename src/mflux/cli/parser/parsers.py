@@ -46,6 +46,20 @@ def positive_float(value: str) -> float:
     return parsed
 
 
+def vae_tile_size(value: str) -> int:
+    # The decode tiler uses a fixed 64px overlap; the tile must be strictly larger
+    # than the overlap or the tiling stride becomes <= 0. 128 is the practical floor.
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid integer")
+    if parsed < 128:
+        raise argparse.ArgumentTypeError(f"'{value}' is too small: minimum tile size is 128 (tiles overlap by 64px)")
+    if parsed % 16 != 0:
+        raise argparse.ArgumentTypeError(f"'{value}' must be a multiple of 16")
+    return parsed
+
+
 # fmt: off
 class CommandLineParser(argparse.ArgumentParser):
 
@@ -66,7 +80,7 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--low-ram", action="store_true", help="Enable low-RAM mode to reduce memory usage (may impact performance).")
         self.add_argument("--mlx-cache-limit-gb", type=positive_float, default=None, help="Limit MLX cache size in GB without enabling full low-RAM mode (e.g. 8 or 16).")
         self.add_argument("--vae-tiling", action="store_true", help="Decode the image in overlapping tiles to reduce peak memory during the VAE decode phase, without enabling full low-RAM mode. Implied by --low-ram.")
-        self.add_argument("--vae-tile-size", type=int, default=None, help="Tile size in pixels for tiled VAE decoding (default: 512). Smaller tiles (e.g. 256) further reduce peak memory. Implies --vae-tiling.")
+        self.add_argument("--vae-tile-size", type=vae_tile_size, default=None, help="Tile size in pixels for tiled VAE decoding (default: 512, minimum: 128, multiple of 16). Smaller tiles (e.g. 256) further reduce peak memory. Implies --vae-tiling.")
 
     def add_seedvr2_upscale_arguments(self) -> None:
         self.supports_image_generation = True
