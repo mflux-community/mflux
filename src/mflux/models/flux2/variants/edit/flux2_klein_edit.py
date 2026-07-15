@@ -181,7 +181,7 @@ class Flux2KleinEdit(nn.Module):
 
         # 6. Decode latents
         packed_latents = latents.reshape(latents.shape[0], latent_height, latent_width, latents.shape[-1]).transpose(0, 3, 1, 2)  # fmt: off
-        decoded = self.vae.decode_packed_latents(packed_latents)
+        decoded = self.vae.decode_packed_latents(packed_latents, tiling_config=self.tiling_config)
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
