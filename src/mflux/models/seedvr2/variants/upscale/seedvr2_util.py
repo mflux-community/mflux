@@ -230,6 +230,7 @@ class SeedVR2Util:
             ref = reference[i].reshape(-1).astype(np.float32)
             src_idx = np.argsort(src, kind="stable")
             ref_sorted = np.sort(ref, kind="stable")
-            inv = np.argsort(src_idx, kind="stable")
+            inv = np.empty_like(src_idx)
+            inv[src_idx] = np.arange(src_idx.size, dtype=src_idx.dtype)
             out[i] = ref_sorted[inv].reshape(source.shape[1:]).astype(np.float32)
         return out
