@@ -41,6 +41,8 @@ class GeneratedImage:
         concept_heatmap: ConceptHeatmap | None = None,
         negative_prompt: str | None = None,
         init_metadata: dict | None = None,
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ):
         self.image = image
         self.model_config = model_config
@@ -67,6 +69,8 @@ class GeneratedImage:
         self.concept_heatmap = concept_heatmap
         self.negative_prompt = negative_prompt
         self.init_metadata = init_metadata
+        self.pid_decode = pid_decode
+        self.pid_degrade_sigma = pid_degrade_sigma
 
     def get_right_half(self) -> "GeneratedImage":
         # Calculate the coordinates for the right half
@@ -96,6 +100,8 @@ class GeneratedImage:
             depth_image_path=self.depth_image_path,
             concept_heatmap=self.concept_heatmap,
             init_metadata=self.init_metadata,
+            pid_decode=self.pid_decode,
+            pid_degrade_sigma=self.pid_degrade_sigma,
         )
 
     def save(
@@ -234,6 +240,8 @@ class GeneratedImage:
             "redux_image_strengths": self._format_redux_strengths(),
             "prompt": self.prompt,
             "negative_prompt": self.negative_prompt if self.negative_prompt else None,
+            "pid_decode": self.pid_decode,
+            "pid_degrade_sigma": self.pid_degrade_sigma if self.pid_decode else None,
         }
 
         # If we have initial metadata from a source image, merge it

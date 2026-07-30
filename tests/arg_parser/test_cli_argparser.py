@@ -37,6 +37,13 @@ def mflux_generate_controlnet_parser() -> CommandLineParser:
 
 
 @pytest.fixture
+def mflux_generate_pid_parser() -> CommandLineParser:
+    parser = _create_mflux_generate_parser(with_controlnet=False, require_model_arg=False)
+    parser.add_pid_decode_arguments()
+    return parser
+
+
+@pytest.fixture
 def mflux_save_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Save a quantized version of Flux.1 to disk.")  # fmt: off
     parser.add_general_arguments()
@@ -658,6 +665,61 @@ def test_image_outpaint_args(mflux_generate_parser, mflux_generate_minimal_argv,
     with patch('sys.argv', mflux_generate_minimal_argv + ['--image-outpaint-padding', '10%, 50,   20%', '--config-from-metadata', metadata_file.as_posix()]):  # fmt: off
         args = mflux_generate_parser.parse_args()
         assert args.image_outpaint_padding == BoxValues("10%", 50, "20%", 50)
+
+
+def test_pid_decode_args_restore_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "pid_decode.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = True
+        json.dump(base_metadata_dict, m, indent=4)
+
+    # without --config-from-metadata, --pid-decode keeps its CLI default
+    with patch("sys.argv", mflux_generate_minimal_argv + ["-m", "dev"]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is False
+
+    # metadata restores the flag -- this is what makes --config-from-metadata reproduce
+    # a --pid-decode run instead of silently regenerating at a quarter of the resolution
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+
+    # explicit --pid-decode on the CLI is not overridden by metadata saying pid_decode: false
+    base_metadata_dict["pid_decode"] = False
+    with metadata_file.open("wt") as m:
+        json.dump(base_metadata_dict, m, indent=4)
+    with patch(
+        "sys.argv", mflux_generate_minimal_argv + ["--pid-decode", "--config-from-metadata", metadata_file.as_posix()]
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+
+
+def test_pid_degrade_sigma_arg_restores_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "pid_degrade_sigma.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = True
+        base_metadata_dict["pid_degrade_sigma"] = 0.2
+        json.dump(base_metadata_dict, m, indent=4)
+
+    # CLI default is 0.0 (no degradation)
+    with patch("sys.argv", mflux_generate_minimal_argv + ["-m", "dev"]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.0
+
+    # metadata restores it when not explicitly passed
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.2
+
+    # explicit CLI value is not overridden by metadata
+    with patch(
+        "sys.argv",
+        mflux_generate_minimal_argv
+        + ["--pid-degrade-sigma", "0.5", "--config-from-metadata", metadata_file.as_posix()],
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.5
 
 
 @pytest.mark.fast

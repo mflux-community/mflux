@@ -10,6 +10,7 @@ class VAE(nn.Module):
     shift_factor: int = 0.1159
     spatial_scale = 8
     latent_channels = 16
+    pid_variant = "flux"  # see PID_CHECKPOINT_VARIANTS
 
     def __init__(self):
         super().__init__()

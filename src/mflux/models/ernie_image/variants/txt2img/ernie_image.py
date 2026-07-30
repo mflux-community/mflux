@@ -7,6 +7,7 @@ from PIL import Image
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.latent_creator.latent_creator import LatentCreator
+from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.ernie_image.ernie_image_initializer import ErnieImageInitializer
 from mflux.models.ernie_image.latent_creator import ErnieLatentCreator
@@ -57,6 +58,8 @@ class ErnieImage(nn.Module):
         image_strength: float | None = None,
         scheduler: str | None = None,
         negative_prompt: str | None = None,
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ) -> Image.Image:
         if scheduler is None:
             scheduler = "linear"
@@ -106,7 +109,13 @@ class ErnieImage(nn.Module):
 
         ctx.after_loop(latents)
 
-        decoded = self._decode_latents(latents=latents)
+        decoded = self._decode_latents(
+            latents=latents,
+            prompt=prompt,
+            seed=seed,
+            pid_decode=pid_decode,
+            degrade_sigma=pid_degrade_sigma,
+        )
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
@@ -119,6 +128,8 @@ class ErnieImage(nn.Module):
             image_strength=config.image_strength,
             generation_time=config.time_steps.format_dict["elapsed"],
             negative_prompt=negative_prompt,
+            pid_decode=pid_decode,
+            pid_degrade_sigma=pid_degrade_sigma,
         )
 
     def _prepare_latents(self, *, seed: int, config: Config) -> mx.array:
@@ -165,7 +176,20 @@ class ErnieImage(nn.Module):
         self.prompt_cache[cache_key] = (text_bth, text_lens)
         return text_bth, text_lens
 
-    def _decode_latents(self, *, latents: mx.array) -> mx.array:
+    def _decode_latents(
+        self,
+        *,
+        latents: mx.array,
+        prompt: str,
+        seed: int,
+        pid_decode: bool = False,
+        degrade_sigma: float = 0.0,
+    ) -> mx.array:
+        if pid_decode:
+            lq_latent = self.vae.unpack_packed_latents(latents)
+            return pid_decode_latents(
+                vae=self.vae, latent=lq_latent, caption=prompt, seed=seed, degrade_sigma=degrade_sigma
+            )
         return self.vae.decode_packed_latents(latents, tiling_config=self.tiling_config)
 
     def save_model(self, base_path: str) -> None:
