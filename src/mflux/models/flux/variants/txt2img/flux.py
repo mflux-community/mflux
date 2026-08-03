@@ -18,6 +18,7 @@ from mflux.models.flux.model.flux_vae.vae import VAE
 from mflux.models.flux.weights.flux_weight_definition import FluxWeightDefinition
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -45,6 +46,7 @@ class Flux1(nn.Module):
             model_config=model_config,
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

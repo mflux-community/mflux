@@ -13,6 +13,7 @@ from mflux.models.seedvr2.model.seedvr2_vae.vae import SeedVR2VAE
 from mflux.models.seedvr2.seedvr2_initializer import SeedVR2Initializer
 from mflux.models.seedvr2.variants.upscale.seedvr2_util import SeedVR2Util
 from mflux.utils.generated_image import GeneratedImage
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 from mflux.utils.metadata_reader import MetadataReader
 from mflux.utils.scale_factor import ScaleFactor
@@ -36,6 +37,7 @@ class SeedVR2(nn.Module):
             model_config=model_config,
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

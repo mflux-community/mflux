@@ -18,6 +18,7 @@ from mflux.models.qwen.model.qwen_vae.qwen_vae import QwenVAE
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -44,6 +45,7 @@ class Krea2(nn.Module):
             lora_scales=lora_scales,
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

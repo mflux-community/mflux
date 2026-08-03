@@ -18,6 +18,7 @@ from mflux.models.flux2.weights.flux2_weight_definition import Flux2KleinWeightD
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -44,6 +45,7 @@ class Flux2Klein(nn.Module):
             model_config=model_config or ModelConfig.flux2_klein_4b(),
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

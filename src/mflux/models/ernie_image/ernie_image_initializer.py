@@ -13,10 +13,12 @@ from mflux.models.ernie_image.model.ernie_transformer.transformer import ErnieTr
 from mflux.models.ernie_image.weights.ernie_lora_mapping import ErnieLoRAMapping
 from mflux.models.ernie_image.weights.ernie_weight_definition import ErnieWeightDefinition
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
+from mflux.utils.gpu_stream import with_gpu_stream
 
 
 class ErnieImageInitializer:
     @staticmethod
+    @with_gpu_stream
     def init(
         model,
         model_config: ModelConfig,

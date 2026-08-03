@@ -18,6 +18,7 @@ from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightD
 from mflux.models.z_image.z_image_initializer import ZImageInitializer
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -44,6 +45,7 @@ class ZImage(nn.Module):
             model_config=model_config,
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

@@ -10,6 +10,7 @@ from mflux.models.common_models.qwen3_vl.qwen3_vl_decoder import Qwen3VLDecoder
 from mflux.models.common_models.qwen3_vl.qwen3_vl_util import Qwen3VLUtil
 from mflux.models.fibo_vlm.fibo_vlm_initializer import FiboVLMInitializer
 from mflux.models.fibo_vlm.tokenizer.qwen2vl_processor import Qwen2VLProcessor
+from mflux.utils.gpu_stream import with_gpu_stream
 
 EDIT_SYSTEM_PROMPT = '''You are a highly skilled Creative Director for Visual Adaptation at a leading Generative AI company.
 
@@ -163,6 +164,7 @@ class FiboVLM:
     def processor(self) -> Qwen2VLProcessor:
         return self.tokenizers["fibo_vlm"].processor
 
+    @with_gpu_stream
     def generate(
         self,
         prompt: str,

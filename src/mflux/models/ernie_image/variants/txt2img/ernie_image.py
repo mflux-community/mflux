@@ -17,6 +17,7 @@ from mflux.models.ernie_image.weights.ernie_weight_definition import ErnieWeight
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -43,6 +44,7 @@ class ErnieImage(nn.Module):
             lora_scales=lora_scales,
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,

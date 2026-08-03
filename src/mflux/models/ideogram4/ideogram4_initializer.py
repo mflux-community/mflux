@@ -16,10 +16,12 @@ from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.ideogram4.model.ideogram4_text_encoder import Qwen3TextEncoder
 from mflux.models.ideogram4.model.ideogram4_transformer import Ideogram4Config, Ideogram4Transformer
 from mflux.models.ideogram4.weights import Ideogram4LoRAMapping, Ideogram4WeightDefinition
+from mflux.utils.gpu_stream import with_gpu_stream
 
 
 class Ideogram4Initializer:
     @staticmethod
+    @with_gpu_stream
     def init(
         model,
         model_config: ModelConfig,

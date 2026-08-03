@@ -13,10 +13,12 @@ from mflux.models.krea2.model.krea2_transformer.transformer import Krea2Transfor
 from mflux.models.krea2.weights.krea2_lora_mapping import Krea2LoRAMapping
 from mflux.models.krea2.weights.krea2_weight_definition import Krea2WeightDefinition
 from mflux.models.qwen.model.qwen_vae.qwen_vae import QwenVAE
+from mflux.utils.gpu_stream import with_gpu_stream
 
 
 class Krea2Initializer:
     @staticmethod
+    @with_gpu_stream
     def init(
         model,
         model_config: ModelConfig,

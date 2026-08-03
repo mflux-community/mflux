@@ -14,6 +14,7 @@ from mflux.models.flux2.variants.edit.flux2_klein_edit_helpers import _Flux2Klei
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
+from mflux.utils.gpu_stream import with_gpu_stream
 from mflux.utils.image_util import ImageUtil
 
 
@@ -40,6 +41,7 @@ class Flux2KleinEdit(nn.Module):
             model_config=model_config or ModelConfig.flux2_klein_4b(),
         )
 
+    @with_gpu_stream
     def generate_image(
         self,
         seed: int,
