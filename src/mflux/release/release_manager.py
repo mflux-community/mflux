@@ -1,3 +1,5 @@
+import os
+
 import requests
 
 from mflux.release.changelog_parser import ChangelogParser
@@ -12,10 +14,12 @@ class ReleaseManager:
     @staticmethod
     def create_release(
         github_token: str,
-        pypi_token: str,
-        github_repo: str = "filipstrand/mflux",
+        pypi_token: str | None,
+        github_repo: str | None = None,
         package_name: str = "mflux",
+        trusted_publishing: bool = False,
     ) -> None:
+        github_repo = github_repo or os.getenv("GITHUB_REPOSITORY", "filipstrand/mflux")
         # 0. Load version from pyproject.toml
         version = VersionUtil.get_mflux_version()
         tag_name = f"v.{version}"
@@ -37,7 +41,15 @@ class ReleaseManager:
         # 4. Handle PyPI publishing FIRST (before creating git artifacts)
         if ReleaseManager._should_publish_to_pypi(git_tag_exists, github_release_exists, package_name, version):
             PyPIPublisher.build_and_verify_package()
-            PyPIPublisher.publish_to_pypi(pypi_token, package_name, version)
+            if trusted_publishing:
+                print("🔐 Trusted publishing enabled — deferring PyPI upload to the workflow publisher step")
+            else:
+                if not pypi_token:
+                    raise ValueError(
+                        "PyPI API token is required unless trusted publishing is enabled "
+                        "(set MFLUX_TRUSTED_PUBLISHING=true or pass --trusted-publishing)"
+                    )
+                PyPIPublisher.publish_to_pypi(pypi_token, package_name, version)
 
         # 5. Create git tag if needed
         if not git_tag_exists:

@@ -44,7 +44,7 @@ class DataSpec:
                 base_path=base_path,
             )
             try:
-                prompt = prompt_path.read_text(encoding="utf-8").strip()
+                prompt = prompt_path.read_text(encoding="utf-8", errors="replace").strip()
             except FileNotFoundError as e:
                 raise ValueError(f"Prompt file not found: {prompt_path}") from e
         else:
@@ -77,6 +77,11 @@ class TrainingLoopSpec:
     timestep_low: int = 0
     timestep_high: int | None = None
     iterator_state_path: str | None = None
+    # Timestep-index sampling distribution: None/"uniform" (flat), "sigmoid" (mid-concentrated,
+    # ai-toolkit's default — best for subject identity), "content" (cubic, favors low-noise /
+    # fine detail), "style" (favors high-noise / coarse style). Applies to adapters that sample
+    # sigma from the index grid (flux/z-image/ernie); Ideogram has its own sample_sigma override.
+    timestep_type: str | None = None
 
 
 @dataclass
@@ -84,6 +89,12 @@ class OptimizerSpec:
     name: str
     learning_rate: float
     state_path: str | None = None
+    # LR schedule: None = constant; "cosine" = cosine decay (needs lr_total_steps). A linear
+    # warmup of lr_warmup_steps is prepended either way (0 = none). Resumes correctly: the
+    # schedule is rebuilt from these fields and applied at the optimizer's restored step.
+    lr_schedule: str | None = None
+    lr_warmup_steps: int = 0
+    lr_total_steps: int | None = None
 
 
 @dataclass
@@ -116,6 +127,9 @@ class LoraTargetSpec:
     module_path: str
     rank: int
     blocks: BlockRange | None = None
+    # LoRA alpha; effective scale = alpha / rank (published-recipe convention).
+    # None keeps the prior behavior (scale = 1.0).
+    alpha: float | None = None
 
 
 @dataclass
@@ -229,6 +243,10 @@ class TrainingSpec:
     checkpoint_path: str | None = None
     # If true, training will use a disk-backed cache for encoded data to reduce RAM usage.
     low_ram: bool = False
+    # Cap (in GB) on MLX's buffer-cache pool (mx.set_cache_limit). The pool otherwise grows
+    # to hold the largest transient allocations seen; bounding it returns freed buffers to
+    # the OS at ~no speed cost (unlike low_ram's clear-every-step). None = MLX default.
+    cache_limit_gb: float | None = None
 
     @staticmethod
     def resolve(
@@ -286,6 +304,11 @@ class TrainingSpec:
         low_ram = bool(config.get("low_ram", False))
         if low_ram and data_root_dir is None:
             raise ValueError("'low_ram' requires a valid data path.")
+
+        cache_limit_raw = config.get("cache_limit_gb", None)
+        cache_limit_gb = None if cache_limit_raw is None else float(cache_limit_raw)
+        if cache_limit_gb is not None and cache_limit_gb <= 0:
+            raise ValueError("'cache_limit_gb' must be > 0")
 
         monitoring_conf = config.get("monitoring", None)
         preview_prompt_paths: list[Path] = []
@@ -373,6 +396,7 @@ class TrainingSpec:
                     module_path=t["module_path"],
                     rank=t["rank"],
                     blocks=blocks,
+                    alpha=t.get("alpha"),
                 )
             )
 
@@ -424,6 +448,7 @@ class TrainingSpec:
             data_root=str(data_root_dir.resolve()),
             config_path=None if absolute_config_path is None else str(absolute_config_path),
             low_ram=low_ram,
+            cache_limit_gb=cache_limit_gb,
         )
 
     @staticmethod
@@ -445,7 +470,7 @@ class TrainingSpec:
 
     @staticmethod
     def _load_preview_prompts(prompt_paths: list[Path]) -> list[str]:
-        return [path.read_text(encoding="utf-8").strip() for path in prompt_paths]
+        return [path.read_text(encoding="utf-8", errors="replace").strip() for path in prompt_paths]
 
     @staticmethod
     def _find_preview_images_in_data(root_dir: Path) -> dict[str, Path]:

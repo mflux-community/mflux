@@ -71,11 +71,8 @@ class LoraTransforms:
 
     @staticmethod
     def _split_qkv_down(tensor: mx.array, index: int, num_splits: int = 3) -> mx.array:
-        # A fused qkv LoRA shares a single down projection across q/k/v. Its first
-        # dimension is the LoRA rank (the shared latent), NOT an output dimension to
-        # be split, so the same full-rank down tensor is returned for every q/k/v
-        # component. The matching up projection is the one that gets sliced along its
-        # output dimension (see _split_qkv_up).
+        # The down (A) matrix has shape (rank, input_dim) with rank shared across Q/K/V.
+        # Only the up (B) matrix has concatenated output rows that need splitting.
         return tensor
 
     @staticmethod
@@ -89,9 +86,5 @@ class LoraTransforms:
 
     @staticmethod
     def _split_qkv_mlp_down(tensor: mx.array, index: int, num_splits: int = 4) -> mx.array:
-        # A fused qkv+mlp LoRA (single-block linear1) shares a single down projection
-        # across q/k/v/mlp. Its first dimension is the LoRA rank (the shared latent),
-        # NOT an output dimension to be split, so the same full-rank down tensor is
-        # returned for every component. Only the up projection is sliced along its
-        # output dimension (see _split_qkv_mlp_up).
+        # The down (A) matrix rank is shared across Q/K/V/MLP; only the up (B) rows are split.
         return tensor

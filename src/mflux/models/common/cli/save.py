@@ -1,4 +1,4 @@
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
@@ -6,6 +6,7 @@ from mflux.models.flux.variants.txt2img.flux import Flux1
 from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
 from mflux.models.ideogram4.variants.txt2img.ideogram4 import Ideogram4
 from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
+from mflux.models.krea2.variants.txt2img.krea2 import Krea2
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
 from mflux.models.z_image import ZImage, ZImageTurbo
@@ -37,6 +38,9 @@ def main():
         model_class = Flux2Klein
     elif "ideogram" in model_name_lower or "ideogram" in base_model_lower:
         model_class = Ideogram4
+    elif "krea-2" in model_name_lower or "krea2" in model_name_lower:
+        # "krea-2"/"krea2" only — must not match Flux.1 Krea ("krea-dev"/"dev-krea").
+        model_class = Krea2
     else:
         model_class = Flux1
 
@@ -54,8 +58,7 @@ def main():
     # 2. Load, quantize and save the model
     model = model_class(
         quantize=args.quantize,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
         model_path=model_path,
         model_config=model_config,
     )

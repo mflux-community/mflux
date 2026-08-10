@@ -1,6 +1,6 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux.variants.fill.flux_fill import Flux1Fill
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
@@ -26,8 +26,7 @@ def main():
     flux = Flux1Fill(
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks

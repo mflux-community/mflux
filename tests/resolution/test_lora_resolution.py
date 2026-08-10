@@ -129,6 +129,53 @@ class TestLoraResolutionHuggingFace:
 
         assert result == str(lora_file)
 
+    @pytest.mark.fast
+    def test_collection_downloads_when_sibling_file_is_cached(self, tmp_path, monkeypatch):
+        cache_dir = tmp_path / "loras"
+        cache_dir.mkdir()
+        monkeypatch.setattr(
+            "mflux.models.common.resolution.lora_resolution.MFLUX_LORA_CACHE_DIR",
+            cache_dir,
+        )
+
+        snapshot_dir = tmp_path / "snapshot"
+        snapshot_dir.mkdir()
+        requested = snapshot_dir / "style-b.safetensors"
+        requested.touch()
+        (snapshot_dir / "style-a.safetensors").touch()
+
+        with patch("mflux.models.common.resolution.lora_resolution.snapshot_download") as mock_download:
+            mock_download.side_effect = [
+                LocalEntryNotFoundError("sibling cached, requested file missing"),
+                str(snapshot_dir),
+            ]
+
+            result = LoraResolution.resolve(path="org/styles:style-b.safetensors")
+
+        assert result == str(cache_dir / "style-b.safetensors")
+        assert mock_download.call_count == 2
+        assert mock_download.call_args_list[0][1]["allow_patterns"] == ["style-b.safetensors"]
+        assert mock_download.call_args_list[0][1]["local_files_only"] is True
+        assert mock_download.call_args_list[1][1]["local_files_only"] is False
+
+    @pytest.mark.fast
+    def test_collection_uses_mflux_cache_symlink(self, tmp_path, monkeypatch):
+        cache_dir = tmp_path / "loras"
+        cache_dir.mkdir()
+        monkeypatch.setattr(
+            "mflux.models.common.resolution.lora_resolution.MFLUX_LORA_CACHE_DIR",
+            cache_dir,
+        )
+
+        cached = cache_dir / "cached-style.safetensors"
+        cached.write_bytes(b"x")
+
+        with patch("mflux.models.common.resolution.lora_resolution.snapshot_download") as mock_download:
+            result = LoraResolution.resolve(path="org/styles:cached-style.safetensors")
+
+        assert result == str(cached)
+        mock_download.assert_not_called()
+
 
 class TestLoraResolutionError:
     @pytest.mark.fast

@@ -128,6 +128,40 @@ class TestConfigResolutionIdeogram4:
         assert config.max_sequence_length == 2048
 
 
+class TestConfigResolutionKrea2:
+    @pytest.mark.fast
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "krea-2",
+            "krea2",
+        ],
+    )
+    def test_exact_alias_match(self, model_name: str):
+        config = ConfigResolution.resolve(model_name=model_name)
+
+        assert config.model_name == "krea/Krea-2-Turbo"
+        assert model_name in config.aliases
+
+    @pytest.mark.fast
+    def test_exact_hf_name_match(self):
+        config = ConfigResolution.resolve(model_name="krea/Krea-2-Turbo")
+
+        assert config.model_name == "krea/Krea-2-Turbo"
+        assert config.max_sequence_length == 1024
+        assert config.supports_guidance is True
+        assert config.requires_sigma_shift is True
+        assert config.sigma_max_shift == pytest.approx(1.15)
+
+    @pytest.mark.fast
+    def test_infer_from_krea2_substring(self):
+        config = ConfigResolution.resolve(model_name="my-krea2-style-finetune")
+
+        assert config.model_name == "my-krea2-style-finetune"
+        assert config.base_model == "krea/Krea-2-Turbo"
+        assert config.max_sequence_length == 1024
+
+
 class TestConfigResolutionRules:
     @pytest.mark.fast
     def test_exact_match_takes_priority(self):

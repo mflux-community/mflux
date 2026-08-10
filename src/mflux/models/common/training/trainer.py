@@ -24,6 +24,24 @@ from mflux.models.common.training.utils import TrainingUtil
 
 class TrainingTrainer:
     @staticmethod
+    def _sample_timestep_index(timestep_type: str, low: int, high: int, rng) -> int:
+        # Map a [0,1) draw shaped by the distribution to a timestep index in [low, high).
+        import math
+
+        span = high - low
+        if span <= 0:
+            return low
+        if timestep_type == "sigmoid":  # mid-concentrated (ai-toolkit default; best for identity)
+            frac = 1.0 / (1.0 + math.exp(-rng.gauss(0.0, 1.0)))
+        elif timestep_type == "content":  # cubic, favors low noise (fine detail)
+            frac = rng.random() ** 3
+        elif timestep_type == "style":  # favors high noise (coarse style)
+            frac = 1.0 - rng.random() ** 3
+        else:
+            frac = rng.random()
+        return min(max(low + int(frac * span), low), high - 1)
+
+    @staticmethod
     def compute_loss(
         adapter: TrainingAdapter,
         training_spec: TrainingSpec,
@@ -65,14 +83,20 @@ class TrainingTrainer:
             else training_spec.training_loop.timestep_high
         )
 
-        t = int(
-            mx.random.randint(
-                low=low,
-                high=high,
-                shape=[],
-                key=mx.random.key(time_seed),
+        timestep_type = training_spec.training_loop.timestep_type
+        if timestep_type and timestep_type != "uniform":
+            # Non-uniform timestep-index sampling (sigmoid/content/style). Identity learning
+            # lives in the mid/low-noise band that flat sampling under-weights.
+            t = TrainingTrainer._sample_timestep_index(timestep_type, low, high, rng)
+        else:
+            t = int(
+                mx.random.randint(
+                    low=low,
+                    high=high,
+                    shape=[],
+                    key=mx.random.key(time_seed),
+                )
             )
-        )
 
         clean_image = item.clean_latents
         pure_noise = mx.random.normal(
@@ -137,8 +161,15 @@ class TrainingTrainer:
             initial=training_state.iterator.num_iterations,
         )
 
+        nonfinite_skips = 0
         for batch in batches:
             loss, grads = train_step_function(batch)
+            if not TrainingTrainer._step_is_finite(loss):
+                del loss, grads
+                nonfinite_skips += 1
+                if training_spec.low_ram:
+                    mx.clear_cache()
+                continue
             training_state.optimizer.optimizer.update(model=adapter.model(), gradients=grads)
             mx.eval(adapter.model().parameters(), training_state.optimizer.optimizer.state)
             del loss, grads
@@ -159,6 +190,8 @@ class TrainingTrainer:
             if training_spec.low_ram:
                 mx.clear_cache()
 
+        if nonfinite_skips:
+            print(f"Skipped {nonfinite_skips} non-finite (NaN/Inf) training step(s).")
         training_state.save(adapter, training_spec)
 
     @staticmethod
@@ -231,6 +264,16 @@ class TrainingTrainer:
                 )
             )
             del image
+
+
+    @staticmethod
+    def _step_is_finite(loss) -> bool:
+        """A non-finite loss (bf16 activation spikes, a NaN from one bad batch) must never
+        reach optimizer.update: the gradients it came with poison the LoRA weights and the
+        optimizer moments in a single step. The caller skips the step and the run continues
+        from the last good state. clip_grad_norm handles ordinary spikes; this catches
+        Inf/NaN."""
+        return bool(mx.isfinite(loss).item())
 
     @staticmethod
     def _generate_previews_with_optimizer_offload(

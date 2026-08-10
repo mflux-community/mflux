@@ -1,5 +1,5 @@
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.ernie_image.latent_creator import ErnieLatentCreator
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
@@ -30,8 +30,7 @@ def main():
         model_config=ModelConfig.ernie_image_turbo(),
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     memory_saver = CallbackManager.register_callbacks(

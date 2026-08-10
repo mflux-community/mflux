@@ -121,22 +121,42 @@ class LoraResolution:
 
     @staticmethod
     def _is_collection_in_cache(repo_id: str, filename: str) -> bool:
+        return LoraResolution._find_collection_file(repo_id, filename, local_files_only=True) is not None
+
+    @staticmethod
+    def _linked_collection_path(filename: str) -> str | None:
         cache_path = MFLUX_LORA_CACHE_DIR
-        # Check mflux cache
         cached_file_path = cache_path / filename
-        if cached_file_path.exists() and cached_file_path.is_file():
-            return True
-        # Check HF cache
+        if not cached_file_path.is_file():
+            return None
         try:
-            snapshot_download(
-                repo_id=repo_id,
-                allow_patterns=[f"*{filename}*"],
-                cache_dir=str(cache_path),
-                local_files_only=True,
+            with open(cached_file_path, "rb") as f:
+                f.read(1)
+            return str(cached_file_path)
+        except OSError:
+            return None
+
+    @staticmethod
+    def _find_collection_file(repo_id: str, filename: str, *, local_files_only: bool) -> str | None:
+        cache_path = MFLUX_LORA_CACHE_DIR
+        cache_path.mkdir(parents=True, exist_ok=True)
+
+        linked = LoraResolution._linked_collection_path(filename)
+        if linked is not None:
+            return linked
+
+        try:
+            download_path = Path(
+                snapshot_download(
+                    repo_id=repo_id,
+                    allow_patterns=[filename],
+                    cache_dir=str(cache_path),
+                    local_files_only=local_files_only,
+                )
             )
-            return True
-        except LocalEntryNotFoundError:
-            return False
+            return LoraResolution._find_and_link_file(download_path, filename, cache_path)
+        except (LocalEntryNotFoundError, FileNotFoundError):
+            return None
 
     @staticmethod
     def _is_repo_in_cache(repo_id: str) -> bool:
@@ -230,31 +250,10 @@ class LoraResolution:
 
     @staticmethod
     def _load_collection_from_cache(repo_id: str, filename: str) -> str:
-        cache_path = MFLUX_LORA_CACHE_DIR
-        cache_path.mkdir(parents=True, exist_ok=True)
-
-        # Check mflux cache first
-        cached_file_path = cache_path / filename
-        if cached_file_path.exists() and cached_file_path.is_file():
-            try:
-                with open(cached_file_path, "rb") as f:
-                    f.read(1)
-                return str(cached_file_path)
-            except (OSError, IOError):
-                # File corrupted, fall through to HF cache
-                pass
-
-        # Load from HF cache
-        download_path = Path(
-            snapshot_download(
-                repo_id=repo_id,
-                allow_patterns=[f"*{filename}*"],
-                cache_dir=str(cache_path),
-                local_files_only=True,
-            )
-        )
-
-        return LoraResolution._find_and_link_file(download_path, filename, cache_path)
+        cached = LoraResolution._find_collection_file(repo_id, filename, local_files_only=True)
+        if cached is not None:
+            return cached
+        return LoraResolution._download_collection(repo_id, filename)
 
     @staticmethod
     def _download_collection(repo_id: str, filename: str) -> str:
@@ -262,15 +261,11 @@ class LoraResolution:
         cache_path.mkdir(parents=True, exist_ok=True)
 
         print(f"Downloading LoRA '{filename}' from {repo_id}...")
-        download_path = Path(
-            snapshot_download(
-                repo_id=repo_id,
-                allow_patterns=[f"*{filename}*"],
-                cache_dir=str(cache_path),
-            )
-        )
+        resolved = LoraResolution._find_collection_file(repo_id, filename, local_files_only=False)
+        if resolved is not None:
+            return resolved
 
-        return LoraResolution._find_and_link_file(download_path, filename, cache_path)
+        raise FileNotFoundError(f"Could not find LoRA file '{filename}' in HuggingFace repo: {repo_id}")
 
     @staticmethod
     def _find_and_link_file(download_path: Path, filename: str, cache_path: Path) -> str:

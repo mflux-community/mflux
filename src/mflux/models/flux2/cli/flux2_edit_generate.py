@@ -1,13 +1,12 @@
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.variants import Flux2KleinEdit
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
-from mflux.utils.image_util import ImageUtil
 from mflux.utils.prompt_util import PromptUtil
 
 
@@ -42,8 +41,7 @@ def main():
         model_config=model_config,
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     memory_saver = CallbackManager.register_callbacks(
@@ -73,11 +71,7 @@ def main():
                 num_inference_steps=args.steps,
                 scheduler="flow_match_euler_discrete",
             )
-            ImageUtil.save_image(
-                image=image,
-                path=args.output.format(seed=seed),
-                export_json_metadata=args.metadata,
-            )
+            image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:
         print(exc)
     finally:
