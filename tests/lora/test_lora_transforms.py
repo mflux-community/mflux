@@ -7,6 +7,12 @@ from mflux.models.common.lora.mapping.lora_transforms import LoraTransforms
 HIDDEN = 3072
 MLP = 4 * HIDDEN  # 12288
 
+# Ranks to exercise. 16/32/64 are the common kohya ranks and are divisible by the
+# 4-way qkv+mlp split; 48 is additionally divisible by the 3-way qkv split, so the
+# double-block path is covered by a rank that would have triggered the old
+# rank-splitting branch.
+RANKS = [16, 32, 48, 64]
+
 
 @pytest.mark.fast
 class TestLoraTransforms:
@@ -22,7 +28,7 @@ class TestLoraTransforms:
     adapter and a matmul shape error at the first denoise step.
     """
 
-    @pytest.mark.parametrize("rank", [16, 32, 64])
+    @pytest.mark.parametrize("rank", RANKS)
     def test_double_block_down_is_shared_full_rank(self, rank: int):
         # Fused qkv down: (rank, hidden), shared across q/k/v.
         down = mx.random.normal((rank, HIDDEN))
@@ -35,7 +41,7 @@ class TestLoraTransforms:
             assert out.shape == (rank, HIDDEN)
             assert mx.array_equal(out, down)
 
-    @pytest.mark.parametrize("rank", [16, 32, 64])
+    @pytest.mark.parametrize("rank", RANKS)
     def test_double_block_up_is_output_split(self, rank: int):
         # Fused qkv up: (3 * hidden, rank), split along the output dimension.
         up = mx.random.normal((3 * HIDDEN, rank))
@@ -48,7 +54,7 @@ class TestLoraTransforms:
         assert mx.array_equal(k, up[HIDDEN : 2 * HIDDEN, :])
         assert mx.array_equal(v, up[2 * HIDDEN : 3 * HIDDEN, :])
 
-    @pytest.mark.parametrize("rank", [16, 32, 64])
+    @pytest.mark.parametrize("rank", RANKS)
     def test_single_block_down_is_shared_full_rank(self, rank: int):
         # Fused qkv+mlp down (single-block linear1): (rank, hidden), shared.
         down = mx.random.normal((rank, HIDDEN))
@@ -62,7 +68,7 @@ class TestLoraTransforms:
             assert out.shape == (rank, HIDDEN)
             assert mx.array_equal(out, down)
 
-    @pytest.mark.parametrize("rank", [16, 32, 64])
+    @pytest.mark.parametrize("rank", RANKS)
     def test_single_block_up_is_output_split(self, rank: int):
         # Fused qkv+mlp up (single-block linear1): (3*hidden + mlp, rank).
         fused_out = 3 * HIDDEN + MLP  # 21504
