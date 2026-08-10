@@ -1556,6 +1556,81 @@ def test_ideogram4_rejects_invalid_preset(mflux_ideogram4_parser, mflux_ideogram
 
 
 # ============================================================================
+# Krea 2 Tests
+# ============================================================================
+
+
+@pytest.fixture
+def mflux_krea2_parser() -> CommandLineParser:
+    parser = CommandLineParser(description="Generate an image using Krea-2 based on a prompt.")
+    parser.add_general_arguments()
+    parser.add_model_arguments(require_model_arg=False)
+    parser.add_lora_arguments()
+    parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
+    parser.add_image_to_image_arguments(required=False)
+    parser.add_output_arguments()
+    return parser
+
+
+@pytest.fixture
+def mflux_krea2_minimal_argv() -> list[str]:
+    return ["mflux-generate-krea2", "--prompt", "a red fox in a forest"]
+
+
+@pytest.mark.fast
+def test_krea2_args(mflux_krea2_parser, mflux_krea2_minimal_argv):
+    with patch("sys.argv", mflux_krea2_minimal_argv):
+        args = mflux_krea2_parser.parse_args()
+        assert args.prompt == "a red fox in a forest"
+        assert args.model is None
+        assert args.scheduler == "linear"
+        assert args.steps == 25
+        assert args.guidance is None
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--model", "krea2"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.model == "krea2"
+        assert args.steps == 8
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--scheduler", "euler"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.scheduler == "euler"
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--steps", "8", "--guidance", "1.0"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.steps == 8
+        assert args.guidance == pytest.approx(1.0)
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--image-path", "input.png", "--image-strength", "0.65"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.image_path == Path("input.png")
+        assert args.image_strength == pytest.approx(0.65)
+
+
+@pytest.mark.fast
+def test_krea2_lora_arguments(mflux_krea2_parser, mflux_krea2_minimal_argv):
+    with patch("mflux.cli.parser.parsers.LoraResolution.resolve", side_effect=lambda x: x):
+        with patch(
+            "sys.argv",
+            mflux_krea2_minimal_argv
+            + [
+                "--lora-paths",
+                "krea/Krea-2-LoRA-darkbrush",
+                "gokaygokay/Krea-2-Realism-LoRA",
+                "--lora-scales",
+                "1.0",
+                "0.8",
+            ],
+        ):
+            args = mflux_krea2_parser.parse_args()
+            assert args.lora_paths == [
+                "krea/Krea-2-LoRA-darkbrush",
+                "gokaygokay/Krea-2-Realism-LoRA",
+            ]
+            assert args.lora_scales == [pytest.approx(1.0), pytest.approx(0.8)]
+
+
+# ============================================================================
 # Kontext Tests
 # ============================================================================
 

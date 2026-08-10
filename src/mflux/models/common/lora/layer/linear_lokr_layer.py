@@ -3,6 +3,8 @@ import math
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.lora.layer.dense_weight import dense_weight
+
 
 class LoKrLinear(nn.Module):
     @staticmethod
@@ -97,16 +99,7 @@ class LoKrLinear(nn.Module):
         return decomposed_weight - base_weight
 
     def _dense_base_weight(self) -> mx.array:
-        if isinstance(self.linear, nn.QuantizedLinear):
-            return mx.dequantize(
-                self.linear.weight,
-                self.linear.scales,
-                biases=self.linear.biases,
-                group_size=self.linear.group_size,
-                bits=self.linear.bits,
-                mode=self.linear.mode,
-            )
-        return self.linear.weight
+        return dense_weight(self.linear)
 
     def __call__(self, x):
         base_out = self.linear(x)

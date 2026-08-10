@@ -135,6 +135,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def krea2() -> "ModelConfig":
+        return AVAILABLE_MODELS["krea-2"]
+
+    @staticmethod
+    @lru_cache
     def qwen_image() -> "ModelConfig":
         return AVAILABLE_MODELS["qwen-image"]
 
@@ -218,6 +223,19 @@ class ModelConfig:
 
 
 AVAILABLE_MODELS = {
+    "krea-2": ModelConfig(
+        priority=15,
+        aliases=["krea-2", "krea2"],
+        model_name="krea/Krea-2-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_max_shift=1.15,
+    ),
     "dev": ModelConfig(
         priority=0,
         aliases=["dev"],

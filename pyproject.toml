@@ -14,7 +14,7 @@ source-exclude = [
 
 [project]
 name = "mflux"
-version = "0.18.0"
+version = "0.18.1"
 description = "MLX native implementations of state-of-the-art generative image models."
 readme = "README.md"
 keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-silicon", "diffusers", "qwen", "qwen-image", "seedvr2", "z-image"]
@@ -94,6 +94,7 @@ mflux-generate-z-image-turbo = "mflux.models.z_image.cli.z_image_turbo_generate:
 mflux-generate-ernie-image-turbo = "mflux.models.ernie_image.cli.ernie_image_turbo_generate:main"
 mflux-generate-ernie-image = "mflux.models.ernie_image.cli.ernie_image_generate:main"
 mflux-generate-ideogram4 = "mflux.models.ideogram4.cli.ideogram4_generate:main"
+mflux-generate-krea2 = "mflux.models.krea2.cli.krea2_generate:main"
 mflux-refine-fibo = "mflux.models.fibo_vlm.cli.fibo_refine:main"
 mflux-inspire-fibo = "mflux.models.fibo_vlm.cli.fibo_inspire:main"
 mflux-concept = "mflux.models.flux.cli.flux_concept:main"

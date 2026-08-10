@@ -1,6 +1,7 @@
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.lora.layer.dense_weight import dense_weight
 from mflux.models.common.lora.layer.linear_lokr_layer import LoKrLinear
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 
@@ -37,13 +38,4 @@ class FusedLoRALinear(nn.Module):
         return base_out + lora_out
 
     def _dense_base_weight(self) -> mx.array:
-        if isinstance(self.base_linear, nn.QuantizedLinear):
-            return mx.dequantize(
-                self.base_linear.weight,
-                self.base_linear.scales,
-                biases=self.base_linear.biases,
-                group_size=self.base_linear.group_size,
-                bits=self.base_linear.bits,
-                mode=self.base_linear.mode,
-            )
-        return self.base_linear.weight
+        return dense_weight(self.base_linear)

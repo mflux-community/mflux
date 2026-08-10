@@ -85,8 +85,60 @@ class Ideogram4Initializer:
         )
         model.text_encoder = Qwen3TextEncoder(**Ideogram4Initializer._text_encoder_kwargs(model_path / "text_encoder"))
 
+
+    @staticmethod
+    def _rebuild_q8_folded_layers(module, tree) -> None:
+        """A native save can hold layers folded to MLX q8: baking a LoRA over an fp8 base
+        (LoRASaver.bake_and_strip_lora) dequantizes and requantizes the merged weight to
+        q8, so the checkpoint stores a packed 'weight' plus 'scales'/'biases'. Fp8Linear
+        cannot hold those tensors and update(strict=False) skips them silently, failing at
+        the first forward. Rebuild any such layer as QuantizedLinear before the update, so
+        mixed fp8/q8 checkpoints load. Original fp8 checkpoints carry 'weight_scale'
+        instead of 'scales'/'biases' and are left untouched."""
+        from mlx import nn as _nn
+
+        if isinstance(tree, list):
+            children = list(module) if hasattr(module, "__iter__") else []
+            for idx, sub in enumerate(tree):
+                if idx < len(children):
+                    Ideogram4Initializer._rebuild_q8_folded_layers(children[idx], sub)
+            return
+        if not isinstance(tree, dict):
+            return
+        for key, sub in tree.items():
+            if not isinstance(sub, (dict, list)):
+                continue
+            child = getattr(module, key, None)
+            if child is None and isinstance(module, dict):
+                child = module.get(key)
+            if child is None:
+                continue
+            if (
+                isinstance(sub, dict)
+                and "scales" in sub
+                and "biases" in sub
+                and "weight" in sub
+                and not isinstance(child, _nn.QuantizedLinear)
+            ):
+                scales = sub["scales"]
+                output_dims = scales.shape[0]
+                input_dims = scales.shape[1] * 64
+                replacement = _nn.QuantizedLinear(
+                    input_dims, output_dims, bias="bias" in sub, group_size=64, bits=8
+                )
+                if isinstance(module, dict):
+                    module[key] = replacement
+                else:
+                    setattr(module, key, replacement)
+            else:
+                Ideogram4Initializer._rebuild_q8_folded_layers(child, sub)
+
     @staticmethod
     def _apply_weights(model, weights: LoadedWeights, quantize: int | None) -> None:
+        for name in ("conditional_transformer", "unconditional_transformer"):
+            tree = weights.components.get(name)
+            if tree:
+                Ideogram4Initializer._rebuild_q8_folded_layers(getattr(model, name), tree)
         model.bits = WeightApplier.apply_and_quantize(
             weights=weights,
             quantize_arg=quantize,
