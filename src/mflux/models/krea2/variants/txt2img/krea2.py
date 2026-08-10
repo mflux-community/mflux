@@ -33,6 +33,7 @@ class Krea2(nn.Module):
         model_config: ModelConfig | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ):
         super().__init__()
         Krea2Initializer.init(
@@ -42,6 +43,7 @@ class Krea2(nn.Module):
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
 
     def generate_image(

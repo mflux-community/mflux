@@ -111,6 +111,7 @@ class TestKrea2LoRAMapping:
             transformer=transformer,
             lora_paths=[str(lora_path)],
             lora_scales=[0.7],
+            bake_lora=False,
         )
 
         target = transformer.blocks[0].attn.wq
@@ -135,6 +136,7 @@ class TestKrea2LoRAMapping:
             transformer=transformer,
             lora_paths=[str(lora_path)],
             lora_scales=[1.0],
+            bake_lora=False,
         )
 
         assert isinstance(transformer.blocks[0].mlp.down, LoRALinear)
@@ -155,6 +157,7 @@ class TestKrea2LoRAMapping:
             transformer=transformer,
             lora_paths=[str(lora_path)],
             lora_scales=[0.5],
+            bake_lora=False,
         )
 
         assert isinstance(transformer.txtfusion.projector, LoRALinear)

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux.variants.kontext.flux_kontext import Flux1Kontext
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -29,8 +29,7 @@ def main():
     flux = Flux1Kontext(
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks

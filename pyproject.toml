@@ -14,7 +14,7 @@ source-exclude = [
 
 [project]
 name = "mflux"
-version = "0.18.0"
+version = "0.18.1"
 description = "MLX native implementations of state-of-the-art generative image models."
 readme = "README.md"
 keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-silicon", "diffusers", "qwen", "qwen-image", "seedvr2", "z-image"]
@@ -133,7 +133,7 @@ docstring-code-line-length = "dynamic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not high_memory_requirement"'
+addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not slow and not high_memory_requirement"'
 filterwarnings = [
     "ignore::DeprecationWarning:transformers\\.models\\.clip\\.tokenization_clip",
     "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",

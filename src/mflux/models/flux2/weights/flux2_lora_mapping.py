@@ -17,7 +17,44 @@ class Flux2LoRAMapping(LoRAMapping):
         targets.extend(Flux2LoRAMapping._get_bfl_double_stream_block_targets())
         targets.extend(Flux2LoRAMapping._get_bfl_single_stream_block_targets())
 
+        Flux2LoRAMapping._add_bfl_double_block_lycoris_lokr_patterns(targets)
+
         return targets
+
+    @staticmethod
+    def _add_bfl_double_block_lycoris_lokr_patterns(targets: list[LoRATarget]) -> None:
+        for target in targets:
+            lokr_bases: set[str] = set()
+            for pattern in target.possible_lokr_w1_patterns:
+                if not pattern.startswith("diffusion_model.double_blocks."):
+                    continue
+                lokr_bases.add(pattern.removesuffix(".lokr_w1"))
+
+            for base in lokr_bases:
+                source_key = base.removeprefix("diffusion_model.").replace(".", "_")
+                lycoris_base = f"lycoris_{source_key}"
+                lora_unet_base = f"lora_unet_{source_key}"
+                target.possible_lokr_w1_patterns.extend(
+                    [
+                        f"{lycoris_base}.lokr_w1",
+                        f"{lora_unet_base}.lokr_w1",
+                    ]
+                )
+                target.possible_lokr_w2_patterns.extend(
+                    [
+                        f"{lycoris_base}.lokr_w2",
+                        f"{lora_unet_base}.lokr_w2",
+                    ]
+                )
+                target.possible_alpha_patterns.extend(
+                    [
+                        f"{lycoris_base}.alpha",
+                        f"{lora_unet_base}.alpha",
+                    ]
+                )
+                target.possible_dora_scale_patterns.extend(
+                    Flux2LoRAMapping._dora_scale_patterns(lycoris_base, lora_unet_base)
+                )
 
     @staticmethod
     def _get_global_targets() -> list[LoRATarget]:
@@ -330,6 +367,31 @@ class Flux2LoRAMapping(LoRAMapping):
         ]
 
     @staticmethod
+    def _lokr_w1_patterns(*base_patterns: str) -> list[str]:
+        return [f"{base_pattern}.lokr_w1" for base_pattern in base_patterns]
+
+    @staticmethod
+    def _lokr_w2_patterns(*base_patterns: str) -> list[str]:
+        return [f"{base_pattern}.lokr_w2" for base_pattern in base_patterns]
+
+    @staticmethod
+    def _lycoris_to_lora_unet_base(lycoris_base: str) -> str:
+        if lycoris_base.startswith("lycoris__"):
+            return f"lora_unet_{lycoris_base[len('lycoris__') :]}"
+        if lycoris_base.startswith("lycoris_"):
+            return f"lora_unet_{lycoris_base[len('lycoris_') :]}"
+        return f"lora_unet_{lycoris_base}"
+
+    @staticmethod
+    def _dora_scale_patterns(*base_patterns: str) -> list[str]:
+        patterns: list[str] = []
+        for base_pattern in base_patterns:
+            patterns.append(f"{base_pattern}.dora_scale")
+            if base_pattern.startswith(("lycoris_", "lycoris__")):
+                patterns.append(f"{Flux2LoRAMapping._lycoris_to_lora_unet_base(base_pattern)}.dora_scale")
+        return patterns
+
+    @staticmethod
     def _get_double_stream_block_targets() -> list[LoRATarget]:
         return [
             LoRATarget(
@@ -363,7 +425,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.to_q.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.to_q.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_q.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_q.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.to_q",
+                    "transformer.transformer_blocks.{block}.attn.to_q",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_q",
+                    "lora_unet_transformer_blocks_{block}_attn_to_q",
+                    "lycoris_transformer_blocks_{block}_attn_to_q",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.to_q",
+                    "transformer.transformer_blocks.{block}.attn.to_q",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_q",
+                    "lora_unet_transformer_blocks_{block}_attn_to_q",
+                    "lycoris_transformer_blocks_{block}_attn_to_q",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_to_q",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_k",
@@ -396,7 +476,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.to_k.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.to_k.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_k.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_k.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.to_k",
+                    "transformer.transformer_blocks.{block}.attn.to_k",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_k",
+                    "lora_unet_transformer_blocks_{block}_attn_to_k",
+                    "lycoris_transformer_blocks_{block}_attn_to_k",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.to_k",
+                    "transformer.transformer_blocks.{block}.attn.to_k",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_k",
+                    "lora_unet_transformer_blocks_{block}_attn_to_k",
+                    "lycoris_transformer_blocks_{block}_attn_to_k",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_to_k",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_v",
@@ -429,7 +527,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.to_v.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.to_v.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_v.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_v.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.to_v",
+                    "transformer.transformer_blocks.{block}.attn.to_v",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_v",
+                    "lora_unet_transformer_blocks_{block}_attn_to_v",
+                    "lycoris_transformer_blocks_{block}_attn_to_v",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.to_v",
+                    "transformer.transformer_blocks.{block}.attn.to_v",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_v",
+                    "lora_unet_transformer_blocks_{block}_attn_to_v",
+                    "lycoris_transformer_blocks_{block}_attn_to_v",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_to_v",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_out",
@@ -486,7 +602,37 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.transformer_blocks.{block}.attn.to_out.0.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_out.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_out_0.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_out.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_out_0.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.to_out",
+                    "transformer_blocks.{block}.attn.to_out.0",
+                    "transformer.transformer_blocks.{block}.attn.to_out",
+                    "transformer.transformer_blocks.{block}.attn.to_out.0",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_out",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_out.0",
+                    "lora_unet_transformer_blocks_{block}_attn_to_out",
+                    "lora_unet_transformer_blocks_{block}_attn_to_out_0",
+                    "lycoris_transformer_blocks_{block}_attn_to_out",
+                    "lycoris_transformer_blocks_{block}_attn_to_out_0",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.to_out",
+                    "transformer_blocks.{block}.attn.to_out.0",
+                    "transformer.transformer_blocks.{block}.attn.to_out",
+                    "transformer.transformer_blocks.{block}.attn.to_out.0",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_out",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_out.0",
+                    "lora_unet_transformer_blocks_{block}_attn_to_out",
+                    "lora_unet_transformer_blocks_{block}_attn_to_out_0",
+                    "lycoris_transformer_blocks_{block}_attn_to_out",
+                    "lycoris_transformer_blocks_{block}_attn_to_out_0",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_to_out",
+                    "lycoris_transformer_blocks_{block}_attn_to_out_0",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.add_q_proj",
@@ -519,7 +665,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.add_q_proj.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.add_q_proj.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_add_q_proj.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_add_q_proj.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.add_q_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_q_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_q_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_q_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_q_proj",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.add_q_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_q_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_q_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_q_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_q_proj",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_add_q_proj",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.add_k_proj",
@@ -552,7 +716,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.add_k_proj.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.add_k_proj.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_add_k_proj.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_add_k_proj.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.add_k_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_k_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_k_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_k_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_k_proj",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.add_k_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_k_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_k_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_k_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_k_proj",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_add_k_proj",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.add_v_proj",
@@ -585,7 +767,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.add_v_proj.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.add_v_proj.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_add_v_proj.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_add_v_proj.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.add_v_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_v_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_v_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_v_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_v_proj",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.add_v_proj",
+                    "transformer.transformer_blocks.{block}.attn.add_v_proj",
+                    "diffusion_model.transformer_blocks.{block}.attn.add_v_proj",
+                    "lora_unet_transformer_blocks_{block}_attn_add_v_proj",
+                    "lycoris_transformer_blocks_{block}_attn_add_v_proj",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_add_v_proj",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_add_out",
@@ -618,7 +818,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.attn.to_add_out.alpha",
                     "diffusion_model.transformer_blocks.{block}.attn.to_add_out.alpha",
                     "lora_unet_transformer_blocks_{block}_attn_to_add_out.alpha",
+                    "lycoris_transformer_blocks_{block}_attn_to_add_out.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.attn.to_add_out",
+                    "transformer.transformer_blocks.{block}.attn.to_add_out",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_add_out",
+                    "lora_unet_transformer_blocks_{block}_attn_to_add_out",
+                    "lycoris_transformer_blocks_{block}_attn_to_add_out",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.attn.to_add_out",
+                    "transformer.transformer_blocks.{block}.attn.to_add_out",
+                    "diffusion_model.transformer_blocks.{block}.attn.to_add_out",
+                    "lora_unet_transformer_blocks_{block}_attn_to_add_out",
+                    "lycoris_transformer_blocks_{block}_attn_to_add_out",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_attn_to_add_out",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff.linear_in",
@@ -651,7 +869,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.ff.linear_in.alpha",
                     "diffusion_model.transformer_blocks.{block}.ff.linear_in.alpha",
                     "lora_unet_transformer_blocks_{block}_ff_linear_in.alpha",
+                    "lycoris_transformer_blocks_{block}_ff_linear_in.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.ff.linear_in",
+                    "transformer.transformer_blocks.{block}.ff.linear_in",
+                    "diffusion_model.transformer_blocks.{block}.ff.linear_in",
+                    "lora_unet_transformer_blocks_{block}_ff_linear_in",
+                    "lycoris_transformer_blocks_{block}_ff_linear_in",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.ff.linear_in",
+                    "transformer.transformer_blocks.{block}.ff.linear_in",
+                    "diffusion_model.transformer_blocks.{block}.ff.linear_in",
+                    "lora_unet_transformer_blocks_{block}_ff_linear_in",
+                    "lycoris_transformer_blocks_{block}_ff_linear_in",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_ff_linear_in",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff.linear_out",
@@ -684,7 +920,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.ff.linear_out.alpha",
                     "diffusion_model.transformer_blocks.{block}.ff.linear_out.alpha",
                     "lora_unet_transformer_blocks_{block}_ff_linear_out.alpha",
+                    "lycoris_transformer_blocks_{block}_ff_linear_out.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.ff.linear_out",
+                    "transformer.transformer_blocks.{block}.ff.linear_out",
+                    "diffusion_model.transformer_blocks.{block}.ff.linear_out",
+                    "lora_unet_transformer_blocks_{block}_ff_linear_out",
+                    "lycoris_transformer_blocks_{block}_ff_linear_out",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.ff.linear_out",
+                    "transformer.transformer_blocks.{block}.ff.linear_out",
+                    "diffusion_model.transformer_blocks.{block}.ff.linear_out",
+                    "lora_unet_transformer_blocks_{block}_ff_linear_out",
+                    "lycoris_transformer_blocks_{block}_ff_linear_out",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_ff_linear_out",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff_context.linear_in",
@@ -717,7 +971,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.ff_context.linear_in.alpha",
                     "diffusion_model.transformer_blocks.{block}.ff_context.linear_in.alpha",
                     "lora_unet_transformer_blocks_{block}_ff_context_linear_in.alpha",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_in.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.ff_context.linear_in",
+                    "transformer.transformer_blocks.{block}.ff_context.linear_in",
+                    "diffusion_model.transformer_blocks.{block}.ff_context.linear_in",
+                    "lora_unet_transformer_blocks_{block}_ff_context_linear_in",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_in",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.ff_context.linear_in",
+                    "transformer.transformer_blocks.{block}.ff_context.linear_in",
+                    "diffusion_model.transformer_blocks.{block}.ff_context.linear_in",
+                    "lora_unet_transformer_blocks_{block}_ff_context_linear_in",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_in",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_in",
+                ),
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff_context.linear_out",
@@ -750,7 +1022,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.transformer_blocks.{block}.ff_context.linear_out.alpha",
                     "diffusion_model.transformer_blocks.{block}.ff_context.linear_out.alpha",
                     "lora_unet_transformer_blocks_{block}_ff_context_linear_out.alpha",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_out.alpha",
                 ],
+                possible_lokr_w1_patterns=Flux2LoRAMapping._lokr_w1_patterns(
+                    "transformer_blocks.{block}.ff_context.linear_out",
+                    "transformer.transformer_blocks.{block}.ff_context.linear_out",
+                    "diffusion_model.transformer_blocks.{block}.ff_context.linear_out",
+                    "lora_unet_transformer_blocks_{block}_ff_context_linear_out",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_out",
+                ),
+                possible_lokr_w2_patterns=Flux2LoRAMapping._lokr_w2_patterns(
+                    "transformer_blocks.{block}.ff_context.linear_out",
+                    "transformer.transformer_blocks.{block}.ff_context.linear_out",
+                    "diffusion_model.transformer_blocks.{block}.ff_context.linear_out",
+                    "lora_unet_transformer_blocks_{block}_ff_context_linear_out",
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_out",
+                ),
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_transformer_blocks_{block}_ff_context_linear_out",
+                ),
             ),
         ]
 
@@ -788,7 +1078,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.alpha",
                     "diffusion_model.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.alpha",
                     "lora_unet_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.alpha",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w1",
+                    "transformer.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w1",
+                    "diffusion_model.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w1",
+                    "lora_unet_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.lokr_w1",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w2",
+                    "transformer.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w2",
+                    "diffusion_model.single_transformer_blocks.{block}.attn.to_qkv_mlp_proj.lokr_w2",
+                    "lora_unet_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.lokr_w2",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj.lokr_w2",
+                ],
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_single_transformer_blocks_{block}_attn_to_qkv_mlp_proj",
+                ),
             ),
             LoRATarget(
                 model_path="single_transformer_blocks.{block}.attn.to_out",
@@ -821,7 +1129,25 @@ class Flux2LoRAMapping(LoRAMapping):
                     "transformer.single_transformer_blocks.{block}.attn.to_out.alpha",
                     "diffusion_model.single_transformer_blocks.{block}.attn.to_out.alpha",
                     "lora_unet_single_transformer_blocks_{block}_attn_to_out.alpha",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_out.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "single_transformer_blocks.{block}.attn.to_out.lokr_w1",
+                    "transformer.single_transformer_blocks.{block}.attn.to_out.lokr_w1",
+                    "diffusion_model.single_transformer_blocks.{block}.attn.to_out.lokr_w1",
+                    "lora_unet_single_transformer_blocks_{block}_attn_to_out.lokr_w1",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_out.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "single_transformer_blocks.{block}.attn.to_out.lokr_w2",
+                    "transformer.single_transformer_blocks.{block}.attn.to_out.lokr_w2",
+                    "diffusion_model.single_transformer_blocks.{block}.attn.to_out.lokr_w2",
+                    "lora_unet_single_transformer_blocks_{block}_attn_to_out.lokr_w2",
+                    "lycoris_single_transformer_blocks_{block}_attn_to_out.lokr_w2",
+                ],
+                possible_dora_scale_patterns=Flux2LoRAMapping._dora_scale_patterns(
+                    "lycoris_single_transformer_blocks_{block}_attn_to_out",
+                ),
             ),
         ]
 
@@ -849,8 +1175,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.img_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.img_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_q_up,
                 down_transform=LoraTransforms.split_q_down,
+                lokr_w2_transform=LoraTransforms.split_q_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_k",
@@ -873,8 +1206,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.img_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.img_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_k_up,
                 down_transform=LoraTransforms.split_k_down,
+                lokr_w2_transform=LoraTransforms.split_k_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_v",
@@ -897,8 +1237,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.img_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.img_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_v_up,
                 down_transform=LoraTransforms.split_v_down,
+                lokr_w2_transform=LoraTransforms.split_v_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_out",
@@ -920,6 +1267,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "lora_unet_double_blocks_{block}_img_attn_proj.alpha",
                     "diffusion_model.double_blocks.{block}.img_attn.proj.alpha",
                     "base_model.model.double_blocks.{block}.img_attn.proj.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.proj.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_attn.proj.lokr_w2",
                 ],
             ),
             LoRATarget(
@@ -943,8 +1296,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.txt_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.txt_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_q_up,
                 down_transform=LoraTransforms.split_q_down,
+                lokr_w2_transform=LoraTransforms.split_q_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.add_k_proj",
@@ -967,8 +1327,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.txt_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.txt_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_k_up,
                 down_transform=LoraTransforms.split_k_down,
+                lokr_w2_transform=LoraTransforms.split_k_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.add_v_proj",
@@ -991,8 +1358,15 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.txt_attn.qkv.alpha",
                     "base_model.model.double_blocks.{block}.txt_attn.qkv.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.qkv.lokr_w2",
+                ],
                 up_transform=LoraTransforms.split_v_up,
                 down_transform=LoraTransforms.split_v_down,
+                lokr_w2_transform=LoraTransforms.split_v_up,
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.attn.to_add_out",
@@ -1014,6 +1388,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "lora_unet_double_blocks_{block}_txt_attn_proj.alpha",
                     "diffusion_model.double_blocks.{block}.txt_attn.proj.alpha",
                     "base_model.model.double_blocks.{block}.txt_attn.proj.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.proj.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_attn.proj.lokr_w2",
                 ],
             ),
             LoRATarget(
@@ -1037,6 +1417,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.img_mlp.0.alpha",
                     "base_model.model.double_blocks.{block}.img_mlp.0.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_mlp.0.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_mlp.0.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff.linear_out",
@@ -1058,6 +1444,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "lora_unet_double_blocks_{block}_img_mlp_2.alpha",
                     "diffusion_model.double_blocks.{block}.img_mlp.2.alpha",
                     "base_model.model.double_blocks.{block}.img_mlp.2.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_mlp.2.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.img_mlp.2.lokr_w2",
                 ],
             ),
             LoRATarget(
@@ -1081,6 +1473,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.double_blocks.{block}.txt_mlp.0.alpha",
                     "base_model.model.double_blocks.{block}.txt_mlp.0.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_mlp.0.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_mlp.0.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="transformer_blocks.{block}.ff_context.linear_out",
@@ -1102,6 +1500,12 @@ class Flux2LoRAMapping(LoRAMapping):
                     "lora_unet_double_blocks_{block}_txt_mlp_2.alpha",
                     "diffusion_model.double_blocks.{block}.txt_mlp.2.alpha",
                     "base_model.model.double_blocks.{block}.txt_mlp.2.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_mlp.2.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.double_blocks.{block}.txt_mlp.2.lokr_w2",
                 ],
             ),
         ]
@@ -1131,6 +1535,14 @@ class Flux2LoRAMapping(LoRAMapping):
                     "diffusion_model.single_blocks.{block}.linear1.alpha",
                     "base_model.model.single_blocks.{block}.linear1.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.single_blocks.{block}.linear1.lokr_w1",
+                    "base_model.model.single_blocks.{block}.linear1.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.single_blocks.{block}.linear1.lokr_w2",
+                    "base_model.model.single_blocks.{block}.linear1.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="single_transformer_blocks.{block}.attn.to_out",
@@ -1152,6 +1564,14 @@ class Flux2LoRAMapping(LoRAMapping):
                     "lora_unet_single_blocks_{block}_linear2.alpha",
                     "diffusion_model.single_blocks.{block}.linear2.alpha",
                     "base_model.model.single_blocks.{block}.linear2.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "diffusion_model.single_blocks.{block}.linear2.lokr_w1",
+                    "base_model.model.single_blocks.{block}.linear2.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "diffusion_model.single_blocks.{block}.linear2.lokr_w2",
+                    "base_model.model.single_blocks.{block}.linear2.lokr_w2",
                 ],
             ),
         ]

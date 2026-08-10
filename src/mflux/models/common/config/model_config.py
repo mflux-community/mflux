@@ -501,8 +501,8 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image": ModelConfig(
         priority=15,
-        aliases=["qwen-image", "qwen"],
-        model_name="Qwen/Qwen-Image",
+        aliases=["qwen-image", "qwen", "qwen-image-2512", "qwen-2512"],
+        model_name="Qwen/Qwen-Image-2512",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -516,8 +516,15 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image-edit": ModelConfig(
         priority=16,
-        aliases=["qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509"],
-        model_name="Qwen/Qwen-Image-Edit-2509",
+        aliases=[
+            "qwen-image-edit",
+            "qwen-edit",
+            "qwen-edit-plus",
+            "qwen-edit-2509",
+            "qwen-edit-2511",
+            "qwen-image-edit-2511",
+        ],
+        model_name="Qwen/Qwen-Image-Edit-2511",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,

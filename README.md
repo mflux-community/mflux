@@ -136,7 +136,7 @@ MFLUX supports the following model families. They have different strengths and w
 
 **General**
 - Quantization and local model loading
-- LoRA support (multi-LoRA, scales, library lookup)
+- LoRA support (multi-LoRA, scales, library lookup), including LyCORIS LoKr on FLUX.1 and FLUX.2
 - Metadata export + reuse, plus prompt file support
 
 **Model-specific highlights**
@@ -160,6 +160,7 @@ See the [common README](src/mflux/models/common/README.md) for detailed usage an
 ### 🌱 Related projects
 
 - [MindCraft Studio](https://themindstudio.cc/mindcraft#models) — macOS app built on mflux by [@shaoju](https://github.com/shaoju)
+- [mflux-paint](https://github.com/Amo643/mflux-paint) — native macOS inpaint/edit app (pywebview), 16 models across edit/inpaint/text-to-image, mask painting, multi-seed batch, by [@Amo643](https://github.com/Amo643)
 - [Mflux-ComfyUI](https://github.com/raysers/Mflux-ComfyUI) by [@raysers](https://github.com/raysers)
 - [MFLUX-WEBUI](https://github.com/CharafChnioune/MFLUX-WEBUI) by [@CharafChnioune](https://github.com/CharafChnioune)
 - [mflux-fasthtml](https://github.com/anthonywu/mflux-fasthtml) by [@anthonywu](https://github.com/anthonywu)

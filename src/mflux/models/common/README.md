@@ -213,6 +213,8 @@ image.save("prompt_file.png")
 
 ## LoRA basics
 
+By default, LoRA and LoKr weights are **baked** into the base model after load (one-time merge) so inference uses a single matmul per layer. With `--quantize`, adapters are merged into dequantized weights and the result is re-quantized (same as baking into a dense model, then quantizing that layer). Use `--no-bake-lora` to keep runtime adapter layers (for example if you change scales programmatically without reloading).
+
 ```sh
 mflux-generate-z-image-turbo \
   --model z-image-turbo \
@@ -233,6 +235,7 @@ model = ZImageTurbo(
     model_config=ModelConfig.z_image_turbo(),
     lora_paths=["/local/path/to/lora.safetensors"],
     lora_scales=[0.8],
+    bake_lora=True,
 )
 image = model.generate_image(
     seed=42,
@@ -277,6 +280,21 @@ image.save("portrait_hf_lora.png")
 </details>
 
 For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames.
+
+### LyCORIS LoKr (FLUX.1 and FLUX.2)
+
+LyCORIS LoKr safetensors use the same `--lora-paths` / `lora_scales` API as classic LoRA. mflux accepts direct `lokr_w1` / `lokr_w2` tensors, factorized `lokr_w1_a` / `lokr_w1_b` (and `lokr_w2_*`, optional `lokr_t2`), optional `dora_scale`, and common ComfyUI / SimpleTuner key prefixes (`lycoris_*`, `lora_unet_*`, `diffusion_model.*`).
+
+```sh
+mflux-generate-flux2 \
+  --model flux2-klein-9b \
+  --prompt "a portrait" \
+  --steps 4 \
+  --lora-paths "/path/to/lycoris-lokr.safetensors" \
+  --lora-scales 1.0
+```
+
+FLUX.1 uses `mflux-generate` with `--model dev` (or `schnell` / `krea-dev`) and the same LoKr flags.
 
 ---
 

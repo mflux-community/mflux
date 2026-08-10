@@ -3,7 +3,7 @@ This directory contains MFLUX's MLX implementation of **FLUX.2**.
 
 MFLUX supports [FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B), [FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B), and [FLUX.2-klein-9b-kv](https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-kv) from Black Forest Labs, released in January 2026. FLUX.2 Klein is a fast, efficient image generation model available in 4B and 9B parameter variants. The 4B model delivers high-quality images in just 4 steps, making it one of the fastest open-source models available.
 
-All the standard modes such as img2img, LoRA and quantizations are supported for this model. FLUX.2 also supports image-conditioned editing with multi-image support.
+All the standard modes such as img2img, LoRA, LyCORIS LoKr, and quantizations are supported for this model. FLUX.2 also supports image-conditioned editing with multi-image support.
 
 ![FLUX.2 Klein Example](../../assets/flux2_klein.jpg)
 
@@ -168,4 +168,3 @@ mflux-train --config /path/to/train.json
 
 ### Edit fine-tuning (image-conditioned)
  The config looks identical for edit-based training and only differs in how the training data is prepared and named. For edit-style training (image in + prompt → image out), use auto-discovery with paired `*_out.*` and `*_in.*` files plus `*_in.txt` prompts, see the [training docs](../common/README.md#training-lora) for examples. Edit training is supported for Flux2 Klein base models. Preview prompts come from `data/preview*.txt` and the preview images are `data/preview*.{png,jpg,jpeg,webp}`.
-

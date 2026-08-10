@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.variants import Flux2KleinEdit
@@ -42,8 +42,7 @@ def main():
         model_config=model_config,
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     memory_saver = CallbackManager.register_callbacks(
