@@ -377,9 +377,9 @@ class Flux2LoRAMapping(LoRAMapping):
     @staticmethod
     def _lycoris_to_lora_unet_base(lycoris_base: str) -> str:
         if lycoris_base.startswith("lycoris__"):
-            return f"lora_unet_{lycoris_base[len('lycoris__'):]}"
+            return f"lora_unet_{lycoris_base[len('lycoris__') :]}"
         if lycoris_base.startswith("lycoris_"):
-            return f"lora_unet_{lycoris_base[len('lycoris_'):]}"
+            return f"lora_unet_{lycoris_base[len('lycoris_') :]}"
         return f"lora_unet_{lycoris_base}"
 
     @staticmethod

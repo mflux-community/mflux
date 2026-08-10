@@ -404,7 +404,9 @@ class LoRALoader:
 
         effective_scale = scale * alpha_scale
 
-        if not hasattr(current_module, "weight") and not isinstance(current_module, (LoRALinear, FusedLoRALinear, LoKrLinear)):
+        if not hasattr(current_module, "weight") and not isinstance(
+            current_module, (LoRALinear, FusedLoRALinear, LoKrLinear)
+        ):
             print(f"❌ Target layer {target_path} is not a linear layer")
             return False
 
