@@ -240,8 +240,9 @@ class GeneratedImage:
             "redux_image_strengths": self._format_redux_strengths(),
             "prompt": self.prompt,
             "negative_prompt": self.negative_prompt if self.negative_prompt else None,
-            "pid_decode": self.pid_decode,
-            "pid_degrade_sigma": self.pid_degrade_sigma if self.pid_decode else None,
+            # Only a PiD run carries these: every other command shares this method and must not
+            # gain keys for a flag it doesn't have.
+            **({"pid_decode": True, "pid_degrade_sigma": self.pid_degrade_sigma} if self.pid_decode else {}),
         }
 
         # If we have initial metadata from a source image, merge it

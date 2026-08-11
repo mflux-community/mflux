@@ -91,7 +91,7 @@ def test_pid_decode_and_resize_round_trip_through_metadata(tmp_path):
     assert metadata["pid_degrade_sigma"] == 0.2
 
 
-def test_pid_flags_are_null_in_metadata_without_pid_decode(tmp_path):
+def test_pid_flags_are_absent_from_metadata_without_pid_decode(tmp_path):
     output_path = tmp_path / "no_pid_output.png"
     generated_image = GeneratedImage(
         image=Image.new("RGB", (16, 16), "white"),
@@ -110,8 +110,8 @@ def test_pid_flags_are_null_in_metadata_without_pid_decode(tmp_path):
     generated_image.save(path=output_path, overwrite=True, export_json_metadata=True)
 
     metadata = json.loads(output_path.with_suffix(".metadata.json").read_text())
-    assert metadata["pid_decode"] is False
-    assert metadata["pid_degrade_sigma"] is None
+    assert "pid_decode" not in metadata
+    assert "pid_degrade_sigma" not in metadata
 
 
 def test_fibo_edit_save_keeps_prompt_json_and_exports_metadata_separately(tmp_path):

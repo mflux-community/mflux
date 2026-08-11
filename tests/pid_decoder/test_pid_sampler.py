@@ -52,3 +52,28 @@ def test_sample_different_seeds_produce_different_output():
     out_seed1 = sample(net, caption_embs, lq_latent, sigma, target_h=16, target_w=16, seed=1)
     out_seed2 = sample(net, caption_embs, lq_latent, sigma, target_h=16, target_w=16, seed=2)
     assert not mx.array_equal(out_seed1, out_seed2)
+
+
+def test_sample_does_not_disturb_the_global_rng_stream():
+    # The sampler threads explicit keys, so a decode must leave the process-global
+    # stream where it found it: anything drawing unkeyed afterwards has to see the
+    # same values whether or not PiD ran.
+    def stub_net(x, t, caption_embs, lq_latent, sigma):
+        return mx.zeros(x.shape)
+
+    mx.random.seed(123)
+    expected = mx.random.normal((8,))
+
+    mx.random.seed(123)
+    sample(
+        stub_net,
+        mx.zeros((1, 6, 16)),
+        mx.zeros((1, 4, 4, 4)),
+        mx.array(0.0),
+        target_h=16,
+        target_w=16,
+        seed=999,
+    )
+    after = mx.random.normal((8,))
+
+    assert mx.array_equal(expected, after)
