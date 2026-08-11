@@ -337,7 +337,14 @@ mflux-generate-ideogram4 --model-path ideogram-4-mflux-q4 --prompt-file caption.
 | `-q 8` | 26 GB |
 | `-q 4` | 14 GB |
 
-Quantizing loads the FP8 checkpoint once. Measured on an M5 Pro, the 8-bit save peaked at 28.7 GB resident and took 34 s — MLX releases the FP8 weights as the graph evaluates, so peak stays well below the sum of both copies.
+Quantizing loads the FP8 checkpoint once. Measured on an M5 Pro / 64 GB (peak RSS in decimal GB):
+
+| | Peak resident | Wall time |
+| --- | --- | --- |
+| `-q 8` | 28.7 GB | 34 s |
+| `-q 4` | 22.0 GB | 32 s |
+
+MLX releases the FP8 weights as the graph evaluates, so peak stays below the sum of both copies and tracks the size of what is being written rather than the size of the source.
 
 Both levels are visually indistinguishable from FP8 side by side. They are not numerically identical, and the gap is larger than the pixel counts suggest at first glance: measured against an FP8 baseline generated on the same machine, 5.9% (`-q 8`) and 38.1% (`-q 4`) of subpixels differ on a photographic caption, 29.2% and 65.6% on a typographic one. Diffusion is chaotic, so a small weight perturbation moves discrete decisions — where a glyph lands, how an edge resolves — and the result is displacement rather than damage. Treat those percentages as change detection, not as a quality score.
 
