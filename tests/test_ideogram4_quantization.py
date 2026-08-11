@@ -100,6 +100,35 @@ def test_transformers_and_text_encoder_are_quantizable():
 
 @pytest.mark.fast
 @pytest.mark.parametrize("bits", [8, 4])
+def test_rebuild_keeps_embeddings_as_embeddings(bits: int):
+    # A quantized embedding stores the same three tensors as a quantized linear, so the
+    # payload alone cannot distinguish them. Rebuilding the transformer's image-indicator
+    # embedding as a linear turns its lookup into a matmul against token indices and dies
+    # on the first forward with a shape error.
+    mx.random.seed(0)
+    num_embeddings, dims = 2, 256
+
+    class Holder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embed_image_indicator = nn.Embedding(num_embeddings, dims)
+
+    stored = nn.Embedding(num_embeddings, dims).to_quantized(group_size=64, bits=bits)
+    tree = {"embed_image_indicator": dict(stored.parameters())}
+
+    holder = Holder()
+    Ideogram4Initializer._rebuild_q8_folded_layers(holder, tree)
+
+    assert isinstance(holder.embed_image_indicator, nn.QuantizedEmbedding)
+    assert holder.embed_image_indicator.bits == bits
+    holder.update(tree, strict=True)
+
+    indices = mx.array([0, 1, 1, 0], dtype=mx.int32)
+    assert mx.allclose(holder.embed_image_indicator(indices), stored(indices), atol=1e-4, rtol=1e-3)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("bits", [8, 4])
 def test_rebuild_matches_the_stored_bit_width(bits: int):
     # A q4 save packs twice as many weights per uint32 as a q8 one. Rebuilding at a
     # hard-coded 8 bits would size the layer wrongly and update() would skip it.
