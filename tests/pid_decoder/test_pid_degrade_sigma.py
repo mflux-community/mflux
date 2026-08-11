@@ -42,6 +42,29 @@ def test_pid_decode_latents_rejects_degrade_sigma_out_of_range():
         pid_decode_latents(vae=object(), latent=mx.zeros((1, 4, 4, 4)), caption="x", seed=0, degrade_sigma=-0.1)
 
 
+def test_decode_rejects_degrade_sigma_out_of_range():
+    # decode() is public, so the range check cannot live only in pid_decode_latents: a direct
+    # call would otherwise noise the latent past the distribution the LQ gate was distilled on
+    # and report that same out-of-range sigma to the gate.
+    decoder = _tiny_decoder()
+    latent = mx.zeros((1, 4, 4, 4))
+    with pytest.raises(ValueError, match="pid_degrade_sigma"):
+        decoder.decode(latent, caption="x", seed=0, degrade_sigma=0.9)
+    with pytest.raises(ValueError, match="pid_degrade_sigma"):
+        decoder.decode(latent, caption="x", seed=0, degrade_sigma=-0.1)
+
+
+@pytest.mark.parametrize("bad_sigma", [None, "0.2", True])
+def test_degrade_sigma_rejects_non_numeric_values(bad_sigma):
+    # A sidecar from a non-PiD run stores `"pid_degrade_sigma": null`, so None can reach this
+    # boundary from metadata rather than from a caller. Report it as a ValueError naming the
+    # option, not as a bare TypeError out of the range comparison.
+    with pytest.raises(ValueError, match="pid_degrade_sigma"):
+        pid_decode_latents(vae=object(), latent=mx.zeros((1, 4, 4, 4)), caption="x", seed=0, degrade_sigma=bad_sigma)
+    with pytest.raises(ValueError, match="pid_degrade_sigma"):
+        _tiny_decoder().decode(mx.zeros((1, 4, 4, 4)), caption="x", seed=0, degrade_sigma=bad_sigma)
+
+
 def test_max_degrade_sigma_matches_pid_training_distribution():
     # PiD's LQ gate was distilled on latents noised at sigma ~ U[0.0, 0.8] -- this bound is
     # load-bearing, not decorative, so pin it against silent drift.

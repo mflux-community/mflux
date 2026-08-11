@@ -503,7 +503,16 @@ def convert_checkpoint(pth_path: str) -> dict[str, mx.array]:
 
     weights: dict[str, mx.array] = {}
     for key, tensor in state_dict.items():
-        target = PID_WEIGHT_MAPPING[key]
+        # _assert_full_weight_coverage catches the opposite direction (a PidNet parameter that
+        # got no value). This is the checkpoint-side half: a key the mapping has never heard of
+        # means the file is not one of the wired variants, which is worth saying out loud rather
+        # than surfacing as a bare KeyError from a dict lookup.
+        target = PID_WEIGHT_MAPPING.get(key)
+        if target is None:
+            raise ValueError(
+                f"{pth_path}: checkpoint key '{key}' has no PidNet mapping. This file is not one of "
+                f"the wired 'v1pt5 res2kto4k' checkpoints -- see PID_CHECKPOINT_VARIANTS."
+            )
         array = _to_mx_array(tensor)
         weights[target] = WeightTransforms.transpose_conv2d_weight(array)
     return weights

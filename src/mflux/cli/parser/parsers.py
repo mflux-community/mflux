@@ -393,7 +393,12 @@ class CommandLineParser(argparse.ArgumentParser):
 
 
             if hasattr(namespace, "pid_degrade_sigma") and not self._option_was_provided("--pid-degrade-sigma"):
-                namespace.pid_degrade_sigma = prior_gen_metadata.get("pid_degrade_sigma", 0.0)
+                # A non-PiD generation still writes the key, as an explicit null (see
+                # GeneratedImage._get_metadata), so `.get(..., 0.0)` returns None rather than the
+                # default. Normalize it, or `--config-from-metadata <plain sidecar> --pid-decode`
+                # hands None to the decoder's float-only sigma range check.
+                metadata_sigma = prior_gen_metadata.get("pid_degrade_sigma")
+                namespace.pid_degrade_sigma = 0.0 if metadata_sigma is None else metadata_sigma
 
         # Only require model if we're not in training mode and require_model_arg is True
         if hasattr(namespace, "model") and namespace.model is None and not has_training_args and self.require_model_arg:

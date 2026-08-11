@@ -52,6 +52,7 @@ class PidNet(nn.Module):
         self.num_groups = num_groups
         self.patch_depth = patch_depth
         self.txt_max_length = txt_max_length
+        self.in_channels = in_channels
         self.out_channels = in_channels
         self.use_text_rope = use_text_rope
         self.text_rope_theta = text_rope_theta
@@ -119,11 +120,14 @@ class PidNet(nn.Module):
             pit_lq_feature = lq_features[self.num_lq_outputs]
             lq_features = lq_features[: self.num_lq_outputs]
 
-        # Patchify: [B, 3, H, W] -> [B, L, patch_size^2 * 3] to match PyTorch's
+        # Patchify: [B, C, H, W] -> [B, L, patch_size^2 * C] to match PyTorch's
         # `F.unfold(x, patch_size, stride=patch_size).transpose(1, 2)` channel-major
         # patch layout (channel varies fastest within a patch's flattened vector).
-        x_patches = x.reshape(B, 3, Hs, self.patch_size, Ws, self.patch_size)
-        x_patches = x_patches.transpose(0, 2, 4, 1, 3, 5).reshape(B, L, 3 * self.patch_size * self.patch_size)
+        # C is in_channels (3 for every wired variant) rather than a literal, so this stays in
+        # step with s_embedder, which is sized in_channels * patch_size**2.
+        C = self.in_channels
+        x_patches = x.reshape(B, C, Hs, self.patch_size, Ws, self.patch_size)
+        x_patches = x_patches.transpose(0, 2, 4, 1, 3, 5).reshape(B, L, C * self.patch_size * self.patch_size)
 
         t_emb = self.t_embedder(t).reshape(B, 1, self.hidden_size)
         condition = nn.silu(t_emb)

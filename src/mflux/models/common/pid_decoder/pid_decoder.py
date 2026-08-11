@@ -109,8 +109,8 @@ def pid_decode_latents(
     Cached across calls (and across model instances) because loading costs ~8GB of downloads;
     the base pipeline's MLX buffers are released first, since PidNet's working set is much
     larger than the diffusion loop's."""
-    if not 0.0 <= degrade_sigma <= PID_MAX_DEGRADE_SIGMA:
-        raise ValueError(f"pid_degrade_sigma must be between 0.0 and {PID_MAX_DEGRADE_SIGMA}, got {degrade_sigma}")
+    # Checked here as well as in decode() so the failure lands before the ~8GB load, not after.
+    _validate_degrade_sigma(degrade_sigma)
     variant = getattr(vae, "pid_variant", None)
     if variant is None:
         raise ValueError(
@@ -121,6 +121,16 @@ def pid_decode_latents(
     mx.clear_cache()
     decoder = _load_decoder(variant)
     return decoder.decode(latent=latent, caption=caption, seed=seed, degrade_sigma=degrade_sigma)
+
+
+def _validate_degrade_sigma(degrade_sigma: float) -> None:
+    """Reject anything PidNet's LQ gate was not distilled against. Rejects non-numerics
+    explicitly rather than letting the comparison raise a bare TypeError, since the value can
+    arrive from a metadata sidecar (`--config-from-metadata`) and not just from a caller."""
+    if isinstance(degrade_sigma, bool) or not isinstance(degrade_sigma, (int, float)):
+        raise ValueError(f"pid_degrade_sigma must be a number, got {degrade_sigma!r}")
+    if not 0.0 <= degrade_sigma <= PID_MAX_DEGRADE_SIGMA:
+        raise ValueError(f"pid_degrade_sigma must be between 0.0 and {PID_MAX_DEGRADE_SIGMA}, got {degrade_sigma}")
 
 
 def _assert_full_weight_coverage(module: nn.Module, supplied: dict, label: str) -> None:
@@ -167,6 +177,7 @@ class PidDecoder:
         trained on the most, which is also why a clean latent can read as over-textured (e.g.
         invented skin detail) -- both halves have to move together, so we noise the latent by
         exactly the sigma we report, rather than merely relabeling a clean one."""
+        _validate_degrade_sigma(degrade_sigma)
         expected_channels = self.pid_net.lq_proj.latent_channels
         if latent.shape[1] != expected_channels:
             raise ValueError(f"pid decode: latent has {latent.shape[1]} channels, expected {expected_channels}")

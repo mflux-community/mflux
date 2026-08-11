@@ -667,6 +667,7 @@ def test_image_outpaint_args(mflux_generate_parser, mflux_generate_minimal_argv,
         assert args.image_outpaint_padding == BoxValues("10%", 50, "20%", 50)
 
 
+@pytest.mark.fast
 def test_pid_decode_args_restore_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
     metadata_file = temp_dir / "pid_decode.json"
     with metadata_file.open("wt") as m:
@@ -695,6 +696,7 @@ def test_pid_decode_args_restore_from_metadata(mflux_generate_pid_parser, mflux_
         assert args.pid_decode is True
 
 
+@pytest.mark.fast
 def test_pid_degrade_sigma_arg_restores_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
     metadata_file = temp_dir / "pid_degrade_sigma.json"
     with metadata_file.open("wt") as m:
@@ -720,6 +722,32 @@ def test_pid_degrade_sigma_arg_restores_from_metadata(mflux_generate_pid_parser,
     ):
         args = mflux_generate_pid_parser.parse_args()
         assert args.pid_degrade_sigma == 0.5
+
+
+@pytest.mark.fast
+def test_pid_degrade_sigma_normalizes_null_from_a_non_pid_sidecar(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    # Every non-PiD generation writes `"pid_degrade_sigma": null` (GeneratedImage._get_metadata
+    # emits the sigma only when pid_decode is set). The key is therefore present, so a
+    # `.get(key, 0.0)` returns None rather than the default -- and "re-run this old image through
+    # PiD" used to hand None to the decoder's float-only range check.
+    metadata_file = temp_dir / "non_pid_sidecar.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = False
+        base_metadata_dict["pid_degrade_sigma"] = None
+        json.dump(base_metadata_dict, m, indent=4)
+
+    with patch(
+        "sys.argv", mflux_generate_minimal_argv + ["--pid-decode", "--config-from-metadata", metadata_file.as_posix()]
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+        assert args.pid_degrade_sigma == 0.0
+
+    # and without --pid-decode, the null still must not leak through as None
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is False
+        assert args.pid_degrade_sigma == 0.0
 
 
 @pytest.mark.fast

@@ -1,8 +1,10 @@
 import mlx.core as mx
+import pytest
+import torch
 
 from mflux.models.common.pid_decoder.gemma2.gemma2_config import Gemma2Config
 from mflux.models.common.pid_decoder.gemma2.gemma2_model import Gemma2Model
-from mflux.models.common.pid_decoder.pid_weight_mapping import PID_WEIGHT_MAPPING
+from mflux.models.common.pid_decoder.pid_weight_mapping import PID_WEIGHT_MAPPING, convert_checkpoint
 from mflux.models.common.pid_decoder.pixdit.pixdit_network import PidNet
 
 
@@ -80,3 +82,14 @@ def test_every_mapped_target_resolves_to_a_real_parameter():
 def test_mapping_has_no_duplicate_targets():
     targets = list(PID_WEIGHT_MAPPING.values())
     assert len(targets) == len(set(targets)), "PID_WEIGHT_MAPPING has colliding target paths"
+
+
+def test_convert_checkpoint_names_unmapped_keys_instead_of_raising_keyerror(tmp_path):
+    # _resolve_pid_checkpoint accepts a local file, so a user can point PiD at a checkpoint that
+    # is not one of the wired v1pt5 res2kto4k variants. convert_checkpoint runs outside
+    # _load_or_raise_friendly, so without this the failure is a bare KeyError naming one tensor.
+    pth = tmp_path / "not_a_wired_variant.pth"
+    torch.save({"net.some_unmapped_key": torch.zeros(2, 2)}, pth)
+
+    with pytest.raises(ValueError, match="has no PidNet mapping"):
+        convert_checkpoint(str(pth))
