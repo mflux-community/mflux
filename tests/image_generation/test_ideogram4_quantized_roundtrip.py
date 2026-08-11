@@ -188,8 +188,20 @@ def _destination(tmp_path_factory, label: str) -> Path:
     return tmp_path_factory.mktemp(f"ideogram4_{label}")
 
 
+def _configured_checkpoints() -> dict[int, str]:
+    """The saved checkpoints actually present on this machine."""
+    return {bits: path for bits, path in CHECKPOINTS.items() if path and Path(path).exists()}
+
+
 @pytest.fixture(scope="module")
 def fp8_baselines(tmp_path_factory) -> dict[str, list[Path]]:
+    # Nothing here means anything without a quantized checkpoint to compare against, and
+    # building these baselines costs a 26 GB model load — a download, on a machine that
+    # has never pulled the gated weights. Skip before paying it, so the module honours
+    # the contract in its docstring rather than skipping only the comparisons.
+    if not _configured_checkpoints():
+        pytest.skip("no saved Ideogram 4 checkpoint configured; see this module's docstring")
+
     # Twice per case: the first is the baseline every quantized run is measured against,
     # the second establishes the noise floor that makes those measurements mean anything.
     return _generate_all(None, _destination(tmp_path_factory, "fp8"), repeats=2)
@@ -197,12 +209,10 @@ def fp8_baselines(tmp_path_factory) -> dict[str, list[Path]]:
 
 @pytest.fixture(scope="module")
 def quantized_outputs(tmp_path_factory) -> dict[int, dict[str, list[Path]]]:
-    outputs: dict[int, dict[str, list[Path]]] = {}
-    for bits, path in CHECKPOINTS.items():
-        if not path or not Path(path).exists():
-            continue
-        outputs[bits] = _generate_all(path, _destination(tmp_path_factory, f"q{bits}"))
-    return outputs
+    return {
+        bits: _generate_all(path, _destination(tmp_path_factory, f"q{bits}"))
+        for bits, path in _configured_checkpoints().items()
+    }
 
 
 def _edge_energy(path: Path) -> float:
