@@ -89,13 +89,19 @@ class Ideogram4Initializer:
 
     @staticmethod
     def _rebuild_q8_folded_layers(module, tree) -> None:
-        """A native save can hold layers folded to MLX q8: baking a LoRA over an fp8 base
-        (LoRASaver.bake_and_strip_lora) dequantizes and requantizes the merged weight to
-        q8, so the checkpoint stores a packed 'weight' plus 'scales'/'biases'. Fp8Linear
-        cannot hold those tensors and update(strict=False) skips them silently, failing at
-        the first forward. Rebuild any such layer as QuantizedLinear before the update, so
-        mixed fp8/q8 checkpoints load. Original fp8 checkpoints carry 'weight_scale'
-        instead of 'scales'/'biases' and are left untouched."""
+        """A native save can hold layers folded to an MLX quantized form: baking a LoRA
+        over an fp8 base (LoRASaver.bake_and_strip_lora) dequantizes and requantizes the
+        merged weight, and `mflux-save -q` quantizes every layer outright, so the
+        checkpoint stores a packed 'weight' plus 'scales'/'biases'. Fp8Linear cannot hold
+        those tensors and update(strict=False) skips them silently, failing at the first
+        forward. Rebuild any such layer as QuantizedLinear before the update, so both
+        mixed fp8/quantized and fully quantized checkpoints load. Original fp8 checkpoints
+        carry 'weight_scale' instead of 'scales'/'biases' and are left untouched.
+
+        Bits and group size are derived from the stored shapes rather than assumed: a
+        4-bit save packs twice as many weights into each uint32 as an 8-bit one, so
+        hard-coding q8 here would rebuild a q4 checkpoint at the wrong width and the
+        update would skip every layer it touched."""
         from mlx import nn as _nn
 
         if isinstance(tree, list):
@@ -121,16 +127,39 @@ class Ideogram4Initializer:
                 and "weight" in sub
                 and not isinstance(child, _nn.QuantizedLinear)
             ):
-                scales = sub["scales"]
-                output_dims = scales.shape[0]
-                input_dims = scales.shape[1] * 64
-                replacement = _nn.QuantizedLinear(input_dims, output_dims, bias="bias" in sub, group_size=64, bits=8)
+                output_dims, group_size, bits = Ideogram4Initializer._infer_quantization(child, sub)
+                input_dims = sub["scales"].shape[1] * group_size
+                replacement = _nn.QuantizedLinear(
+                    input_dims,
+                    output_dims,
+                    bias="bias" in sub,
+                    group_size=group_size,
+                    bits=bits,
+                )
                 if isinstance(module, dict):
                     module[key] = replacement
                 else:
                     setattr(module, key, replacement)
             else:
                 Ideogram4Initializer._rebuild_q8_folded_layers(child, sub)
+
+    @staticmethod
+    def _infer_quantization(child, sub) -> tuple[int, int, int]:
+        """Recover (output_dims, group_size, bits) from a stored quantized layer.
+
+        `scales` is (output_dims, num_groups) and the packed `weight` is
+        (output_dims, input_dims * bits // 32), so once input_dims is known both the group
+        size and the bit width follow. The layer being replaced is the authority on
+        input_dims; fall back to MLX's default group size when it cannot say.
+        """
+        scales = sub["scales"]
+        output_dims, num_groups = scales.shape[0], scales.shape[1]
+        input_dims = getattr(child, "in_features", None)
+        if not isinstance(input_dims, int) or input_dims <= 0:
+            input_dims = num_groups * 64
+        group_size = input_dims // num_groups
+        bits = (sub["weight"].shape[-1] * 32) // input_dims
+        return output_dims, group_size, bits
 
     @staticmethod
     def _apply_weights(model, weights: LoadedWeights, quantize: int | None) -> None:
