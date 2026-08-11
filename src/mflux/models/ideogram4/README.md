@@ -299,7 +299,47 @@ image.save("ideogram4.png")
 </details>
 
 > [!WARNING]
-> Ideogram 4 requires downloading gated model weights from Hugging Face (~28 GB on disk for the FP8 checkpoint). Access must be approved on the model card before the first download.
+> Ideogram 4 weights are **gated** on Hugging Face (~28 GB on disk for the FP8 checkpoint). Two separate steps are needed before the first download, and doing only the first is the common mistake:
+>
+> 1. Request access on the [model card](https://huggingface.co/ideogram-ai/ideogram-4-fp8) and wait for approval.
+> 2. Authenticate locally — either export a token that has access:
+>
+>    ```sh
+>    export HF_TOKEN=hf_...
+>    ```
+>
+>    or log in once and let `huggingface_hub` store it:
+>
+>    ```sh
+>    hf auth login
+>    ```
+>
+> mflux downloads through `huggingface_hub` and passes no token of its own, so it picks up whichever of those is present. Without one, an approved account still fails: the Hub answers with a `401`/`403` for the repo rather than anything that mentions access.
+
+## Quantization
+
+Ideogram 4 ships in an FP8 weight layout. `mflux-save` converts it to MLX affine quantization, which shrinks the checkpoint and removes the FP8 dequantization step from every forward:
+
+```sh
+mflux-save --model ideogram-4-fp8 -q 8 --path ideogram-4-mflux-q8
+mflux-save --model ideogram-4-fp8 -q 4 --path ideogram-4-mflux-q4
+```
+
+Generate from a saved checkpoint with `--model-path`, which needs no Hugging Face access once the conversion is done:
+
+```sh
+mflux-generate-ideogram4 --model-path ideogram-4-mflux-q4 --prompt-file caption.json
+```
+
+| Checkpoint | On disk |
+| --- | --- |
+| FP8 (source) | 26 GB |
+| `-q 8` | 26 GB |
+| `-q 4` | 14 GB |
+
+Quantizing loads the FP8 checkpoint once. Measured on an M5 Pro, the 8-bit save peaked at 28.7 GB resident and took 34 s — MLX releases the FP8 weights as the graph evaluates, so peak stays well below the sum of both copies.
+
+Both levels are visually indistinguishable from FP8 side by side. They are not numerically identical, and the gap is larger than the pixel counts suggest at first glance: measured against an FP8 baseline generated on the same machine, 5.9% (`-q 8`) and 38.1% (`-q 4`) of subpixels differ on a photographic caption, 29.2% and 65.6% on a typographic one. Diffusion is chaotic, so a small weight perturbation moves discrete decisions — where a glyph lands, how an edge resolves — and the result is displacement rather than damage. Treat those percentages as change detection, not as a quality score.
 
 ## Notes
 
