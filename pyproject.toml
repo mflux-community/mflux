@@ -14,7 +14,7 @@ source-exclude = [
 
 [project]
 name = "mflux"
-version = "0.18.0"
+version = "0.18.1"
 description = "MLX native implementations of state-of-the-art generative image models."
 readme = "README.md"
 keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-silicon", "diffusers", "qwen", "qwen-image", "seedvr2", "z-image"]
@@ -28,7 +28,10 @@ dependencies = [
     "huggingface-hub>=1.1.6,<2.0",
     "hf-transfer>=0.1.9,<1.0",
     "matplotlib>=3.9.2,<4.0",
-    "mlx>=0.27.0,<0.32.0; sys_platform=='darwin'",
+    # mlx <0.32.0 has a quantized_matmul bug: for M>32768 rows the first
+    # M-32768 rows come back garbage (silently, no error). Quantized SeedVR2
+    # above ~8.4MP output hits it as a noise band across the top of the image.
+    "mlx>=0.32.0,<0.33.0; sys_platform=='darwin'",
     "mlx[cuda13]>=0.30.3,<0.32.0; sys_platform=='linux'",
     "numpy>=2.0.1,<3.0",
     "opencv-python>=4.10.0,<5.0",
@@ -66,7 +69,7 @@ dev = [
     "matplotlib>3.10,<4.0",
     "pytest>=8.3.0,<9.0",
     "pytest-timer>=1.0,<2.0",
-    "mlx==0.31.0; sys_platform=='darwin'",
+    "mlx==0.32.0; sys_platform=='darwin'",
     "mlx[cuda13]==0.30.3; sys_platform=='linux'",
 ]
 
@@ -133,7 +136,7 @@ docstring-code-line-length = "dynamic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not high_memory_requirement"'
+addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not slow and not high_memory_requirement"'
 filterwarnings = [
     "ignore::DeprecationWarning:transformers\\.models\\.clip\\.tokenization_clip",
     "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",

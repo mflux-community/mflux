@@ -234,7 +234,10 @@ AVAILABLE_MODELS = {
         max_sequence_length=1024,
         supports_guidance=True,
         requires_sigma_shift=True,
+        # Per krea/Krea-2-Raw scheduler_config.json: base_shift 0.5, max_shift 1.15,
+        # base/max image seq len 256/6400, exponential dynamic shifting.
         sigma_max_shift=1.15,
+        sigma_max_seq_len=6400,
     ),
     "dev": ModelConfig(
         priority=0,
@@ -501,8 +504,8 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image": ModelConfig(
         priority=15,
-        aliases=["qwen-image", "qwen"],
-        model_name="Qwen/Qwen-Image",
+        aliases=["qwen-image", "qwen", "qwen-image-2512", "qwen-2512"],
+        model_name="Qwen/Qwen-Image-2512",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -516,8 +519,15 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image-edit": ModelConfig(
         priority=16,
-        aliases=["qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509"],
-        model_name="Qwen/Qwen-Image-Edit-2509",
+        aliases=[
+            "qwen-image-edit",
+            "qwen-edit",
+            "qwen-edit-plus",
+            "qwen-edit-2509",
+            "qwen-edit-2511",
+            "qwen-image-edit-2511",
+        ],
+        model_name="Qwen/Qwen-Image-Edit-2511",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,

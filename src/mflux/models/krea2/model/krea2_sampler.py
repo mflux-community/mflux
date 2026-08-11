@@ -2,11 +2,8 @@ import mlx.core as mx
 
 
 class Krea2Sampler:
-    @staticmethod
-    def flow_sigmas(num_steps: int, shift: float = 1.15) -> mx.array:
-        sigmas = mx.linspace(1.0, 0.0, num_steps + 1)
-        return shift * sigmas / (1.0 + (shift - 1.0) * sigmas)
-
+    # Sigmas come from Krea2FlowScheduler (the shared dynamic exponential time shift);
+    # this class only provides the denoise-loop steppers.
     @staticmethod
     def make_stepper(name: str, sigmas: mx.array, seed: int):
         if name == "euler":

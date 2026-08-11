@@ -57,6 +57,11 @@ class TrainingRunner:
     def train(*, config_path: str | None, resume_path: str | None) -> tuple[TrainingAdapter, TrainingSpec]:
         training_spec = TrainingSpec.resolve(config_path=config_path, resume_path=resume_path)
 
+        # Bound MLX's buffer-cache pool for the whole run (encoding + train loop). Freed
+        # buffers above the cap return to the OS instead of being retained for reuse.
+        if training_spec.cache_limit_gb:
+            mx.set_cache_limit(int(training_spec.cache_limit_gb * 1e9))
+
         # Set global seed for MLX randomness
         mx_random.seed(training_spec.seed)
 

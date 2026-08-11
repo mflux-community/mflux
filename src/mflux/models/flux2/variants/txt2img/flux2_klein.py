@@ -32,6 +32,7 @@ class Flux2Klein(nn.Module):
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
         model_config: ModelConfig | None = None,
     ):
         super().__init__()
@@ -41,6 +42,7 @@ class Flux2Klein(nn.Module):
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
             model_config=model_config or ModelConfig.flux2_klein_4b(),
         )
 

@@ -1,0 +1,17 @@
+{
+  "strictness": 2,
+  "commentTypes": [
+    "logic",
+    "syntax"
+  ],
+  "instructions": "MLX (Apple Silicon) codebase. Prioritize mx.array shape/dtype mismatches, quantization correctness (fp8 and group quantization), missing mx.eval before host reads, and cross-file drift between model families. Do not comment on style.",
+  "ignorePatterns": "**/*.png\n**/*.jpg\n**/*.jpeg\n**/*.webp\n**/*.safetensors\n**/reference/**\n**/references/**\nsrc/mflux/assets/**",
+  "triggerOnDrafts": false,
+  "excludeAuthors": [
+    "dependabot[bot]"
+  ],
+  "statusCheck": true,
+  "includeBranches": [
+    "main"
+  ]
+}

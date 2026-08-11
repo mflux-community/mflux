@@ -30,6 +30,7 @@ class FluxInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
         custom_transformer=None,
     ) -> None:
         path = model_path if model_path else model_config.model_name
@@ -38,7 +39,7 @@ class FluxInitializer:
         FluxInitializer._init_tokenizers(model, path, model_config)
         FluxInitializer._init_models(model, model_config, weights, custom_transformer)
         FluxInitializer._apply_weights(model, weights, quantize)
-        FluxInitializer._apply_lora(model, lora_paths, lora_scales)
+        FluxInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
 
     @staticmethod
     def init_depth(
@@ -48,6 +49,7 @@ class FluxInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ) -> None:
         FluxInitializer.init(
             model=model,
@@ -56,6 +58,7 @@ class FluxInitializer:
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
         model.depth_pro = DepthPro()
 
@@ -67,6 +70,7 @@ class FluxInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ) -> None:
         FluxInitializer.init(
             model=model,
@@ -74,6 +78,7 @@ class FluxInitializer:
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
             model_config=model_config,
         )
 
@@ -101,6 +106,7 @@ class FluxInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ) -> None:
         FluxInitializer.init(
             model=model,
@@ -109,6 +115,7 @@ class FluxInitializer:
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
 
         controlnet_component = FluxControlnetWeightDefinition.get_controlnet_component()
@@ -137,6 +144,7 @@ class FluxInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ) -> None:
         from mflux.models.flux.variants.concept_attention.transformer_concept import TransformerConcept
 
@@ -151,7 +159,7 @@ class FluxInitializer:
         )
         FluxInitializer._init_models(model, model_config, weights, custom_transformer)
         FluxInitializer._apply_weights(model, weights, quantize)
-        FluxInitializer._apply_lora(model, lora_paths, lora_scales)
+        FluxInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
 
     @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:
@@ -212,10 +220,16 @@ class FluxInitializer:
         )
 
     @staticmethod
-    def _apply_lora(model, lora_paths: list[str] | None, lora_scales: list[float] | None) -> None:
+    def _apply_lora(
+        model,
+        lora_paths: list[str] | None,
+        lora_scales: list[float] | None,
+        bake_lora: bool,
+    ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=FluxLoRAMapping.get_mapping(),
             transformer=model.transformer,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
