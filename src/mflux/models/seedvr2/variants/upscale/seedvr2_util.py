@@ -4,6 +4,7 @@ import mlx.core as mx
 import numpy as np
 from PIL import Image
 
+from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.scale_factor import ScaleFactor
 
 
@@ -14,7 +15,7 @@ class SeedVR2Util:
         resolution: int | ScaleFactor,
         softness: float = 0.0,
     ) -> tuple[mx.array, int, int]:
-        image = Image.open(image_path).convert("RGB")
+        image = open_oriented(image_path).convert("RGB")
         w, h = image.size
 
         if isinstance(resolution, ScaleFactor):

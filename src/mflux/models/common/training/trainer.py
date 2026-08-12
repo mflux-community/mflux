@@ -8,7 +8,6 @@ from pathlib import Path
 import mlx.core as mx
 from mlx import nn
 from mlx.utils import tree_unflatten
-from PIL import Image as PILImage
 from tqdm import tqdm
 
 from mflux.models.common.latent_creator.latent_creator import LatentCreator
@@ -20,6 +19,7 @@ from mflux.models.common.training.state.training_spec import TrainingSpec
 from mflux.models.common.training.state.training_state import TrainingState
 from mflux.models.common.training.statistics.plotter import Plotter
 from mflux.models.common.training.utils import TrainingUtil
+from mflux.utils.exif_orientation import oriented_size
 
 
 class TrainingTrainer:
@@ -210,8 +210,7 @@ class TrainingTrainer:
         if training_spec.monitoring is None:
             return 1024, 1024
         if preview_image is not None:
-            with PILImage.open(preview_image) as img:
-                width, height = img.size
+            width, height = oriented_size(preview_image)
         else:
             width = int(training_spec.monitoring.preview_width)
             height = int(training_spec.monitoring.preview_height)

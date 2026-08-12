@@ -1,5 +1,5 @@
-from PIL import Image
 
+from mflux.utils.exif_orientation import oriented_size
 from mflux.utils.prompt_util import PromptUtil
 
 
@@ -13,8 +13,7 @@ class FluxInContextFillUtil:
 
     @staticmethod
     def resize_for_ic_edit_optimal_width(args):
-        with Image.open(args.reference_image) as img:
-            actual_width, actual_height = img.size
+        actual_width, actual_height = oriented_size(args.reference_image)
         aspect_ratio = actual_height / actual_width
         original_args_width = args.width
         original_args_height = args.height

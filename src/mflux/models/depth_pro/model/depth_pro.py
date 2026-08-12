@@ -9,6 +9,7 @@ from PIL import Image
 from mflux.models.depth_pro.depth_pro_initializer import DepthProInitializer
 from mflux.models.depth_pro.model.depth_pro_model import DepthProModel
 from mflux.models.depth_pro.model.depth_pro_util import DepthProUtil
+from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.image_util import ImageUtil
 
 
@@ -36,7 +37,7 @@ class DepthPro:
 
     @staticmethod
     def _pre_process(image_path: str | Path) -> tuple[mx.array, int, int]:
-        image = Image.open(image_path).convert("RGB")
+        image = open_oriented(image_path).convert("RGB")
         input_array = ImageUtil.preprocess_for_depth_pro(image)
         input_array = DepthPro._resize(input_array)
         return input_array, image.height, image.width
