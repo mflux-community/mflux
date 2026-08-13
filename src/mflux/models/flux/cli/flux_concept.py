@@ -1,6 +1,6 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux.variants.concept_attention.flux_concept import Flux1Concept
@@ -8,8 +8,7 @@ from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationExcep
 from mflux.utils.prompt_util import PromptUtil
 
 
-def main():
-    # 0. Parse command line arguments
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image with concept attention based on a prompt and concept.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -18,6 +17,12 @@ def main():
     parser.add_image_to_image_arguments(required=False)
     parser.add_output_arguments()
     parser.add_concept_attention_arguments()
+    return parser
+
+
+def main():
+    # 0. Parse command line arguments
+    parser = build_parser()
     args = parser.parse_args()
 
     # 0. Set default guidance value if not provided by user
@@ -29,8 +34,7 @@ def main():
         model_config=ModelConfig.from_name(model_name=args.model, base_model=args.base_model),
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks

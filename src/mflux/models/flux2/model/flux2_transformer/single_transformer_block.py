@@ -1,6 +1,7 @@
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 from mflux.models.flux2.model.flux2_transformer.parallel_self_attention import Flux2ParallelSelfAttention
 
 
@@ -20,10 +21,17 @@ class Flux2SingleTransformerBlock(nn.Module):
         hidden_states: mx.array,
         temb_mod_params,
         image_rotary_emb,
+        kv_cache: Flux2KVCache | None = None,
+        kv_cache_layer_idx: int | None = None,
     ):
         mod_shift, mod_scale, mod_gate = temb_mod_params
         norm_hidden_states = self.norm(hidden_states)
         norm_hidden_states = (1 + mod_scale) * norm_hidden_states + mod_shift
-        attn_output = self.attn(norm_hidden_states, image_rotary_emb)
+        attn_output = self.attn(
+            norm_hidden_states,
+            image_rotary_emb,
+            kv_cache=kv_cache,
+            kv_cache_layer_idx=kv_cache_layer_idx,
+        )
         hidden_states = hidden_states + mod_gate * attn_output
         return hidden_states

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    # Skip binaries, generated images, and golden reference outputs.
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.webp"
+    - "!**/*.safetensors"
+    - "!src/mflux/assets/**"
+    - "!**/reference/**"
+    - "!**/references/**"
+  path_instructions:
+    - path: "src/mflux/**"
+      instructions: >
+        MLX (Apple Silicon) code. Flag mx.array shape/dtype mismatches, missing mx.eval before
+        host reads, and quantization correctness (fp8 / stored quantization). Prefer explicit,
+        minimal changes that match the surrounding style.
+chat:
+  auto_reply: true

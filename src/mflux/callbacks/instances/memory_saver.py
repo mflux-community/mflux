@@ -10,14 +10,24 @@ from mflux.models.common.vae.tiling_config import TilingConfig
 
 
 class MemorySaver(BeforeLoopCallback, InLoopCallback, AfterLoopCallback):
-    def __init__(self, model, keep_transformer: bool = True, cache_limit_bytes: int = 1000**3, args=None):
+    def __init__(
+        self,
+        model,
+        keep_transformer: bool = True,
+        cache_limit_bytes: int | None = 1000**3,
+        args=None,
+        num_seeds: int = 1,
+    ):
         self.model = model
         self.keep_transformer = keep_transformer
         self.peak_memory: int = 0
-        self.model.tiling_config = TilingConfig()
-        mx.set_cache_limit(cache_limit_bytes)
-        mx.clear_cache()
-        mx.reset_peak_memory()
+        self._num_seeds = num_seeds
+        if cache_limit_bytes is not None:
+            if model.tiling_config is None:
+                self.model.tiling_config = TilingConfig()
+            mx.set_cache_limit(cache_limit_bytes)
+            mx.clear_cache()
+            mx.reset_peak_memory()
 
     def call_before_loop(
         self,
@@ -27,9 +37,15 @@ class MemorySaver(BeforeLoopCallback, InLoopCallback, AfterLoopCallback):
         config: Config,
         canny_image: PIL.Image.Image | None = None,
         depth_image: PIL.Image.Image | None = None,
+        control_images: list[PIL.Image.Image] | None = None,
     ) -> None:
         self.peak_memory = mx.get_peak_memory()
-        self._delete_text_encoders()
+        # Only evict when safe: single-seed run, or embeddings are cached in prompt_cache
+        # (Flux1 caches embeddings so encoder isn't needed for subsequent seeds;
+        #  Flux2 re-encodes each call and has no prompt_cache — keep encoder for multi-seed)
+        has_cached_embeds = hasattr(self.model, "prompt_cache") and prompt in (self.model.prompt_cache or {})
+        if self._num_seeds <= 1 or has_cached_embeds:
+            self._delete_text_encoders()
 
     def call_in_loop(
         self,
@@ -52,6 +68,11 @@ class MemorySaver(BeforeLoopCallback, InLoopCallback, AfterLoopCallback):
         self.peak_memory = mx.get_peak_memory()
         if not self.keep_transformer:
             self._delete_transformer()
+        else:
+            # Clear Metal cache between seeds — without a cache limit, MLX accumulates
+            # freed tensor buffers indefinitely across sequential denoising passes.
+            gc.collect()
+            mx.clear_cache()
 
     def _delete_text_encoders(self) -> None:
         # repeated image generation only works with the same prompt (cache)
@@ -79,6 +100,12 @@ class MemorySaver(BeforeLoopCallback, InLoopCallback, AfterLoopCallback):
         self.model.transformer = None
         if hasattr(self.model, "transformer_controlnet"):
             self.model.transformer_controlnet = None
+        if hasattr(self.model, "controlnet"):
+            self.model.controlnet = None
+        if hasattr(self.model, "conditional_transformer"):
+            self.model.conditional_transformer = None
+        if hasattr(self.model, "unconditional_transformer"):
+            self.model.unconditional_transformer = None
         gc.collect()
         mx.clear_cache()
 

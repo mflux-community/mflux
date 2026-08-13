@@ -10,9 +10,14 @@ from mflux.models.flux.variants.in_context.utils.in_context_fill_util import Flu
 from mflux.models.flux.variants.in_context.utils.in_context_loras import IC_EDIT_LORA_SCALE, get_ic_edit_lora_path
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 
+# Single source of truth for options this CLI accepts but cannot honour: the runtime
+# warning and the mflux-capabilities dump both read it.
+IGNORED_OPTIONS = {
+    "--negative-prompt": "FLUX.1 uses distilled guidance and has no negative branch.",
+}
 
-def main():
-    # 0. Parse command line arguments
+
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate images using in-context editing.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -21,7 +26,13 @@ def main():
     parser.add_in_context_edit_arguments()
     parser.add_in_context_arguments()
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
+    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
     # 0. Default to a higher guidance value for fill related tasks.
     if args.guidance is None:

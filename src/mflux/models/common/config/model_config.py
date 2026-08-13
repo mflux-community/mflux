@@ -27,6 +27,9 @@ class ModelConfig:
         sigma_base_seq_len: int = 256,
         sigma_max_seq_len: int = 4096,
         sigma_shift_terminal: float | None = None,
+        lora_training_steps: int | None = None,
+        lora_training_guidance: float | None = None,
+        supports_kv_cache: bool = False,
     ):
         self.aliases = aliases
         self.model_name = model_name
@@ -45,6 +48,9 @@ class ModelConfig:
         self.sigma_base_seq_len = sigma_base_seq_len
         self.sigma_max_seq_len = sigma_max_seq_len
         self.sigma_shift_terminal = sigma_shift_terminal
+        self.lora_training_steps = lora_training_steps
+        self.lora_training_guidance = lora_training_guidance
+        self.supports_kv_cache = supports_kv_cache
 
     @staticmethod
     @lru_cache
@@ -113,6 +119,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def flux2_klein_9b_kv() -> "ModelConfig":
+        return AVAILABLE_MODELS["flux2-klein-9b-kv"]
+
+    @staticmethod
+    @lru_cache
     def flux2_klein_base_4b() -> "ModelConfig":
         return AVAILABLE_MODELS["flux2-klein-base-4b"]
 
@@ -123,6 +134,16 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def krea2() -> "ModelConfig":
+        return AVAILABLE_MODELS["krea-2"]
+
+    @staticmethod
+    @lru_cache
+    def krea2_raw() -> "ModelConfig":
+        return AVAILABLE_MODELS["krea-2-raw"]
+
+    @staticmethod
+    @lru_cache
     def qwen_image() -> "ModelConfig":
         return AVAILABLE_MODELS["qwen-image"]
 
@@ -130,6 +151,11 @@ class ModelConfig:
     @lru_cache
     def qwen_image_edit() -> "ModelConfig":
         return AVAILABLE_MODELS["qwen-image-edit"]
+
+    @staticmethod
+    @lru_cache
+    def boogu_image_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["boogu-image-turbo"]
 
     @staticmethod
     @lru_cache
@@ -153,6 +179,21 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def ernie_image_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["ernie-image-turbo"]
+
+    @staticmethod
+    @lru_cache
+    def ernie_image() -> "ModelConfig":
+        return AVAILABLE_MODELS["ernie-image"]
+
+    @staticmethod
+    @lru_cache
+    def lens_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["lens-turbo"]
+
+    @staticmethod
+    @lru_cache
     def z_image_turbo() -> "ModelConfig":
         return AVAILABLE_MODELS["z-image-turbo"]
 
@@ -163,6 +204,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def z_image_turbo_controlnet_union_2_1() -> "ModelConfig":
+        return AVAILABLE_MODELS["z-image-turbo-controlnet-union-2.1"]
+
+    @staticmethod
+    @lru_cache
     def seedvr2_3b() -> "ModelConfig":
         return AVAILABLE_MODELS["seedvr2-3b"]
 
@@ -170,6 +216,11 @@ class ModelConfig:
     @lru_cache
     def seedvr2_7b() -> "ModelConfig":
         return AVAILABLE_MODELS["seedvr2-7b"]
+
+    @staticmethod
+    @lru_cache
+    def ideogram4_fp8() -> "ModelConfig":
+        return AVAILABLE_MODELS["ideogram-4-fp8"]
 
     def x_embedder_input_dim(self) -> int:
         if "Fill" in self.model_name:
@@ -191,6 +242,38 @@ class ModelConfig:
 
 
 AVAILABLE_MODELS = {
+    "krea-2": ModelConfig(
+        priority=15,
+        aliases=["krea-2", "krea2"],
+        model_name="krea/Krea-2-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        # Per krea/Krea-2-Raw scheduler_config.json: base_shift 0.5, max_shift 1.15,
+        # base/max image seq len 256/6400, exponential dynamic shifting.
+        sigma_max_shift=1.15,
+        sigma_max_seq_len=6400,
+    ),
+    "krea-2-raw": ModelConfig(
+        # Krea 2 Raw: the base checkpoint. Krea recommends it as the base for finetuning /
+        # training LoRAs (Turbo is the distilled inference checkpoint). Same architecture as Turbo.
+        priority=15,
+        aliases=["krea-2-raw", "krea2-raw"],
+        model_name="krea/Krea-2-Raw",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_max_shift=1.15,
+        sigma_max_seq_len=6400,
+    ),
     "dev": ModelConfig(
         priority=0,
         aliases=["dev"],
@@ -367,6 +450,35 @@ AVAILABLE_MODELS = {
             "intermediate_size": 12288,
         },
     ),
+    "flux2-klein-9b-kv": ModelConfig(
+        priority=12,
+        aliases=[
+            "flux2-klein-9b-kv",
+            "flux2-klein-9B-kv",
+            "flux2-klein-9b-KV",
+            "klein-9b-kv",
+            "klein-9B-kv",
+        ],
+        model_name="black-forest-labs/FLUX.2-klein-9b-kv",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=512,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        transformer_overrides={
+            "num_layers": 8,
+            "num_single_layers": 24,
+            "num_attention_heads": 32,
+            "joint_attention_dim": 12288,
+        },
+        text_encoder_overrides={
+            "hidden_size": 4096,
+            "intermediate_size": 12288,
+        },
+        supports_kv_cache=True,
+    ),
     "flux2-klein-base-4b": ModelConfig(
         priority=13,
         aliases=[
@@ -427,8 +539,8 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image": ModelConfig(
         priority=15,
-        aliases=["qwen-image", "qwen"],
-        model_name="Qwen/Qwen-Image",
+        aliases=["qwen-image", "qwen", "qwen-image-2512", "qwen-2512"],
+        model_name="Qwen/Qwen-Image-2512",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -442,8 +554,15 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image-edit": ModelConfig(
         priority=16,
-        aliases=["qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509"],
-        model_name="Qwen/Qwen-Image-Edit-2509",
+        aliases=[
+            "qwen-image-edit",
+            "qwen-edit",
+            "qwen-edit-plus",
+            "qwen-edit-2509",
+            "qwen-edit-2511",
+            "qwen-image-edit-2511",
+        ],
+        model_name="Qwen/Qwen-Image-Edit-2511",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -515,6 +634,35 @@ AVAILABLE_MODELS = {
         supports_guidance=True,
         requires_sigma_shift=True,
     ),
+    "lens-turbo": ModelConfig(
+        priority=22,
+        aliases=["lens-turbo", "lens"],
+        model_name="Comfy-Org/Lens",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=512,
+        supports_guidance=False,  # 4-step distillation, CFG internalized
+        requires_sigma_shift=True,
+    ),
+    "z-image-turbo-controlnet-union-2.1": ModelConfig(
+        priority=15,
+        aliases=[
+            "z-image-turbo-controlnet-union-2.1",
+            "z-image-controlnet-union-2.1",
+            "z-image-controlnet",
+            "z-image-turbo-controlnet",
+        ],
+        model_name="Tongyi-MAI/Z-Image-Turbo",
+        base_model=None,
+        controlnet_model="alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=512,
+        supports_guidance=False,
+        requires_sigma_shift=True,
+    ),
     "z-image-turbo": ModelConfig(
         priority=21,
         aliases=["z-image-turbo", "zimage-turbo"],
@@ -539,6 +687,40 @@ AVAILABLE_MODELS = {
         supports_guidance=True,
         requires_sigma_shift=None,
     ),
+    "ernie-image": ModelConfig(
+        priority=27,
+        aliases=["ernie-image"],
+        model_name="baidu/ERNIE-Image",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=2048,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_base_shift=1.3863,
+        sigma_max_shift=1.3863,
+        lora_training_steps=50,
+        lora_training_guidance=4.0,
+        transformer_overrides={"rope_axes_dim": [32, 48, 48]},
+    ),
+    "ernie-image-turbo": ModelConfig(
+        priority=26,
+        aliases=["ernie-image-turbo"],
+        model_name="baidu/ERNIE-Image-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=2048,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_base_shift=1.3863,
+        sigma_max_shift=1.3863,
+        lora_training_steps=8,
+        lora_training_guidance=1.0,
+        transformer_overrides={"rope_axes_dim": [32, 48, 48]},
+    ),
     "seedvr2-7b": ModelConfig(
         priority=23,
         aliases=["seedvr2-7b", "seedvr2-7B"],
@@ -562,5 +744,35 @@ AVAILABLE_MODELS = {
             "use_output_ada": False,
             "last_layer_vid_only": False,
         },
+    ),
+    "ideogram-4-fp8": ModelConfig(
+        priority=25,
+        aliases=[
+            "ideogram-4-fp8",
+            "ideogram4-fp8",
+            "ideogram4",
+            "ideogram-4",
+            "ideogram",
+        ],
+        model_name="ideogram-ai/ideogram-4-fp8",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=2048,
+        supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "boogu-image-turbo": ModelConfig(
+        priority=28,
+        aliases=["boogu-image-turbo", "boogu-turbo", "boogu-image", "boogu"],
+        model_name="Boogu/Boogu-Image-0.1-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=False,
+        requires_sigma_shift=False,
     ),
 }

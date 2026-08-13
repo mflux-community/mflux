@@ -6,6 +6,7 @@ from mlx import nn
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.latent_creator.latent_creator import LatentCreator
+from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux2.flux2_initializer import Flux2Initializer
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
@@ -32,6 +33,7 @@ class Flux2Klein(nn.Module):
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
         model_config: ModelConfig | None = None,
     ):
         super().__init__()
@@ -41,6 +43,7 @@ class Flux2Klein(nn.Module):
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
             model_config=model_config or ModelConfig.flux2_klein_4b(),
         )
 
@@ -55,6 +58,8 @@ class Flux2Klein(nn.Module):
         image_path: Path | str | None = None,
         image_strength: float | None = None,
         scheduler: str = "flow_match_euler_discrete",
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ) -> GeneratedImage:
         # 0. Create a new config based on the model type and input parameters
         config = Config(
@@ -115,7 +120,13 @@ class Flux2Klein(nn.Module):
 
         # 5. Decode latents
         packed_latents = latents.reshape(latents.shape[0], latent_height, latent_width, latents.shape[-1]).transpose(0, 3, 1, 2)  # fmt: off
-        decoded = self.vae.decode_packed_latents(packed_latents)
+        if pid_decode:
+            lq_latent = self.vae.unpack_packed_latents(packed_latents)
+            decoded = pid_decode_latents(
+                vae=self.vae, latent=lq_latent, caption=prompt, seed=seed, degrade_sigma=pid_degrade_sigma
+            )
+        else:
+            decoded = self.vae.decode_packed_latents(packed_latents)
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
@@ -128,6 +139,8 @@ class Flux2Klein(nn.Module):
             image_path=config.image_path,
             image_strength=config.image_strength,
             generation_time=config.time_steps.format_dict["elapsed"],
+            pid_decode=pid_decode,
+            pid_degrade_sigma=pid_degrade_sigma,
         )
 
     def _encode_prompt_pair(

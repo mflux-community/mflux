@@ -3,6 +3,7 @@ from mlx import nn
 
 from mflux.models.flux2.model.flux2_transformer.attention import Flux2Attention
 from mflux.models.flux2.model.flux2_transformer.feed_forward import Flux2FeedForward
+from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 
 
 class Flux2TransformerBlock(nn.Module):
@@ -28,6 +29,8 @@ class Flux2TransformerBlock(nn.Module):
         temb_mod_params_img,
         temb_mod_params_txt,
         image_rotary_emb,
+        kv_cache: Flux2KVCache | None = None,
+        kv_cache_layer_idx: int | None = None,
     ):
         (shift_msa, scale_msa, gate_msa), (shift_mlp, scale_mlp, gate_mlp) = temb_mod_params_img
         (c_shift_msa, c_scale_msa, c_gate_msa), (c_shift_mlp, c_scale_mlp, c_gate_mlp) = temb_mod_params_txt
@@ -41,6 +44,8 @@ class Flux2TransformerBlock(nn.Module):
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
+            kv_cache=kv_cache,
+            kv_cache_layer_idx=kv_cache_layer_idx,
         )
 
         hidden_states = hidden_states + gate_msa * attn_output

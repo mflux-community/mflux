@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 
 from mflux.models.qwen.tokenizer.qwen_vision_language_processor import QwenVisionLanguageProcessor
+from mflux.utils.exif_orientation import open_oriented
 
 
 class QwenVisionLanguageTokenizer:
@@ -78,7 +79,7 @@ class QwenVisionLanguageTokenizer:
         for img in images:
             # Convert to PIL Image
             if isinstance(img, (str, Path)):
-                img = Image.open(img).convert("RGB")
+                img = open_oriented(img).convert("RGB")
             elif isinstance(img, np.ndarray):
                 img = Image.fromarray(img)
             elif not isinstance(img, Image.Image):

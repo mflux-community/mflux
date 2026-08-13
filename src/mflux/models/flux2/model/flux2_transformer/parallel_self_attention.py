@@ -4,6 +4,7 @@ from mlx import nn
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.flux.model.flux_transformer.common.attention_utils import AttentionUtils
 from mflux.models.flux2.model.flux2_transformer.feed_forward import Flux2SwiGLU
+from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 
 
 class Flux2ParallelSelfAttention(nn.Module):
@@ -19,7 +20,13 @@ class Flux2ParallelSelfAttention(nn.Module):
         self.mlp_act = Flux2SwiGLU()
         self.to_out = nn.Linear(self.inner_dim + self.mlp_hidden_dim, dim, bias=False)
 
-    def __call__(self, hidden_states: mx.array, image_rotary_emb):
+    def __call__(
+        self,
+        hidden_states: mx.array,
+        image_rotary_emb,
+        kv_cache: Flux2KVCache | None = None,
+        kv_cache_layer_idx: int | None = None,
+    ):
         proj = self.to_qkv_mlp_proj(hidden_states)
         qkv, mlp_hidden = mx.split(proj, [self.inner_dim * 3], axis=-1)
         query, key, value = mx.split(qkv, 3, axis=-1)
@@ -36,14 +43,26 @@ class Flux2ParallelSelfAttention(nn.Module):
             cos, sin = image_rotary_emb
             query, key = AttentionUtils.apply_rope_bshd(query, key, cos, sin)
 
-        hidden_states = AttentionUtils.compute_attention(
-            query=query,
-            key=key,
-            value=value,
-            batch_size=batch,
-            num_heads=self.heads,
-            head_dim=self.dim_head,
-        )
+        if kv_cache is not None:
+            kv_cache.store_reference("single", kv_cache_layer_idx, key, value)
+            key, value = kv_cache.append_reference("single", kv_cache_layer_idx, key, value)
+            hidden_states = kv_cache.compute_extract_attention(
+                query=query,
+                key=key,
+                value=value,
+                batch_size=batch,
+                num_heads=self.heads,
+                head_dim=self.dim_head,
+            )
+        else:
+            hidden_states = AttentionUtils.compute_attention(
+                query=query,
+                key=key,
+                value=value,
+                batch_size=batch,
+                num_heads=self.heads,
+                head_dim=self.dim_head,
+            )
 
         mlp_hidden = self.mlp_act(mlp_hidden)
         hidden_states = mx.concatenate([hidden_states, mlp_hidden], axis=-1)

@@ -158,12 +158,12 @@ image.save("qwen_food.png")
 </details>
 
 > [!WARNING]
-> Note: The Qwen Image model requires downloading the `Qwen/Qwen-Image` model weights (~58GB for the full model, or use quantization for smaller sizes).
+> Note: The Qwen Image model requires downloading the `Qwen/Qwen-Image-2512` model weights (~58GB for the full model, or use quantization for smaller sizes).
 
 ## Qwen Image Edit (natural language image editing)
 **Qwen Image Edit** enables precise natural language image editing, allowing you to modify images using text instructions while maintaining their original structure and context. The model uses a vision-language encoder to understand both the input image and your editing instructions.
 
-Qwen Image Edit supports natural language editing with descriptive text instructions, maintains original poses and body positions when requested, supports multiple images for complex compositions, and works seamlessly with LoRA adapters for specialized transformations like camera angles and styles. The model uses `Qwen/Qwen-Image-Edit-2509`.
+Qwen Image Edit supports natural language editing with descriptive text instructions, maintains original poses and body positions when requested, supports multiple images for complex compositions, and works seamlessly with LoRA adapters for specialized transformations like camera angles and styles. The model uses `Qwen/Qwen-Image-Edit-2511`.
 
 ![Qwen Image Edit Examples](../../assets/qwen_edit_example.jpg)
 *Examples showing dog replacement with two-image input and monkey camera angle transformations with LoRAs. Source images: [Golden Retriever](https://images.unsplash.com/photo-1552053831-71594a27632d), [Grey Dog](https://images.unsplash.com/photo-1566710582818-d673dc761201), and [Monkey](https://images.unsplash.com/photo-1578948610588-ffe24448f5ed).*
@@ -253,4 +253,5 @@ image.save("qwen_edit_monkey.png")
 8. **Output Size**: By default, edits keep the first input image size. Use `--width`/`--height` or scale factors like `2x` when you want resizing.
 
 > [!WARNING]
-> Note: The Qwen Image Edit model requires downloading the `Qwen/Qwen-Image-Edit-2509` model weights (~58GB for the full model, or use quantization for smaller sizes).
+> Note: The Qwen Image Edit model requires downloading the `Qwen/Qwen-Image-Edit-2511` model weights (~58GB for the full model, or use quantization for smaller sizes).
+

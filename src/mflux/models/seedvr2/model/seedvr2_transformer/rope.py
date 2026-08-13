@@ -63,7 +63,9 @@ class RoPEModule(nn.Module):
             # changes spacing and introduces spatial bias.
             for b in range(vid_shape.shape[0]):
                 f, h, w = int(vid_shape[b, 0]), int(vid_shape[b, 1]), int(vid_shape[b, 2])
-                vid_freq = RoPEModule._get_axial_freqs(freqs, f, h, w, freqs_for=freqs_for).reshape(-1, freqs.size * 2 * rope_dim)
+                vid_freq = RoPEModule._get_axial_freqs(freqs, f, h, w, freqs_for=freqs_for).reshape(
+                    -1, freqs.size * 2 * rope_dim
+                )
                 vid_freq_list.append(vid_freq)
         else:
             max_temporal = int(mx.max(vid_shape[:, 0]))

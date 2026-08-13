@@ -103,6 +103,16 @@ class FlowMatchEulerDiscreteScheduler(BaseScheduler):
 
     def _compute_timesteps_and_sigmas(self) -> tuple[mx.array, mx.array]:
         num_steps = self.config.num_inference_steps
+        if num_steps == 1:
+            # A single Euler step goes from sigma 1.0 straight to 0.0, the same 1-step
+            # schedule get_timesteps_and_sigmas and the set_mu path already produce.
+            # The general formula below has no consistent degenerate form: the linear
+            # spacing divides by (num_steps - 1), and _stretch_to_terminal would map a
+            # single point onto shift_terminal itself, starting denoise from
+            # nearly-clean noise.
+            sigmas_arr = mx.array([1.0, 0.0], dtype=mx.float32)
+            timesteps_arr = mx.array([float(self.num_train_timesteps)], dtype=mx.float32)
+            return sigmas_arr, timesteps_arr
         sigma_min = 1.0 / self.num_train_timesteps
         sigma_max = 1.0
         timesteps_linear = [

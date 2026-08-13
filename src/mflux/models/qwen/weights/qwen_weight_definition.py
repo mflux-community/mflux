@@ -314,3 +314,12 @@ class QwenWeightDefinition:
     @staticmethod
     def _quantize_all_predicate(path: str, module, bits: int | None = None) -> bool:
         return hasattr(module, "to_quantized")
+        # The adaLN modulation producers are where 4-bit weight error compounds
+        # across the denoising trajectory (upstream #484: flat-field sigma grows
+        # 5.1 -> 16.1 from 4 to 50 steps at uniform q4, while q8 stays at the
+        # bf16 floor). Keeping img_mod_linear at 8-bit restores that floor
+        # (sigma 1.10/1.37 at 20/50 steps) for ~1.8 GB on the 4-bit model.
+        # Same layer choice as upstream #420, so saves interoperate.
+        if bits == 4 and ".img_mod_linear" in path:
+            return {"bits": 8}
+        return True

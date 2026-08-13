@@ -1,18 +1,27 @@
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.variants import Flux2KleinEdit
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
-from mflux.utils.image_util import ImageUtil
 from mflux.utils.prompt_util import PromptUtil
 
+REJECTED_OPTIONS = {
+    "--negative-prompt": "FLUX.2 has no negative branch; the CLI exits with an error when this is set.",
+}
 
-def main():
-    # 0. Parse command line arguments
+CONDITIONAL_OPTIONS = {
+    "--guidance": {
+        "condition": "FLUX.2 models",
+        "reason": "any other model requires guidance 1.0; other values exit with an error.",
+    },
+}
+
+
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Flux2 Klein Edit with image conditioning.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -20,6 +29,11 @@ def main():
     parser.add_argument("--image-paths", type=Path, nargs="+", required=True, help="Local paths to one or more init images. For single image editing, provide one path. For multiple image editing, provide multiple paths.")  # fmt: off
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     if getattr(args, "negative_prompt", ""):
@@ -30,16 +44,19 @@ def main():
 
     if args.guidance is None:
         args.guidance = 1.0
-    is_distilled = "base" not in model_config.model_name.lower()
-    if args.guidance != 1.0 and is_distilled:
-        parser.error("--guidance is only supported for FLUX.2 base models. Use --guidance 1.0.")
+    model_name_lower = model_config.model_name.lower()
+    base_model_lower = (model_config.base_model or "").lower()
+    is_flux2 = any(
+        identifier in model_name_lower or identifier in base_model_lower for identifier in ("flux.2", "flux2")
+    )
+    if args.guidance != 1.0 and not is_flux2:
+        parser.error("--guidance is only supported for FLUX.2 models. Use --guidance 1.0.")
 
     model = Flux2KleinEdit(
         model_config=model_config,
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     memory_saver = CallbackManager.register_callbacks(
@@ -69,11 +86,7 @@ def main():
                 num_inference_steps=args.steps,
                 scheduler="flow_match_euler_discrete",
             )
-            ImageUtil.save_image(
-                image=image,
-                path=args.output.format(seed=seed),
-                export_json_metadata=args.metadata,
-            )
+            image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:
         print(exc)
     finally:

@@ -14,6 +14,7 @@ from safetensors.torch import load_file as torch_load_file
 from mflux.cli.defaults.defaults import MFLUX_CACHE_DIR
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights, MetaData
+from mflux.models.common.weights.loading.safetensors_reader import SafetensorsReader
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.models.common.weights.mapping.weight_mapper import WeightMapper
 
@@ -31,6 +32,13 @@ class WeightLoader:
         file_pattern: str = "*.safetensors",
     ) -> LoadedWeights:
         root_path = Path(snapshot_download(repo_id=repo_id, allow_patterns=[file_pattern, "config.json"]))
+        return WeightLoader.load_single_local(component=component, root_path=root_path)
+
+    @staticmethod
+    def load_single_local(
+        component: ComponentDefinition,
+        root_path: Path,
+    ) -> LoadedWeights:
         weights, q_level, version = WeightLoader._load_component(root_path, component)
         return LoadedWeights(
             components={component.name: weights},
@@ -41,13 +49,29 @@ class WeightLoader:
     def load(
         weight_definition: "WeightDefinitionType",
         model_path: str | None = None,
+        download_patterns: list[str] | None = None,
     ) -> LoadedWeights:
+        # download_patterns lets a caller supply variant-aware HF allow_patterns (e.g. Krea 2
+        # Turbo vs Raw need different transformer layouts); default to the definition's list.
         root_path = PathResolution.resolve(
             path=model_path,
-            patterns=weight_definition.get_download_patterns(),
+            patterns=download_patterns if download_patterns is not None else weight_definition.get_download_patterns(),
         )
 
         # 2. Load each component (with caching for shared sources)
+        # A missing root path is a whole-model condition: without it, the first component
+        # that lacks a direct download URL used to raise a per-component error ("no
+        # download_url for component: vae") that sends the reader auditing their cache and
+        # that component, when nothing was ever resolved to load from. Say so once, up
+        # front. Definitions whose every component ships a URL (DepthPro) still work
+        # without a root path.
+        if root_path is None and any(c.download_url is None for c in weight_definition.get_components()):
+            raise ValueError(
+                f"No weights location for {getattr(weight_definition, '__name__', weight_definition)}: "
+                f"model_path was not given and the model config resolved no model_name, so there is "
+                f"no directory or repository to load from."
+            )
+
         components = {}
         quantization_level = None
         mflux_version = None
@@ -76,6 +100,12 @@ class WeightLoader:
         component: ComponentDefinition,
         raw_weights_cache: dict[tuple, dict] | None = None,
     ) -> tuple[dict, int | None, str | None]:
+        # Some components are distributed in more than one on-disk layout (e.g. a native
+        # single-file checkpoint vs a diffusers sharded directory with different keys).
+        # Let the component pick the concrete definition based on what is present on disk.
+        if component.variant_selector is not None and root_path is not None:
+            component = component.variant_selector(root_path)
+
         # Handle direct URL downloads (e.g., Apple CDN for DepthPro)
         if component.download_url is not None:
             file_path = WeightLoader._download_from_url(component.download_url, component.name)
@@ -85,7 +115,7 @@ class WeightLoader:
                 raise ValueError(f"No root_path and no download_url for component: {component.name}")
             component_path = root_path / component.hf_subdir
 
-            # Try mflux saved format first
+            # Try mflux saved format first (including FP8 components reloaded after mflux-save).
             weights, q_level, version = WeightLoader._try_load_mflux_format(component_path)
             if weights is not None:
                 return weights, q_level, version
@@ -110,6 +140,17 @@ class WeightLoader:
                 for k, v in raw_weights.items()
                 if any(k.startswith(prefix) for prefix in component.weight_prefix_filters)
             }
+
+        if component.key_transform is not None:
+            transformed_weights = {}
+            for key, value in raw_weights.items():
+                transformed_key = component.key_transform(key)
+                if transformed_key is not None:
+                    transformed_weights[transformed_key] = value
+            raw_weights = transformed_weights
+
+        if component.weight_transform is not None:
+            raw_weights = {k: component.weight_transform(k, v) for k, v in raw_weights.items()}
 
         # Apply precision conversion if specified
         if component.precision is not None:
@@ -216,6 +257,8 @@ class WeightLoader:
             return WeightLoader._load_single(path)
         elif loading_mode == "multi_glob":
             return WeightLoader._load_multi_glob(path)
+        elif loading_mode == "fp8_safetensors":
+            return WeightLoader._load_fp8_safetensors(path)
         else:
             raise ValueError(f"Unknown loading mode: {loading_mode}")
 
@@ -332,6 +375,10 @@ class WeightLoader:
             all_weights.update(dict(data.items()))
 
         return all_weights
+
+    @staticmethod
+    def _load_fp8_safetensors(path: Path) -> dict[str, mx.array]:
+        return SafetensorsReader.read_directory(path)
 
     @staticmethod
     def _convert_precision(weights: dict[str, mx.array], precision: mx.Dtype) -> dict[str, mx.array]:

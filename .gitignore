@@ -14,7 +14,10 @@
 *.pyc
 *.safetensors
 *.json
+!greptile.json
 !src/mflux/models/common/training/_example/train.json
+!src/mflux/models/common/training/_example/train_ernie_image_turbo.json
+!src/mflux/models/common/training/_example/train_ernie_image.json
 !tests/training/config/train.json
 tests/training/tmp/
 

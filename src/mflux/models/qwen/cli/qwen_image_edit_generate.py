@@ -2,8 +2,8 @@ from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
 from mflux.models.common.config import ModelConfig
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.qwen.latent_creator.qwen_latent_creator import QwenLatentCreator
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -11,8 +11,7 @@ from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopIm
 from mflux.utils.prompt_util import PromptUtil
 
 
-def main():
-    # 0. Parse command line arguments
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Qwen Image Edit with image conditioning.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -20,6 +19,12 @@ def main():
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_argument("--image-paths", type=Path, nargs="+", required=True, help="Local paths to one or more init images. For single image editing, provide one path. For multiple image editing, provide multiple paths.")  # fmt: off
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    # 0. Parse command line arguments
+    parser = build_parser()
     args = parser.parse_args()
 
     # 0. Set default guidance value if not provided by user
@@ -39,8 +44,7 @@ def main():
         quantize=args.quantize,
         model_config=model_config,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks

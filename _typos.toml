@@ -2,4 +2,4 @@
 # use "typos --dump-config" to disocver other configs to override
 
 [default]
-extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw"]
+extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs"]

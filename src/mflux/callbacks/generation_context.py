@@ -30,6 +30,7 @@ class GenerationContext:
         *,
         canny_image: PIL.Image.Image | None = None,
         depth_image: PIL.Image.Image | None = None,
+        control_images: list[PIL.Image.Image] | None = None,
     ) -> None:
         for subscriber in self._registry.before_loop_callbacks():
             subscriber.call_before_loop(
@@ -39,6 +40,7 @@ class GenerationContext:
                 config=self._config,
                 canny_image=canny_image,
                 depth_image=depth_image,
+                control_images=control_images,
             )
 
     def in_loop(self, t: int, latents: mx.array, time_steps: tqdm = None) -> None:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-
 from collections.abc import Iterator
 from contextlib import contextmanager
 

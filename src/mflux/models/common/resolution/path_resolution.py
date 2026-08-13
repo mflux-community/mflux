@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from pathlib import Path
@@ -156,10 +157,12 @@ class PathResolution:
                             break
                     if not has_valid_match:
                         return False
-                return True
+                return PathResolution._indexed_shards_present(snapshot_path)
             else:
                 # Fallback: just check for any safetensors
-                return any(snapshot_path.glob("**/*.safetensors"))
+                if not any(snapshot_path.glob("**/*.safetensors")):
+                    return False
+                return PathResolution._indexed_shards_present(snapshot_path)
 
         for subdir in required_subdirs:
             subdir_path = snapshot_path / subdir
@@ -179,5 +182,33 @@ class PathResolution:
                         break
             if not has_safetensors:
                 return False
+            if not PathResolution._indexed_shards_present(subdir_path):
+                return False
 
+        return True
+
+    @staticmethod
+    def _indexed_shards_present(directory: Path) -> bool:
+        """Whether every shard named by an index in `directory` is on disk.
+
+        Indexed checkpoints are only complete when every referenced shard exists.
+        One cached shard must not make a partial snapshot look complete and
+        suppress Hugging Face's repair download. Directories without an index are
+        complete by this measure, which is what unsharded checkpoints are.
+        """
+        for index_path in directory.glob("*.safetensors.index.json"):
+            try:
+                with index_path.open(encoding="utf-8") as index_file:
+                    index = json.load(index_file)
+                weight_map = index.get("weight_map") if isinstance(index, dict) else None
+                if not isinstance(weight_map, dict) or not weight_map:
+                    return False
+                referenced_shards = set(weight_map.values())
+                if not all(
+                    isinstance(filename, str) and Path(filename).name == filename and (directory / filename).is_file()
+                    for filename in referenced_shards
+                ):
+                    return False
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):  # noqa: PERF203
+                return False
         return True

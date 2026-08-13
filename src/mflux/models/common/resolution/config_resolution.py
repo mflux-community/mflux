@@ -20,9 +20,23 @@ class ConfigResolution:
     )
 
     @staticmethod
-    def resolve(model_name: str, base_model: str | None = None) -> "ModelConfig":
+    def resolve(model_name: str | None, base_model: str | None = None) -> "ModelConfig":
         from mflux.models.common.config.model_config import AVAILABLE_MODELS, ModelConfig
         from mflux.utils.exceptions import InvalidBaseModel, ModelConfigError
+
+        # `--base-model schnell` with no custom checkpoint asks for the base model itself.
+        # Without this, the explicit-base rule builds a config whose model_name is None,
+        # and every initializer that reads model_config.model_name fails to resolve a
+        # weights path, surfacing as a misleading per-component error far from the cause.
+        # Promoting the alias makes from_name yield the same config shape whichever
+        # keyword named the model.
+        if model_name is None and base_model is not None:
+            model_name = base_model
+
+        # Naming neither leaves nothing to resolve. Without this the substring rule
+        # lowercases None and the caller gets an AttributeError from two frames deep.
+        if model_name is None:
+            raise ModelConfigError("No model requested: pass a model_name, a base_model, or both.")
 
         base_models = sorted(
             [m for m in AVAILABLE_MODELS.values() if m.base_model is None],

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.fibo.latent_creator.fibo_latent_creator import FiboLatentCreator
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
@@ -76,7 +76,7 @@ def _save_edit_result(
         image.save(path=out_path, export_json_metadata=args.metadata)
 
 
-def main():
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an edited image using Bria FIBO Edit.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -91,6 +91,11 @@ def main():
     parser.add_argument("--mask-path", type=Path, default=None, help="Optional mask image path for localized edits.")
     parser.add_argument("--matte-output", type=str, default=None, help="fibo-edit-rmbg only: also save the raw grayscale matte. Supports {seed} like --output.")  # fmt: skip
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.image_path is None:
@@ -104,8 +109,7 @@ def main():
     fibo_edit = FIBOEdit(
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
         model_config=model_config,
     )
 

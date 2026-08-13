@@ -17,6 +17,7 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 - [Auto seeds](#auto-seeds)
 - [Metadata reuse](#metadata-reuse)
 - [Metadata inspection](#metadata-inspection)
+- [PiD pixel-diffusion decode](#pid-pixel-diffusion-decode)
 - [Resource and inspection options](#resource-and-inspection-options)
 - [MLX cache limit](#mlx-cache-limit)
 - [Cache locations](#cache-locations)
@@ -213,6 +214,8 @@ image.save("prompt_file.png")
 
 ## LoRA basics
 
+By default, LoRA and LoKr weights are **baked** into the base model after load (one-time merge) so inference uses a single matmul per layer. With `--quantize`, adapters are merged into dequantized weights and the result is re-quantized (same as baking into a dense model, then quantizing that layer). Use `--no-bake-lora` to keep runtime adapter layers (for example if you change scales programmatically without reloading).
+
 ```sh
 mflux-generate-z-image-turbo \
   --model z-image-turbo \
@@ -233,6 +236,7 @@ model = ZImageTurbo(
     model_config=ModelConfig.z_image_turbo(),
     lora_paths=["/local/path/to/lora.safetensors"],
     lora_scales=[0.8],
+    bake_lora=True,
 )
 image = model.generate_image(
     seed=42,
@@ -277,6 +281,21 @@ image.save("portrait_hf_lora.png")
 </details>
 
 For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames.
+
+### LyCORIS LoKr (FLUX.1 and FLUX.2)
+
+LyCORIS LoKr safetensors use the same `--lora-paths` / `lora_scales` API as classic LoRA. mflux accepts direct `lokr_w1` / `lokr_w2` tensors, factorized `lokr_w1_a` / `lokr_w1_b` (and `lokr_w2_*`, optional `lokr_t2`), optional `dora_scale`, and common ComfyUI / SimpleTuner key prefixes (`lycoris_*`, `lora_unet_*`, `diffusion_model.*`).
+
+```sh
+mflux-generate-flux2 \
+  --model flux2-klein-9b \
+  --prompt "a portrait" \
+  --steps 4 \
+  --lora-paths "/path/to/lycoris-lokr.safetensors" \
+  --lora-scales 1.0
+```
+
+FLUX.1 uses `mflux-generate` with `--model dev` (or `schnell` / `krea-dev`) and the same LoKr flags.
 
 ---
 
@@ -484,6 +503,38 @@ metadata = MetadataReader.read_all_metadata("./image.png")
 print(metadata)
 ```
 </details>
+
+---
+
+## PiD pixel-diffusion decode
+
+`--pid-decode` replaces the VAE decoder with [NVIDIA PiD](https://huggingface.co/nvidia/PiD), a 4-step distilled diffusion that denoises in pixel space conditioned on the VAE latent and the prompt. The output is **4× the generation size**: `--width 512 --height 512` writes a 2048×2048 image, and the extra detail is generated rather than interpolated.
+
+First use downloads two Hugging Face repos, ~8 GB combined: `nvidia/PiD` and `google/gemma-2-2b-it` (**gated** — accept the Gemma licence on the Hub, then `hf auth login`).
+
+```sh
+mflux-generate-z-image-turbo \
+  --model z-image-turbo \
+  --steps 8 \
+  --prompt "a portrait" \
+  --width 832 --height 1248 \
+  --pid-decode
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--pid-decode` | Decode with PiD instead of the VAE. Output is 4× the generation size. |
+| `--pid-degrade-sigma S` | Noise the latent to flow-matching sigma `S` (0.0–0.8) before decoding. See below. |
+
+**It is not a decode-faithful operation.** PiD finishes the image in pixel space at 4×, so it re-draws rather than sharpens: fine geometry can shift (bird beak plates, small typography, jewellery) relative to a VAE decode of the same latent at the same seed. It is a better-looking image of the same scene, not the same image at higher resolution.
+
+**Skin is the weak spot.** On portraits PiD invents blemishes on large smooth expanses — moles that grow, speckle on a chest or shoulder, added skin age on a face. Feathers, fur, fabric and engraved metal are where it looks best.
+
+**`--pid-degrade-sigma` is not a fix for that** — it is the knob PiD's own reference exposes (`from_clean.py` forward-noises the latent by sigma and passes the same sigma to the LQ gates; single-image mode defaults to 0.0), and it buys a *different* sample, not a cleaner one. Measured on Krea 2 at 512×640, sigma 0.0 → 0.1 → 0.2: high-frequency energy on the face rises 54× → 82× → 99× relative to a VAE decode (PiD invents *more*, not less), every channel darkens monotonically (−4 to −11 levels by 0.2), and framing drifts enough to reframe a fixed crop. On smooth skin it changes which blemishes appear rather than how many. Leave it at 0.0 unless you are deliberately sampling for variety.
+
+**On Ideogram 4**, a plain-text prompt can trip the model's own safety filter and return a blank page. That happens on a normal VAE decode too — it is Ideogram's behaviour, not PiD's. Use a structured JSON caption.
+
+Metadata records the PiD flags, so `--config-from-metadata` reproduces a PiD run. `config.height/width` stay the *generation* dimensions, which is what reproduces the run — the file on disk is 4× larger.
 
 ---
 

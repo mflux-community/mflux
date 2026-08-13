@@ -1,14 +1,19 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux.variants.fill.flux_fill import Flux1Fill
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# Single source of truth for options this CLI accepts but cannot honour: the runtime
+# warning and the mflux-capabilities dump both read it.
+IGNORED_OPTIONS = {
+    "--negative-prompt": "FLUX.1 uses distilled guidance and has no negative branch.",
+}
 
-def main():
-    # 0. Parse command line arguments
+
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using the fill tool to complete masked areas.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
@@ -16,7 +21,14 @@ def main():
     parser.add_image_generator_arguments(supports_metadata_config=False)
     parser.add_fill_arguments()
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    # 0. Parse command line arguments
+    parser = build_parser()
     args = parser.parse_args()
+    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
     # 0. Default to a higher guidance value for fill related tasks.
     if args.guidance is None:
@@ -26,8 +38,7 @@ def main():
     flux = Flux1Fill(
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks

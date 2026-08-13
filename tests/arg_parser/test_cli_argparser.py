@@ -37,6 +37,13 @@ def mflux_generate_controlnet_parser() -> CommandLineParser:
 
 
 @pytest.fixture
+def mflux_generate_pid_parser() -> CommandLineParser:
+    parser = _create_mflux_generate_parser(with_controlnet=False, require_model_arg=False)
+    parser.add_pid_decode_arguments()
+    return parser
+
+
+@pytest.fixture
 def mflux_save_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Save a quantized version of Flux.1 to disk.")  # fmt: off
     parser.add_general_arguments()
@@ -516,6 +523,116 @@ def test_image_to_image_args(mflux_generate_parser, mflux_generate_minimal_argv,
 
 
 @pytest.mark.fast
+def test_atomic_lora_arg(mflux_generate_parser, mflux_generate_minimal_model_argv):
+    # Each --lora pairs a path with an optional scale; omitted scale defaults to 1.0.
+    argv = mflux_generate_minimal_model_argv + [
+        "--lora",
+        "/some/lora/A.safetensors",
+        "0.7",
+        "--lora",
+        "/some/lora/B.safetensors",
+    ]
+    with patch("mflux.cli.parser.parsers.LoraResolution.resolve", side_effect=lambda x: x):
+        with patch("sys.argv", argv):
+            args = mflux_generate_parser.parse_args()
+    assert args.lora_paths == ["/some/lora/A.safetensors", "/some/lora/B.safetensors"]
+    assert args.lora_scales == [pytest.approx(0.7), pytest.approx(1.0)]
+
+
+@pytest.mark.fast
+def test_atomic_lora_merges_with_metadata(mflux_generate_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "atomic_lora.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["lora_paths"] = ["/meta/lora.safetensors"]
+        base_metadata_dict["lora_scales"] = [0.3]
+        json.dump(base_metadata_dict, m, indent=4)
+    argv = mflux_generate_minimal_argv + [
+        "--lora",
+        "/cli/lora.safetensors",
+        "0.9",
+        "--config-from-metadata",
+        metadata_file.as_posix(),
+    ]
+    with patch("mflux.cli.parser.parsers.LoraResolution.resolve", side_effect=lambda x: x):
+        with patch("sys.argv", argv):
+            args = mflux_generate_parser.parse_args()
+    # metadata loras are prepended to the CLI-provided ones, scales stay aligned
+    assert args.lora_paths == ["/meta/lora.safetensors", "/cli/lora.safetensors"]
+    assert args.lora_scales == [pytest.approx(0.3), pytest.approx(0.9)]
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    "bad_args",
+    [
+        ["--lora", "A.safetensors", "0.7", "--lora-paths", "B.safetensors"],  # mixing new + legacy
+        ["--lora", "A.safetensors", "not-a-number"],  # non-numeric scale
+        ["--lora", "A.safetensors", "B.safetensors", "0.7"],  # too many values in one group
+    ],
+)
+def test_atomic_lora_arg_errors(mflux_generate_parser, mflux_generate_minimal_model_argv, bad_args):
+    with patch("sys.argv", mflux_generate_minimal_model_argv + bad_args):
+        with pytest.raises(SystemExit):
+            mflux_generate_parser.parse_args()
+
+
+@pytest.mark.fast
+def test_atomic_image_arg(mflux_generate_parser, mflux_generate_minimal_model_argv):
+    # --image with explicit strength
+    with patch("sys.argv", mflux_generate_minimal_model_argv + ["--image", "/some/photo.jpg", "0.6"]):
+        args = mflux_generate_parser.parse_args()
+    assert args.image_path == Path("/some/photo.jpg")
+    assert args.image_strength == pytest.approx(0.6)
+
+    # --image with omitted strength falls back to the default
+    with patch("sys.argv", mflux_generate_minimal_model_argv + ["--image", "/some/photo.jpg"]):
+        args = mflux_generate_parser.parse_args()
+    assert args.image_path == Path("/some/photo.jpg")
+    assert args.image_strength == ui_defaults.IMAGE_STRENGTH
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    "bad_args",
+    [
+        ["--image", "p.jpg", "--image-strength", "0.6"],  # mixing new + legacy
+        ["--image", "p.jpg", "not-a-number"],  # non-numeric strength
+        ["--image", "p.jpg", "0.6", "extra"],  # too many values
+    ],
+)
+def test_atomic_image_arg_errors(mflux_generate_parser, mflux_generate_minimal_model_argv, bad_args):
+    with patch("sys.argv", mflux_generate_minimal_model_argv + bad_args):
+        with pytest.raises(SystemExit):
+            mflux_generate_parser.parse_args()
+
+
+@pytest.mark.fast
+def test_required_init_image_satisfied_by_either_flag():
+    # Kontext-style commands require an init image; either --image or the legacy
+    # --image-path must satisfy it, and neither present is an error.
+    def _required_image_parser() -> CommandLineParser:
+        parser = CommandLineParser(description="x")
+        parser.add_general_arguments()
+        parser.add_model_arguments(require_model_arg=False)
+        parser.add_image_generator_arguments(supports_metadata_config=True)
+        parser.add_image_to_image_arguments(required=True)
+        parser.add_output_arguments()
+        return parser
+
+    base = ["mflux-generate-kontext", "--prompt", "x", "-m", "dev"]
+
+    with patch("sys.argv", base + ["--image", "p.jpg"]):
+        assert _required_image_parser().parse_args().image_path == Path("p.jpg")
+
+    with patch("sys.argv", base + ["--image-path", "p.jpg"]):
+        assert _required_image_parser().parse_args().image_path == Path("p.jpg")
+
+    with patch("sys.argv", base):
+        with pytest.raises(SystemExit):
+            _required_image_parser().parse_args()
+
+
+@pytest.mark.fast
 def test_image_outpaint_args(mflux_generate_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
     metadata_file = temp_dir / "image_outpaint.json"
     test_padding = "10,20,30,40"
@@ -548,6 +665,89 @@ def test_image_outpaint_args(mflux_generate_parser, mflux_generate_minimal_argv,
     with patch('sys.argv', mflux_generate_minimal_argv + ['--image-outpaint-padding', '10%, 50,   20%', '--config-from-metadata', metadata_file.as_posix()]):  # fmt: off
         args = mflux_generate_parser.parse_args()
         assert args.image_outpaint_padding == BoxValues("10%", 50, "20%", 50)
+
+
+@pytest.mark.fast
+def test_pid_decode_args_restore_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "pid_decode.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = True
+        json.dump(base_metadata_dict, m, indent=4)
+
+    # without --config-from-metadata, --pid-decode keeps its CLI default
+    with patch("sys.argv", mflux_generate_minimal_argv + ["-m", "dev"]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is False
+
+    # metadata restores the flag -- this is what makes --config-from-metadata reproduce
+    # a --pid-decode run instead of silently regenerating at a quarter of the resolution
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+
+    # explicit --pid-decode on the CLI is not overridden by metadata saying pid_decode: false
+    base_metadata_dict["pid_decode"] = False
+    with metadata_file.open("wt") as m:
+        json.dump(base_metadata_dict, m, indent=4)
+    with patch(
+        "sys.argv", mflux_generate_minimal_argv + ["--pid-decode", "--config-from-metadata", metadata_file.as_posix()]
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+
+
+@pytest.mark.fast
+def test_pid_degrade_sigma_arg_restores_from_metadata(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "pid_degrade_sigma.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = True
+        base_metadata_dict["pid_degrade_sigma"] = 0.2
+        json.dump(base_metadata_dict, m, indent=4)
+
+    # CLI default is 0.0 (no degradation)
+    with patch("sys.argv", mflux_generate_minimal_argv + ["-m", "dev"]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.0
+
+    # metadata restores it when not explicitly passed
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.2
+
+    # explicit CLI value is not overridden by metadata
+    with patch(
+        "sys.argv",
+        mflux_generate_minimal_argv
+        + ["--pid-degrade-sigma", "0.5", "--config-from-metadata", metadata_file.as_posix()],
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_degrade_sigma == 0.5
+
+
+@pytest.mark.fast
+def test_pid_degrade_sigma_normalizes_null_from_a_non_pid_sidecar(mflux_generate_pid_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    # Every non-PiD generation writes `"pid_degrade_sigma": null` (GeneratedImage._get_metadata
+    # emits the sigma only when pid_decode is set). The key is therefore present, so a
+    # `.get(key, 0.0)` returns None rather than the default -- and "re-run this old image through
+    # PiD" used to hand None to the decoder's float-only range check.
+    metadata_file = temp_dir / "non_pid_sidecar.json"
+    with metadata_file.open("wt") as m:
+        base_metadata_dict["pid_decode"] = False
+        base_metadata_dict["pid_degrade_sigma"] = None
+        json.dump(base_metadata_dict, m, indent=4)
+
+    with patch(
+        "sys.argv", mflux_generate_minimal_argv + ["--pid-decode", "--config-from-metadata", metadata_file.as_posix()]
+    ):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is True
+        assert args.pid_degrade_sigma == 0.0
+
+    # and without --pid-decode, the null still must not leak through as None
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        args = mflux_generate_pid_parser.parse_args()
+        assert args.pid_decode is False
+        assert args.pid_degrade_sigma == 0.0
 
 
 @pytest.mark.fast
@@ -1286,6 +1486,246 @@ def test_z_image_turbo_args(mflux_z_image_turbo_parser, mflux_z_image_turbo_mini
             args = mflux_z_image_turbo_parser.parse_args()
             assert args.lora_paths == ["some/lora.safetensors"]
             assert args.lora_scales == [pytest.approx(0.8)]
+
+
+# ============================================================================
+# ERNIE-Image Tests
+# ============================================================================
+
+
+@pytest.fixture
+def mflux_ernie_image_parser() -> CommandLineParser:
+    parser = CommandLineParser(description="Generate an image using ERNIE-Image (50 steps, CFG) based on a prompt.")
+    parser.add_general_arguments()
+    parser.add_model_arguments(require_model_arg=False)
+    parser.add_lora_arguments()
+    parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
+    parser.add_image_to_image_arguments(required=False)
+    parser.add_output_arguments()
+    parser.set_defaults(model="ernie-image", guidance=4.0)
+    return parser
+
+
+@pytest.fixture
+def mflux_ernie_image_minimal_argv() -> list[str]:
+    return ["mflux-generate-ernie-image", "--prompt", "a bicycle on a beach"]
+
+
+@pytest.fixture
+def mflux_ernie_image_turbo_parser() -> CommandLineParser:
+    parser = CommandLineParser(
+        description="Generate an image using ERNIE-Image-Turbo (distilled, 8 steps) based on a prompt."
+    )
+    parser.add_general_arguments()
+    parser.add_model_arguments(require_model_arg=False)
+    parser.add_lora_arguments()
+    parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
+    parser.add_image_to_image_arguments(required=False)
+    parser.add_output_arguments()
+    parser.set_defaults(model="ernie-image-turbo")
+    return parser
+
+
+@pytest.fixture
+def mflux_ernie_image_turbo_minimal_argv() -> list[str]:
+    return ["mflux-generate-ernie-image-turbo", "--prompt", "a bicycle on a beach"]
+
+
+@pytest.mark.fast
+def test_ernie_image_args(mflux_ernie_image_parser, mflux_ernie_image_minimal_argv):
+    with patch("sys.argv", mflux_ernie_image_minimal_argv):
+        args = mflux_ernie_image_parser.parse_args()
+        assert args.prompt == "a bicycle on a beach"
+        assert args.guidance == pytest.approx(4.0)
+        assert mflux_ernie_image_parser.supports_dimension_scale_factor is True
+        assert isinstance(args.width, ScaleFactor)
+        assert isinstance(args.height, ScaleFactor)
+        assert args.width.value == 1
+        assert args.height.value == 1
+
+    with patch("sys.argv", mflux_ernie_image_minimal_argv + ["--guidance", "3.0"]):
+        args = mflux_ernie_image_parser.parse_args()
+        assert args.guidance == pytest.approx(3.0)
+
+    with patch("sys.argv", mflux_ernie_image_minimal_argv + ["--image-path", "input.png", "--image-strength", "0.7"]):
+        args = mflux_ernie_image_parser.parse_args()
+        assert args.image_path == Path("input.png")
+        assert args.image_strength == pytest.approx(0.7)
+
+
+@pytest.mark.fast
+def test_ernie_image_turbo_args(mflux_ernie_image_turbo_parser, mflux_ernie_image_turbo_minimal_argv):
+    with patch("sys.argv", mflux_ernie_image_turbo_minimal_argv):
+        args = mflux_ernie_image_turbo_parser.parse_args()
+        assert args.prompt == "a bicycle on a beach"
+        assert args.guidance is None
+        assert mflux_ernie_image_turbo_parser.supports_dimension_scale_factor is True
+        assert isinstance(args.width, ScaleFactor)
+        assert isinstance(args.height, ScaleFactor)
+
+    with patch("sys.argv", mflux_ernie_image_turbo_minimal_argv + ["--guidance", "1.0"]):
+        args = mflux_ernie_image_turbo_parser.parse_args()
+        assert args.guidance == pytest.approx(1.0)
+
+
+@pytest.mark.fast
+def test_ernie_image_turbo_rejects_non_unit_guidance(mflux_ernie_image_turbo_minimal_argv):
+    from mflux.models.ernie_image.cli import ernie_image_turbo_generate as turbo_cli
+
+    with patch("sys.argv", mflux_ernie_image_turbo_minimal_argv + ["--guidance", "4.0"]):
+        with patch.object(turbo_cli, "ErnieImage"):
+            with patch.object(turbo_cli.CallbackManager, "register_callbacks", return_value=None):
+                with pytest.raises(SystemExit) as exc_info:
+                    turbo_cli.main()
+                assert exc_info.value.code == 2
+
+
+# ============================================================================
+# Ideogram 4 Tests
+# ============================================================================
+
+
+@pytest.fixture
+def mflux_ideogram4_parser() -> CommandLineParser:
+    from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
+
+    parser = CommandLineParser(description="Generate an image using Ideogram 4.")
+    parser.add_general_arguments()
+    parser.add_model_arguments(require_model_arg=False)
+    parser.add_lora_arguments()
+    parser.add_image_generator_arguments(supports_metadata_config=True)
+    parser.add_output_arguments()
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        choices=sorted(Ideogram4Scheduler.PRESETS),
+        help="Ideogram 4 sampler preset (step count, guidance schedule, and noise schedule). Default is V4_DEFAULT_20.",
+    )
+    parser.add_argument(
+        "--strict-caption-validation",
+        action="store_true",
+        help="Fail when an Ideogram 4 JSON caption has schema warnings.",
+    )
+    return parser
+
+
+@pytest.fixture
+def mflux_ideogram4_minimal_argv() -> list[str]:
+    return ["mflux-generate-ideogram4", "--prompt", '{"high_level_description": "a ceramic teapot"}']
+
+
+@pytest.mark.fast
+def test_ideogram4_args(mflux_ideogram4_parser, mflux_ideogram4_minimal_argv):
+    with patch("sys.argv", mflux_ideogram4_minimal_argv):
+        args = mflux_ideogram4_parser.parse_args()
+        assert args.prompt == '{"high_level_description": "a ceramic teapot"}'
+        assert args.preset is None
+        assert args.strict_caption_validation is False
+        assert args.model is None
+
+    with patch("sys.argv", mflux_ideogram4_minimal_argv + ["--model", "ideogram4"]):
+        args = mflux_ideogram4_parser.parse_args()
+        assert args.model == "ideogram4"
+
+    with patch("sys.argv", mflux_ideogram4_minimal_argv + ["--preset", "V4_TURBO_12"]):
+        args = mflux_ideogram4_parser.parse_args()
+        assert args.preset == "V4_TURBO_12"
+
+    with patch("sys.argv", mflux_ideogram4_minimal_argv + ["--strict-caption-validation"]):
+        args = mflux_ideogram4_parser.parse_args()
+        assert args.strict_caption_validation is True
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("preset", ["V4_DEFAULT_20", "V4_QUALITY_48", "V4_TURBO_12"])
+def test_ideogram4_preset_choices(mflux_ideogram4_parser, mflux_ideogram4_minimal_argv, preset: str):
+    with patch("sys.argv", mflux_ideogram4_minimal_argv + ["--preset", preset]):
+        args = mflux_ideogram4_parser.parse_args()
+        assert args.preset == preset
+
+
+@pytest.mark.fast
+def test_ideogram4_rejects_invalid_preset(mflux_ideogram4_parser, mflux_ideogram4_minimal_argv):
+    with patch("sys.argv", mflux_ideogram4_minimal_argv + ["--preset", "V4_NOT_A_PRESET"]):
+        with pytest.raises(SystemExit) as exc_info:
+            mflux_ideogram4_parser.parse_args()
+        assert exc_info.value.code == 2
+
+
+# ============================================================================
+# Krea 2 Tests
+# ============================================================================
+
+
+@pytest.fixture
+def mflux_krea2_parser() -> CommandLineParser:
+    parser = CommandLineParser(description="Generate an image using Krea-2 based on a prompt.")
+    parser.add_general_arguments()
+    parser.add_model_arguments(require_model_arg=False)
+    parser.add_lora_arguments()
+    parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
+    parser.add_image_to_image_arguments(required=False)
+    parser.add_output_arguments()
+    return parser
+
+
+@pytest.fixture
+def mflux_krea2_minimal_argv() -> list[str]:
+    return ["mflux-generate-krea2", "--prompt", "a red fox in a forest"]
+
+
+@pytest.mark.fast
+def test_krea2_args(mflux_krea2_parser, mflux_krea2_minimal_argv):
+    with patch("sys.argv", mflux_krea2_minimal_argv):
+        args = mflux_krea2_parser.parse_args()
+        assert args.prompt == "a red fox in a forest"
+        assert args.model is None
+        assert args.scheduler == "linear"
+        assert args.steps == 25
+        assert args.guidance is None
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--model", "krea2"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.model == "krea2"
+        assert args.steps == 8
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--scheduler", "euler"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.scheduler == "euler"
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--steps", "8", "--guidance", "1.0"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.steps == 8
+        assert args.guidance == pytest.approx(1.0)
+
+    with patch("sys.argv", mflux_krea2_minimal_argv + ["--image-path", "input.png", "--image-strength", "0.65"]):
+        args = mflux_krea2_parser.parse_args()
+        assert args.image_path == Path("input.png")
+        assert args.image_strength == pytest.approx(0.65)
+
+
+@pytest.mark.fast
+def test_krea2_lora_arguments(mflux_krea2_parser, mflux_krea2_minimal_argv):
+    with patch("mflux.cli.parser.parsers.LoraResolution.resolve", side_effect=lambda x: x):
+        with patch(
+            "sys.argv",
+            mflux_krea2_minimal_argv
+            + [
+                "--lora-paths",
+                "krea/Krea-2-LoRA-darkbrush",
+                "gokaygokay/Krea-2-Realism-LoRA",
+                "--lora-scales",
+                "1.0",
+                "0.8",
+            ],
+        ):
+            args = mflux_krea2_parser.parse_args()
+            assert args.lora_paths == [
+                "krea/Krea-2-LoRA-darkbrush",
+                "gokaygokay/Krea-2-Realism-LoRA",
+            ]
+            assert args.lora_scales == [pytest.approx(1.0), pytest.approx(0.8)]
 
 
 # ============================================================================

@@ -458,6 +458,11 @@ class TokenizerLoader:
                 template=definition.template,
                 image_token=definition.image_token,
             )
+        elif encoder_class is not None and encoder_class is not LanguageTokenizer:
+            return encoder_class(
+                tokenizer=raw_tokenizer,
+                max_length=definition.max_length,
+            )
         else:
             # Default to LanguageTokenizer for all text-only cases
             return LanguageTokenizer(

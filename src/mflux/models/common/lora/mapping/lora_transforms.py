@@ -71,14 +71,9 @@ class LoraTransforms:
 
     @staticmethod
     def _split_qkv_down(tensor: mx.array, index: int, num_splits: int = 3) -> mx.array:
-        rank = tensor.shape[0]
-        if rank % num_splits == 0:
-            chunk_size = rank // num_splits
-            start = index * chunk_size
-            end = start + chunk_size
-            return tensor[start:end, :]
-        else:
-            return tensor
+        # The down (A) matrix has shape (rank, input_dim) with rank shared across Q/K/V.
+        # Only the up (B) matrix has concatenated output rows that need splitting.
+        return tensor
 
     @staticmethod
     def _split_qkv_mlp_up(tensor: mx.array, index: int, dims: list[int] | None = None) -> mx.array:
@@ -91,11 +86,5 @@ class LoraTransforms:
 
     @staticmethod
     def _split_qkv_mlp_down(tensor: mx.array, index: int, num_splits: int = 4) -> mx.array:
-        rank = tensor.shape[0]
-        if rank % num_splits == 0:
-            chunk_size = rank // num_splits
-            start = index * chunk_size
-            end = start + chunk_size
-            return tensor[start:end, :]
-        else:
-            return tensor
+        # The down (A) matrix rank is shared across Q/K/V/MLP; only the up (B) rows are split.
+        return tensor

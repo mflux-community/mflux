@@ -39,13 +39,11 @@ class Flux2EditTrainingAdapter(Flux2BaseTrainingAdapter):
         # Prompt -> conditioning
         prompt_embeds, text_ids = self._encode_prompt(prompt=prompt)
 
-        # Reference image -> conditioning
+        # Reference image -> conditioning (encoded at its own aspect-preserved size)
         image_latents, image_latent_ids = _Flux2KleinEditHelpers.prepare_reference_image_conditioning(
             vae=self._flux2.vae,
             tiling_config=self._flux2.tiling_config,
             image_paths=[input_image_path],
-            height=height,
-            width=width,
             batch_size=1,
         )
         if image_latents is None or image_latent_ids is None:

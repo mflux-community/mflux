@@ -7,6 +7,7 @@ from PIL import Image
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.latent_creator.latent_creator import Img2Img, LatentCreator
+from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.z_image.latent_creator import ZImageLatentCreator
@@ -32,6 +33,7 @@ class ZImage(nn.Module):
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
         model_config: ModelConfig = ModelConfig.z_image_turbo(),
     ):
         super().__init__()
@@ -41,6 +43,7 @@ class ZImage(nn.Module):
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
             model_config=model_config,
         )
 
@@ -56,6 +59,8 @@ class ZImage(nn.Module):
         image_strength: float | None = None,
         scheduler: str | None = None,
         negative_prompt: str | None = None,
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ) -> Image.Image:
         supports_guidance = bool(self.model_config.supports_guidance)
         if not supports_guidance:
@@ -133,7 +138,14 @@ class ZImage(nn.Module):
         ctx.after_loop(latents)
 
         # 8. Decode the latents and return the image
-        decoded = self._decode_latents(latents=latents, config=config)
+        decoded = self._decode_latents(
+            latents=latents,
+            config=config,
+            prompt=prompt,
+            seed=seed,
+            pid_decode=pid_decode,
+            degrade_sigma=pid_degrade_sigma,
+        )
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
@@ -146,6 +158,8 @@ class ZImage(nn.Module):
             image_strength=config.image_strength,
             generation_time=config.time_steps.format_dict["elapsed"],
             negative_prompt=negative_prompt,
+            pid_decode=pid_decode,
+            pid_degrade_sigma=pid_degrade_sigma,
         )
 
     def _encode_prompts(
@@ -170,8 +184,21 @@ class ZImage(nn.Module):
         )
         return text_encodings, negative_encodings
 
-    def _decode_latents(self, *, latents: mx.array, config: Config) -> mx.array:
+    def _decode_latents(
+        self,
+        *,
+        latents: mx.array,
+        config: Config,
+        prompt: str,
+        seed: int,
+        pid_decode: bool = False,
+        degrade_sigma: float = 0.0,
+    ) -> mx.array:
         unpacked = ZImageLatentCreator.unpack_latents(latents, config.height, config.width)
+        if pid_decode:
+            return pid_decode_latents(
+                vae=self.vae, latent=unpacked, caption=prompt, seed=seed, degrade_sigma=degrade_sigma
+            )
         return VAEUtil.decode(vae=self.vae, latent=unpacked, tiling_config=self.tiling_config)
 
     def save_model(self, base_path: str) -> None:

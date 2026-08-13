@@ -2,6 +2,7 @@ import mlx.core as mx
 from mlx import nn
 
 from mflux.models.flux.model.flux_transformer.common.attention_utils import AttentionUtils
+from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 
 
 class Flux2Attention(nn.Module):
@@ -26,7 +27,14 @@ class Flux2Attention(nn.Module):
             self.add_v_proj = nn.Linear(added_kv_proj_dim, self.inner_dim, bias=False)
             self.to_add_out = nn.Linear(self.inner_dim, dim, bias=False)
 
-    def __call__(self, hidden_states: mx.array, encoder_hidden_states: mx.array, image_rotary_emb):
+    def __call__(
+        self,
+        hidden_states: mx.array,
+        encoder_hidden_states: mx.array,
+        image_rotary_emb,
+        kv_cache: Flux2KVCache | None = None,
+        kv_cache_layer_idx: int | None = None,
+    ):
         query, key, value = AttentionUtils.process_qkv(
             hidden_states=hidden_states,
             to_q=self.to_q,
@@ -58,14 +66,26 @@ class Flux2Attention(nn.Module):
             cos, sin = image_rotary_emb
             query, key = AttentionUtils.apply_rope_bshd(query, key, cos, sin)
 
-        hidden_states = AttentionUtils.compute_attention(
-            query=query,
-            key=key,
-            value=value,
-            batch_size=hidden_states.shape[0],
-            num_heads=self.heads,
-            head_dim=self.dim_head,
-        )
+        if kv_cache is not None:
+            kv_cache.store_reference("double", kv_cache_layer_idx, key, value)
+            key, value = kv_cache.append_reference("double", kv_cache_layer_idx, key, value)
+            hidden_states = kv_cache.compute_extract_attention(
+                query=query,
+                key=key,
+                value=value,
+                batch_size=hidden_states.shape[0],
+                num_heads=self.heads,
+                head_dim=self.dim_head,
+            )
+        else:
+            hidden_states = AttentionUtils.compute_attention(
+                query=query,
+                key=key,
+                value=value,
+                batch_size=hidden_states.shape[0],
+                num_heads=self.heads,
+                head_dim=self.dim_head,
+            )
 
         if encoder_hidden_states is not None and self.added_kv_proj_dim is not None:
             encoder_hidden_states, hidden_states = (

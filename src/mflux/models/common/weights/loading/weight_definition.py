@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, TypeAlias
 
 import mlx.core as mx
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
     from mflux.models.fibo.weights.fibo_weight_definition import FIBOWeightDefinition
     from mflux.models.fibo_vlm.weights.fibo_vlm_weight_definition import FIBOVLMWeightDefinition
     from mflux.models.flux.weights.flux_weight_definition import FluxWeightDefinition
+    from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
     from mflux.models.qwen.weights.qwen_weight_definition import QwenWeightDefinition
     from mflux.models.seedvr2.weights.seedvr2_weight_definition import SeedVR2WeightDefinition
     from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
         | ZImageWeightDefinition
         | SeedVR2WeightDefinition
         | DepthProWeightDefinition
+        | Ideogram4WeightDefinition
     ]
 
 
@@ -42,6 +45,12 @@ class ComponentDefinition:
     download_url: str | None = None
     weight_prefix_filters: List[str] | None = None
     weight_files: List[str] | None = None  # Specific files to load (if None, loads all *.safetensors)
+    key_transform: Callable[[str], str | None] | None = None
+    weight_transform: Callable[[str, mx.array], mx.array] | None = None
+    # Picks a concrete component definition from what is on disk at the resolved root
+    # path. Lets a single component support more than one storage layout (e.g. a native
+    # single-file checkpoint vs a diffusers sharded directory with different keys).
+    variant_selector: Callable[[Path], "ComponentDefinition"] | None = None
 
 
 @dataclass

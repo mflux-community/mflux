@@ -7,11 +7,13 @@ import numpy as np
 import piexif
 import PIL.Image
 import PIL.ImageDraw
+import PIL.ImageOps
 from PIL._typing import StrOrBytesPath
 
 from mflux.models.common.config.config import Config
 from mflux.models.flux.variants.concept_attention.attention_data import ConceptHeatmap
 from mflux.utils.box_values import AbsoluteBoxValues, BoxValues
+from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.metadata_builder import MetadataBuilder
 
@@ -19,6 +21,10 @@ log = logging.getLogger(__name__)
 
 
 class ImageUtil:
+    # Default on: generation metadata is embedded as EXIF UserComment (plus the
+    # MetadataBuilder formats). --no-metadata sets this to False for the process.
+    embed_metadata_enabled: bool = True
+
     @staticmethod
     def resolve_output_path(path: str | Path, overwrite: bool = False) -> Path:
         file_path = Path(path)
@@ -55,10 +61,10 @@ class ImageUtil:
         concept_heatmap: ConceptHeatmap | None = None,
         negative_prompt: str | None = None,
         init_metadata: dict | None = None,
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ) -> GeneratedImage:
-        normalized = ImageUtil._denormalize(decoded_latents)
-        normalized_numpy = ImageUtil._to_numpy(normalized)
-        image = ImageUtil._numpy_to_pil(normalized_numpy)
+        image = ImageUtil.to_pil(decoded_latents)
         return GeneratedImage(
             image=image,
             model_config=config.model_config,
@@ -85,6 +91,8 @@ class ImageUtil:
             concept_heatmap=concept_heatmap,
             negative_prompt=negative_prompt,
             init_metadata=init_metadata,
+            pid_decode=pid_decode,
+            pid_degrade_sigma=pid_degrade_sigma,
         )
 
     @staticmethod
@@ -98,6 +106,11 @@ class ImageUtil:
             composite_img.paste(gen_img.image, (current_x, 0))
             current_x += gen_img.image.width
         return composite_img
+
+    @staticmethod
+    def to_pil(decoded_latents: mx.array) -> PIL.Image.Image:
+        """A decoder's raw [-1, 1] output as a PIL image, without GeneratedImage's metadata."""
+        return ImageUtil._numpy_to_pil(ImageUtil._to_numpy(ImageUtil._denormalize(decoded_latents)))
 
     @staticmethod
     def _denormalize(images: mx.array) -> mx.array:
@@ -145,10 +158,10 @@ class ImageUtil:
 
     @staticmethod
     def load_image(image_or_path: PIL.Image.Image | StrOrBytesPath) -> PIL.Image.Image:
-        if isinstance(image_or_path, PIL.Image.Image):
-            return image_or_path.convert("RGB")
-        else:
-            return PIL.Image.open(image_or_path).convert("RGB")
+        # Apply the EXIF Orientation tag before the model sees the pixels: most photos straight
+        # off a phone carry a non-1 orientation, and without this the model is conditioned on a
+        # sideways image, not merely shown one.
+        return open_oriented(image_or_path).convert("RGB")
 
     @staticmethod
     def expand_image(
@@ -248,8 +261,11 @@ class ImageUtil:
                 with open(metadata_path, "w") as json_file:
                     json.dump(metadata, json_file, indent=4)
 
-            # Embed metadata in multiple formats for maximum compatibility
-            if metadata is not None:
+            # Embed metadata in multiple formats for maximum compatibility.
+            # embed_metadata_enabled is the --no-metadata opt-out: the parser flips it
+            # once at parse time, so every save site honours the flag without each of
+            # the ~25 CLIs having to thread a kwarg through (issue #437).
+            if metadata is not None and ImageUtil.embed_metadata_enabled:
                 ImageUtil._embed_metadata(metadata, file_path)
                 MetadataBuilder.embed_metadata(metadata, file_path)
                 log.info(f"Metadata embedded successfully at: {file_path}")

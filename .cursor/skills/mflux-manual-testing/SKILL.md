@@ -47,6 +47,32 @@ uv tool install --force --editable --reinstall .
   - any metadata JSON files
 - Ask the human to visually confirm “looks correct” rather than attempting pixel-perfect parity manually.
 
+## diffusers reference comparison (new model ports)
+
+mflux does not install diffusers; use a sibling clone (commonly `../diffusers` on Desktop).
+
+**When**: validating a new MLX port before merge, or when golden tests / visuals look wrong.
+
+**Match settings**: same prompt, width, height, seed, steps, guidance. For fair speed comparisons, match precision (mflux bf16 vs diffusers bf16, not `-q 8` vs bf16).
+
+**diffusers setup tips** (read the reference pipeline first):
+- Compare `model_index.json` / `from_pretrained` kwargs with mflux `get_download_patterns()` — disable or pass `None` for components mflux does not load
+- `local_files_only=True` / `HF_HUB_OFFLINE=1` to use cache and surface missing files early
+- Distilled vs base variants are often the same pipeline class with different checkpoint + steps/guidance
+
+**Run both**:
+```sh
+# mflux
+uv run mflux-generate-<model> --prompt "..." --width 640 --height 368 --seed 7 --steps 8 --guidance 1.0 --output /tmp/mflux.png
+
+# diffusers (from diffusers repo)
+cd ../diffusers && HF_HUB_OFFLINE=1 uv run python -c "..."  # inline script; see mflux-debugging
+```
+
+**If visuals differ**: do not assume the port is broken. Run the **latent injection** workflow in `mflux-debugging` to separate (a) transformer/VAE quality from (b) RNG/scheduler differences.
+
+Save comparison PNGs to explicit paths; report `/usr/bin/time -p` totals. Do not commit comparison artifacts.
+
 ## Notes
 
 - If the installed `uv tool` executable behaves differently from `uv run python -m ...`, prefer the local module run to isolate environment/tooling issues.

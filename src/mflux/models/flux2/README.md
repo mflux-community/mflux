@@ -1,9 +1,9 @@
 # FLUX.2
 This directory contains MFLUX's MLX implementation of **FLUX.2**.
 
-MFLUX supports [FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) and [FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) from Black Forest Labs, released in January 2026. FLUX.2 Klein is a fast, efficient image generation model available in 4B and 9B parameter variants. The 4B model delivers high-quality images in just 4 steps, making it one of the fastest open-source models available.
+MFLUX supports [FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B), [FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B), and [FLUX.2-klein-9b-kv](https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-kv) from Black Forest Labs, released in January 2026. FLUX.2 Klein is a fast, efficient image generation model available in 4B and 9B parameter variants. The 4B model delivers high-quality images in just 4 steps, making it one of the fastest open-source models available.
 
-All the standard modes such as img2img, LoRA and quantizations are supported for this model. FLUX.2 also supports image-conditioned editing with multi-image support.
+All the standard modes such as img2img, LoRA, LyCORIS LoKr, and quantizations are supported for this model. FLUX.2 also supports image-conditioned editing with multi-image support.
 
 ![FLUX.2 Klein Example](../../assets/flux2_klein.jpg)
 
@@ -90,13 +90,29 @@ image.save("flux2_edit.png")
 ```
 </details>
 
+### KV-cache editing (`flux2-klein-9b-kv`)
+For image-conditioned editing with reference images, [FLUX.2-klein-9b-kv](https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-kv) is a 9B variant tuned for KV-cache inference. Select the model with `--model`; KV caching is enabled automatically when `--image-paths` provides reference tokens to cache. No extra CLI flag is required.
+
+Use the same `mflux-generate-flux2-edit` command as above, swapping the model name:
+
+```sh
+mflux-generate-flux2-edit \
+  --model flux2-klein-9b-kv \
+  --image-paths person.jpg glasses.jpg \
+  --prompt "Make the woman wear the eyeglasses (regular glasses, not sunglasses)" \
+  --steps 4 \
+  --seed 42
+```
+
+KV caching speeds up later denoising steps by reusing reference-image attention state from the first step. It only applies when reference images are provided via `--image-paths`.
+
 > [!WARNING]
-> Note: FLUX.2-klein-4B requires downloading the `black-forest-labs/FLUX.2-klein-4B` model weights (~15GB), and FLUX.2-klein-9B requires `black-forest-labs/FLUX.2-klein-9B` model weights (~32GB), or use quantization for smaller sizes.
+> Note: FLUX.2-klein-4B requires downloading the `black-forest-labs/FLUX.2-klein-4B` model weights (~15GB), FLUX.2-klein-9B requires `black-forest-labs/FLUX.2-klein-9B` model weights (~32GB), and FLUX.2-klein-9b-kv requires `black-forest-labs/FLUX.2-klein-9b-kv` model weights. Use quantization for smaller sizes.
 
 ## Notes
 - FLUX.2 does not support `--negative-prompt`.
 - Distilled FLUX.2 variants use `--guidance 1.0`. Base variants support guidance values above `1.0`.
-- Supported distilled variants: `flux2-klein-4b` (default) and `flux2-klein-9b`. Distilled models run in fewer steps than base.
+- Supported distilled variants: `flux2-klein-4b` (default), `flux2-klein-9b`, and `flux2-klein-9b-kv` (KV-cache edit). Distilled models run in fewer steps than base.
 
 ## Training
 Training also supports `flux2-klein-base-4b` and `flux2-klein-base-9b`.
@@ -152,4 +168,3 @@ mflux-train --config /path/to/train.json
 
 ### Edit fine-tuning (image-conditioned)
  The config looks identical for edit-based training and only differs in how the training data is prepared and named. For edit-style training (image in + prompt → image out), use auto-discovery with paired `*_out.*` and `*_in.*` files plus `*_in.txt` prompts, see the [training docs](../common/README.md#training-lora) for examples. Edit training is supported for Flux2 Klein base models. Preview prompts come from `data/preview*.txt` and the preview images are `data/preview*.{png,jpg,jpeg,webp}`.
-

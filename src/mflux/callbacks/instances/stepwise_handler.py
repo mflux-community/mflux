@@ -32,6 +32,7 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
         config: Config,
         canny_image: PIL.Image.Image | None = None,
         depth_image: PIL.Image.Image | None = None,
+        control_images: list[PIL.Image.Image] | None = None,
     ) -> None:
         self._save_image(
             step=config.init_time_step,
@@ -81,7 +82,12 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
         time_steps: tqdm,
     ) -> None:
         unpack_latents = self.latent_creator.unpack_latents(latents=latents, height=config.height, width=config.width)
-        if hasattr(self.model.vae, "decode_packed_latents"):
+        # Flux2's unpack_latents returns 128-channel patchified latents that still need
+        # decode_packed_latents (BN denorm + unpatchify → 32ch).  Ideogram4's unpack_latents
+        # applies its own shift/scale and already returns 32-channel VAE-ready latents, so
+        # calling decode_packed_latents on them causes a channel shape mismatch.
+        vae_latent_channels = getattr(self.model.vae, "latent_channels", 32)
+        if hasattr(self.model.vae, "decode_packed_latents") and unpack_latents.shape[1] > vae_latent_channels:
             stepwise_decoded = self.model.vae.decode_packed_latents(unpack_latents)
         else:
             stepwise_decoded = self.model.vae.decode(unpack_latents)
@@ -92,8 +98,8 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
             seed=seed,
             prompt=prompt,
             quantization=self.model.bits,
-            lora_paths=self.model.lora_paths,
-            lora_scales=self.model.lora_scales,
+            lora_paths=getattr(self.model, "lora_paths", None),
+            lora_scales=getattr(self.model, "lora_scales", None),
             generation_time=generation_time,
         )
         stepwise_img.save(

@@ -1,15 +1,24 @@
 import argparse
 import json
+import math
 import random
 import sys
 import time
 import typing as t
+import warnings
 from pathlib import Path
 
 from mflux.cli.defaults import defaults as ui_defaults
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
+
+
+def finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError(f"expected a finite number, got {value!r}")
+    return parsed
 
 
 class ModelSpecAction(argparse.Action):
@@ -36,6 +45,14 @@ def int_or_special_value(value) -> int | scale_factor.ScaleFactor:
         )
 
 
+def lora_init_kwargs_from_args(args: argparse.Namespace) -> dict[str, t.Any]:
+    return {
+        "lora_paths": args.lora_paths,
+        "lora_scales": args.lora_scales,
+        "bake_lora": args.bake_lora,
+    }
+
+
 def positive_float(value: str) -> float:
     try:
         parsed = float(value)
@@ -46,10 +63,29 @@ def positive_float(value: str) -> float:
     return parsed
 
 
+def vae_tile_size(value: str) -> int:
+    # The decode tiler uses a fixed 64px overlap; the tile must be strictly larger
+    # than the overlap or the tiling stride becomes <= 0. 128 is the practical floor.
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid integer")
+    if parsed < 128:
+        raise argparse.ArgumentTypeError(f"'{value}' is too small: minimum tile size is 128 (tiles overlap by 64px)")
+    if parsed % 16 != 0:
+        raise argparse.ArgumentTypeError(f"'{value}' must be a multiple of 16")
+    return parsed
+
+
 # fmt: off
 class CommandLineParser(argparse.ArgumentParser):
 
     def __init__(self, *args, **kwargs):
+        # Abbreviated long options (argparse's prefix matching) are rejected: option
+        # provision is detected by scanning argv (_option_was_provided), which cannot see
+        # abbreviations, and an abbreviation that is unambiguous today silently breaks
+        # the moment a new option shares its prefix.
+        kwargs.setdefault("allow_abbrev", False)
         super().__init__(*args, **kwargs)
         self.supports_metadata_config = False
         self.supports_image_generation = False
@@ -59,11 +95,14 @@ class CommandLineParser(argparse.ArgumentParser):
         self.supports_image_outpaint = False
         self.supports_lora = False
         self.require_model_arg = True
+        self.require_init_image = False
 
     def add_general_arguments(self) -> None:
         self.add_argument("--battery-percentage-stop-limit", "-B", type=lambda v: max(min(int(v), 99), 1), default=ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT, help=f"On Macs powered by battery, stop image generation when battery reaches this percentage. Default: {ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT}")
         self.add_argument("--low-ram", action="store_true", help="Enable low-RAM mode to reduce memory usage (may impact performance).")
         self.add_argument("--mlx-cache-limit-gb", type=positive_float, default=None, help="Limit MLX cache size in GB without enabling full low-RAM mode (e.g. 8 or 16).")
+        self.add_argument("--vae-tiling", action="store_true", help="Decode the image in overlapping tiles to reduce peak memory during the VAE decode phase, without enabling full low-RAM mode. Implied by --low-ram.")
+        self.add_argument("--vae-tile-size", type=vae_tile_size, default=None, help="Tile size in pixels for tiled VAE decoding (default: 512, minimum: 128, multiple of 16). Smaller tiles (e.g. 256) further reduce peak memory. Implies --vae-tiling.")
 
     def add_seedvr2_upscale_arguments(self) -> None:
         self.supports_image_generation = True
@@ -93,8 +132,15 @@ class CommandLineParser(argparse.ArgumentParser):
         self.supports_lora = True
         lora_group = self.add_argument_group("LoRA configuration")
         lora_group.add_argument("--lora-style", type=str, choices=sorted(LORA_NAME_MAP.keys()), help="Style of the LoRA to use (e.g., 'storyboard' for film storyboard style)")
-        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors)")
-        self.add_argument("--lora-scales", type=float, nargs="*", default=None, help="Scaling factor to adjust the impact of LoRA weights on the model. A value of 1.0 applies the LoRA weights as they are.")
+        lora_group.add_argument("--lora", dest="lora", action="append", nargs="+", default=None, metavar=("PATH", "SCALE"), help="Add a LoRA as an atomic PATH with optional SCALE (default 1.0). Repeatable: --lora A.safetensors 0.7 --lora B.safetensors. PATH accepts local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Preferred over --lora-paths/--lora-scales.")
+        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors)")
+        self.add_argument("--lora-scales", type=float, nargs="*", default=None, help="[DEPRECATED: use --lora] Scaling factor to adjust the impact of LoRA weights on the model. A value of 1.0 applies the LoRA weights as they are.")
+        lora_group.add_argument(
+            "--bake-lora",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Merge LoRA/LoKr deltas into base weights after load (default: on). Use --no-bake-lora to keep runtime adapters.",
+        )
 
     def _add_image_generator_common_arguments(self, supports_dimension_scale_factor=False) -> None:
         self.supports_image_generation = True
@@ -124,8 +170,12 @@ class CommandLineParser(argparse.ArgumentParser):
 
     def add_image_to_image_arguments(self, required=False) -> None:
         self.supports_image_to_image = True
-        self.add_argument("--image-path", type=Path, required=required, default=None, help="Local path to init image")
-        self.add_argument("--image-strength", type=float, required=False, default=ui_defaults.IMAGE_STRENGTH, help=f"Controls how strongly the init image influences the output image. A value of 0.0 means no influence. (Default is {ui_defaults.IMAGE_STRENGTH})")
+        # The requirement is enforced after normalization (see parse_args) so it can be
+        # satisfied by either the new --image flag or the legacy --image-path flag.
+        self.require_init_image = required
+        self.add_argument("--image", dest="image", nargs="+", default=None, metavar=("PATH", "STRENGTH"), help=f"Init image as an atomic PATH with optional STRENGTH (default {ui_defaults.IMAGE_STRENGTH}): --image photo.jpg 0.6. Preferred over --image-path/--image-strength.")
+        self.add_argument("--image-path", type=Path, required=False, default=None, help="[DEPRECATED: use --image] Local path to init image")
+        self.add_argument("--image-strength", type=float, required=False, default=ui_defaults.IMAGE_STRENGTH, help=f"[DEPRECATED: use --image] Controls how strongly the init image influences the output image. A value of 0.0 means no influence. (Default is {ui_defaults.IMAGE_STRENGTH})")
 
     def add_batch_image_generator_arguments(self) -> None:
         self.add_argument("--batch-prompts-file", type=Path, required=True, default=argparse.SUPPRESS, help="Local path for a file that holds a batch of prompts.")
@@ -165,8 +215,13 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--redux-image-paths", type=Path, nargs="*", required=True, help="Local path to the source image")
         self.add_argument("--redux-image-strengths", type=float, nargs="*", default=None, help="Strength values (between 0.0 and 1.0) for each reference image. Default is 1.0 for all images.")
 
+    def add_pid_decode_arguments(self) -> None:
+        self.add_argument("--pid-decode", action=argparse.BooleanOptionalAction, default=False, help="Decode with NVIDIA PiD's pixel-diffusion super-resolving decoder instead of the standard VAE. First run downloads two separate Hugging Face checkpoints (~8GB total); google/gemma-2-2b-it is gated and requires accepting its license + `hf auth login`.")
+        self.add_argument("--pid-degrade-sigma", type=float, default=0.0, help="With --pid-decode, deliberately noise the latent to this flow-matching sigma before decoding (0.0-0.8). PiD's LQ gate was distilled on latents noised at sigma~U[0.0, 0.8]; a fully clean latent (the default, sigma=0.0) is the input it saw least during training, which can show up as over-textured detail invented on smooth areas like skin. Try 0.2 if you see that. Ignored without --pid-decode.")
+
     def add_output_arguments(self) -> None:
         self.add_argument("--metadata", action="store_true", help="Export image metadata as a JSON file.")
+        self.add_argument("--no-metadata", action="store_true", help="Do not embed generation metadata (EXIF UserComment and friends) in the output image. Independent of --metadata, which additionally writes a JSON sidecar.")
         self.add_argument("--output", type=str, default="image.png", help="The filename for the output image. Default is \"image.png\".")
         self.add_argument('--stepwise-image-output-dir', type=str, default=None, help='[EXPERIMENTAL] Output dir to write step-wise images and their final composite image to. This feature may change in future versions.')
 
@@ -179,7 +234,26 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--controlnet-image-path", type=str, required=require_image, help="Local path of the image to use as input for controlnet.")
         self.add_argument("--controlnet-strength", type=float, default=ui_defaults.CONTROLNET_STRENGTH, help=f"Controls how strongly the control image influences the output image. A value of 0.0 means no influence. (Default is {ui_defaults.CONTROLNET_STRENGTH})")
         if mode == 'canny':
-            self.add_argument("--controlnet-save-canny", action="store_true", help="If set, save the Canny edge detection reference input image.")
+            self.add_argument("--controlnet-save-canny", action=argparse.BooleanOptionalAction, default=False, help="If set, save the Canny edge detection reference input image.")
+
+    def add_union_controlnet_arguments(self, require_controls: bool = True) -> None:
+        """
+        Union-style ControlNet inputs (e.g. pose/depth/canny/hed/mlsd).\n
+        Uses a repeatable `--control` argument with format: `type:path[:strength]`.
+        """
+        self.supports_controlnet = True
+        self.add_argument(
+            "--control",
+            action="append",
+            required=require_controls,
+            help="Repeatable control spec: type:path[:strength] (e.g. pose:pose.png:0.8).",
+        )
+        self.add_argument(
+            "--controlnet-strength",
+            type=finite_float,
+            default=ui_defaults.CONTROLNET_STRENGTH,
+            help=f"Global multiplier applied to all controls. (Default is {ui_defaults.CONTROLNET_STRENGTH})",
+        )
 
     def add_concept_attention_arguments(self) -> None:
         concept_group = self.add_argument_group("Concept Attention configuration")
@@ -237,8 +311,69 @@ class CommandLineParser(argparse.ArgumentParser):
                     return True
         return False
 
+    @staticmethod
+    def warn_ignored_options(options_reasons: dict[str, str]) -> None:
+        # One policy for options a model cannot honour: keep accepting them so existing
+        # scripts do not break, but never drop them silently. Families that must
+        # hard-error on a contradictory VALUE keep doing that themselves; this covers
+        # the option-is-a-no-op case.
+        for option, reason in options_reasons.items():
+            if CommandLineParser._option_was_provided(option):
+                warnings.warn(f"{option} is ignored; {reason}", stacklevel=2)
+
+    def _normalize_atomic_lora_args(self, namespace: argparse.Namespace) -> None:
+        if not self.supports_lora or not hasattr(namespace, "lora") or namespace.lora is None:
+            return
+        if self._option_was_provided("--lora-paths", "--lora-scales"):
+            self.error("Use either --lora or the legacy --lora-paths/--lora-scales, not both.\nTip: --lora pairs each path with its scale: --lora A.safetensors 0.7 --lora B.safetensors 0.4")  # fmt: off
+        paths: list[str] = []
+        scales: list[float] = []
+        for group in namespace.lora:
+            if len(group) == 1:
+                path, scale = group[0], 1.0
+            elif len(group) == 2:
+                path = group[0]
+                try:
+                    scale = float(group[1])
+                except ValueError:
+                    self.error(f"Invalid LoRA scale '{group[1]}' for '{group[0]}'.\nTip: --lora takes a PATH and an optional numeric SCALE: --lora {group[0]} 0.7")  # fmt: off
+            else:
+                self.error(f"--lora takes one PATH and an optional SCALE but got {len(group)} values: {' '.join(group)}\nTip: give each adapter its own --lora: --lora A.safetensors 0.7 --lora B.safetensors")  # fmt: off
+            paths.append(path)
+            scales.append(scale)
+        namespace.lora_paths = paths
+        namespace.lora_scales = scales
+
+    def _normalize_atomic_image_args(self, namespace: argparse.Namespace) -> None:
+        if not hasattr(namespace, "image") or namespace.image is None:
+            return
+        if self._option_was_provided("--image-path", "--image-strength"):
+            self.error("Use either --image or the legacy --image-path/--image-strength, not both.\nTip: --image pairs the path with its strength: --image photo.jpg 0.6")  # fmt: off
+        group = namespace.image
+        if len(group) == 1:
+            namespace.image_path = Path(group[0])
+        elif len(group) == 2:
+            namespace.image_path = Path(group[0])
+            try:
+                namespace.image_strength = float(group[1])
+            except ValueError:
+                self.error(f"Invalid image strength '{group[1]}' for '{group[0]}'.\nTip: --image takes a PATH and an optional numeric STRENGTH: --image {group[0]} 0.6")  # fmt: off
+        else:
+            self.error(f"--image takes one PATH and an optional STRENGTH but got {len(group)} values: {' '.join(group)}\nTip: --image photo.jpg 0.6")  # fmt: off
+
     def parse_args(self) -> argparse.Namespace:  # type: ignore
         namespace = super().parse_args()
+
+        if getattr(namespace, "no_metadata", False):
+            from mflux.utils.image_util import ImageUtil
+
+            ImageUtil.embed_metadata_enabled = False
+
+        # Fold the atomic --lora / --image flags into the legacy lora_paths/lora_scales
+        # and image_path/image_strength fields so all downstream logic (metadata merge,
+        # path resolution, model init) stays unchanged. Runs before the metadata block.
+        self._normalize_atomic_lora_args(namespace)
+        self._normalize_atomic_image_args(namespace)
 
         # Check if either training arguments are provided
         has_training_args = (hasattr(namespace, "config") and namespace.config is not None) or \
@@ -310,7 +445,7 @@ class CommandLineParser(argparse.ArgumentParser):
                     namespace.controlnet_image_path = prior_gen_metadata.get("controlnet_image_path", None)
                 if namespace.controlnet_strength == self.get_default("controlnet_strength") and (cnet_strength_from_metadata := prior_gen_metadata.get("controlnet_strength", None)):
                     namespace.controlnet_strength = cnet_strength_from_metadata
-                if namespace.controlnet_save_canny == self.get_default("controlnet_save_canny") and (cnet_canny_from_metadata := prior_gen_metadata.get("controlnet_save_canny", None)):
+                if not self._option_was_provided("--controlnet-save-canny", "--no-controlnet-save-canny") and (cnet_canny_from_metadata := prior_gen_metadata.get("controlnet_save_canny", None)) is not None:
                     namespace.controlnet_save_canny = cnet_canny_from_metadata
 
 
@@ -318,9 +453,24 @@ class CommandLineParser(argparse.ArgumentParser):
                 if namespace.image_outpaint_padding is None:
                     namespace.image_outpaint_padding = prior_gen_metadata.get("image_outpaint_padding", None)
 
+            if hasattr(namespace, "pid_decode") and not self._option_was_provided("--pid-decode", "--no-pid-decode"):
+                namespace.pid_decode = prior_gen_metadata.get("pid_decode", False)
+
+
+            if hasattr(namespace, "pid_degrade_sigma") and not self._option_was_provided("--pid-degrade-sigma"):
+                # Non-PiD sidecars omit the key entirely, but a hand-edited one can carry an
+                # explicit null, which `.get(..., 0.0)` returns as-is. Normalize it, or
+                # `--config-from-metadata <such a sidecar> --pid-decode` hands None to the
+                # decoder's float-only sigma range check.
+                metadata_sigma = prior_gen_metadata.get("pid_degrade_sigma")
+                namespace.pid_degrade_sigma = 0.0 if metadata_sigma is None else metadata_sigma
+
         # Only require model if we're not in training mode and require_model_arg is True
         if hasattr(namespace, "model") and namespace.model is None and not has_training_args and self.require_model_arg:
             self.error("--model / -m must be provided, or 'model' must be specified in the config file.")
+
+        if self.require_init_image and getattr(namespace, "image_path", None) is None:
+            self.error("An init image is required. Provide one with --image PATH [STRENGTH] (e.g. --image photo.jpg 0.8).")
 
         if self.supports_image_generation and namespace.seed is None and namespace.auto_seeds > 0:
             # choose N unique int seeds in the range of  0 < value < 1 billion

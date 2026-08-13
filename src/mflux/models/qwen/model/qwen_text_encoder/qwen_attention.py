@@ -61,9 +61,15 @@ class QwenAttention(nn.Module):
             key_states = QwenAttention._repeat_kv(key_states, self.num_key_value_groups)
             value_states = QwenAttention._repeat_kv(value_states, self.num_key_value_groups)
 
-        mask = attention_mask[:, :, :, : key_states.shape[-2]].astype(query_states.dtype) if attention_mask is not None else None
+        mask = (
+            attention_mask[:, :, :, : key_states.shape[-2]].astype(query_states.dtype)
+            if attention_mask is not None
+            else None
+        )
         attn_output = mx.fast.scaled_dot_product_attention(
-            query_states, key_states, value_states,
+            query_states,
+            key_states,
+            value_states,
             scale=self.scaling,
             mask=mask,
         )

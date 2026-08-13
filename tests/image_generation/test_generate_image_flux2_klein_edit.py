@@ -25,6 +25,24 @@ class TestImageGeneratorFlux2KleinEdit:
         )
 
     @pytest.mark.slow
+    def test_flux2_klein_9b_kv_edit_dalmatian(self):
+        ImageGeneratorTestHelper.assert_matches_reference_image(
+            reference_image_path="reference_flux2_klein_9b_kv_edit_dalmatian.png",
+            output_image_path="output_flux2_klein_9b_kv_edit_dalmatian.png",
+            model_class=Flux2KleinEdit,
+            model_config=ModelConfig.flux2_klein_9b_kv(),
+            quantize=None,
+            steps=4,
+            seed=42,
+            height=1024,
+            width=640,
+            guidance=1.0,
+            image_paths=["unsplash_dog.jpg"],
+            prompt="Make the dog a dalmatian",
+            mismatch_threshold=0.15,
+        )
+
+    @pytest.mark.slow
     def test_flux2_klein_9b_edit_sunglasses_wide(self):
         ImageGeneratorTestHelper.assert_matches_reference_image(
             reference_image_path="reference_flux2_klein_edit_sunglasses_wide.png",
