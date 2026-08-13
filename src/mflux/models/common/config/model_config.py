@@ -565,7 +565,7 @@ AVAILABLE_MODELS = {
             "qwen-edit-2511",
             "qwen-image-edit-2511",
         ],
-        model_name="Qwen/Qwen-Image-Edit-2511",
+        model_name="Qwen/Qwen-Image-Edit-2509",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
