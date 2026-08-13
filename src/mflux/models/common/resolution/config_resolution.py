@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import TYPE_CHECKING
 
@@ -131,12 +132,11 @@ class ConfigResolution:
         # fields here is what silently dropped the sigma schedule (and, for ERNIE and
         # klein-9b-kv, the LoRA guidance and KV-cache flag): each field added to
         # ModelConfig had to be remembered here too, and eventually one wasn't.
-        # Mutable containers are copied so an inferred config cannot mutate its base.
-        carried = {
-            key: dict(value) if isinstance(value, dict) else list(value) if isinstance(value, list) else value
-            for key, value in vars(base).items()
-            if not key.startswith("_")
-        }
+        # Deep copy rather than a shallow one: AVAILABLE_MODELS is a process-wide
+        # singleton, and overrides nest (ERNIE's transformer_overrides holds a
+        # rope_axes_dim list), so a shallow copy leaves an inferred config able to
+        # mutate the registry for every later resolution.
+        carried = {key: copy.deepcopy(value) for key, value in vars(base).items() if not key.startswith("_")}
         carried["model_name"] = model_name
         carried["base_model"] = base.model_name
         return ModelConfig(**carried)

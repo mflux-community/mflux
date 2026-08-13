@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
@@ -29,6 +31,33 @@ for _root in ROOTS:
 
 def _unambiguous_aliases(root):
     return [a for a in root.aliases if _alias_owners[a] == 1]
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("root", ROOTS, ids=lambda r: r.model_name)
+def test_inferred_config_cannot_mutate_the_registry(root):
+    # AVAILABLE_MODELS is a process-wide singleton and overrides nest (ERNIE's
+    # transformer_overrides holds a rope_axes_dim list), so a shallow copy would
+    # let one resolution corrupt every later one.
+    aliases = _unambiguous_aliases(root)
+    if not aliases:
+        pytest.skip("no unambiguous alias to probe")
+
+    before = copy.deepcopy(vars(root))
+    resolved = ConfigResolution.resolve(model_name=f"/models/{aliases[0]}-q4")
+
+    for field, value in vars(resolved).items():
+        if field in IDENTITY_FIELDS or not isinstance(value, (dict, list)):
+            continue
+        assert value is not getattr(root, field), f"{field} is shared with the registered config"
+        for nested in value.values() if isinstance(value, dict) else value:
+            if isinstance(nested, list):
+                nested.append("mutated")
+            elif isinstance(nested, dict):
+                nested["mutated"] = True
+
+    for field, original in before.items():
+        assert getattr(root, field) == original, f"resolving mutated the registered config's {field}"
 
 
 @pytest.mark.fast
