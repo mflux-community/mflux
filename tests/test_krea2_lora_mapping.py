@@ -185,3 +185,21 @@ class TestKrea2LoRAMapping:
 
         noise = Krea2LatentCreator.create_noise(seed=0, height=1024, width=1024)
         assert noise.shape == (1, 16, 128, 128)
+
+
+def test_zero_match_error_names_the_key_endings(tmp_path):
+    # The one case where the user has no idea what went wrong (a naming format the
+    # mapping does not understand) must say what it saw, not just "nothing applied".
+    lora_file = tmp_path / "weird.safetensors"
+    mx.save_safetensors(
+        str(lora_file),
+        {
+            "diffusion_model.blocks.0.prenorm.scale.diff": mx.zeros((8,)),
+            "diffusion_model.blocks.0.attn.wk.strange_name": mx.zeros((4, 4)),
+        },
+    )
+    with pytest.raises(ValueError, match="Key endings seen in the file") as excinfo:
+        LoRALoader._apply_single_lora(
+            _tiny_transformer(), str(lora_file), 1.0, Krea2LoRAMapping.get_mapping(), role=None
+        )
+    assert "scale.diff" in str(excinfo.value)

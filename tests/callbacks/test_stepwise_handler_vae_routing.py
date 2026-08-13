@@ -102,3 +102,18 @@ def test_stepwise_vae_without_packed_decode_falls_back(tmp_path) -> None:
     handler.call_before_loop(seed=1, prompt="a", latents=latents, config=_config(ModelConfig.dev()))
 
     assert vae.calls == ["decode"]
+
+
+@pytest.mark.fast
+def test_stepwise_survives_models_without_lora_attributes(tmp_path) -> None:
+    # FIBO's initializer accepts lora_paths but never assigns it to the model, so the
+    # instance has no lora_paths/lora_scales attributes at all; the handler must read
+    # them defensively or the first preview step dies with AttributeError.
+    vae = RecordingPackedVAE()
+    model = SimpleNamespace(vae=vae, bits=None)
+    handler = StepwiseHandler(model=model, output_dir=str(tmp_path), latent_creator=Ideogram4LatentCreator)
+    latents = mx.zeros((1, (SIZE // 16) * (SIZE // 16), 128))
+
+    handler.call_before_loop(seed=1, prompt="a", latents=latents, config=_config(ModelConfig.ideogram4_fp8()))
+
+    assert (tmp_path / "seed_1_step0of1.png").exists()

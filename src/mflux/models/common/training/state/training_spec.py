@@ -1,7 +1,7 @@
 import datetime
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -95,6 +95,17 @@ class OptimizerSpec:
     lr_schedule: str | None = None
     lr_warmup_steps: int = 0
     lr_total_steps: int | None = None
+    # Extra keyword arguments forwarded to the MLX optimizer constructor
+    # (e.g. weight_decay, betas, eps). Without this, any optimizer hyperparameter
+    # other than the learning rate silently falls back to the MLX default.
+    optimizer_params: dict = field(default_factory=dict)
+    # Global-norm gradient clipping; None = off (preserves prior behavior).
+    max_grad_norm: float | None = None
+    # Gradient accumulation: average grads over this many micro-batches before one optimizer
+    # step, for an effective batch of batch_size * gradient_accumulation_steps without the memory
+    # of a bigger batch. 1 = off (steps every micro-batch). Frequencies (save/plot/preview) and
+    # the step count stay in micro-batch units.
+    gradient_accumulation_steps: int = 1
 
 
 @dataclass

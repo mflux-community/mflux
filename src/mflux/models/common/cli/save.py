@@ -1,4 +1,5 @@
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.boogu.variants.txt2img.boogu_image import BooguImage
 from mflux.models.common.config import ModelConfig
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
@@ -22,7 +23,9 @@ def main():
     # 1. Determine model class based on model name
     model_name_lower = args.model.lower()
     base_model_lower = (args.base_model or "").lower()
-    if "ernie" in model_name_lower:
+    if "boogu" in model_name_lower:
+        model_class = BooguImage
+    elif "ernie" in model_name_lower:
         model_class = ErnieImage
     elif "qwen" in model_name_lower and "edit" in model_name_lower:
         model_class = QwenImageEdit

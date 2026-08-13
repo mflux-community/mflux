@@ -18,6 +18,7 @@ def main():
     parser.add_model_arguments(require_model_arg=False)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True)
+    parser.add_pid_decode_arguments()
     parser.add_output_arguments()
     parser.add_argument(
         "--preset",
@@ -81,6 +82,8 @@ def main():
                 preset=args.preset,
                 strict_caption_validation=args.strict_caption_validation,
                 cfg_end=args.cfg_end,
+                pid_decode=args.pid_decode,
+                pid_degrade_sigma=args.pid_degrade_sigma,
             )
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:

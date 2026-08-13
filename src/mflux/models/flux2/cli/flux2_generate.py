@@ -5,7 +5,6 @@ from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCr
 from mflux.models.flux2.variants import Flux2Klein
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
-from mflux.utils.image_util import ImageUtil
 from mflux.utils.prompt_util import PromptUtil
 
 
@@ -17,6 +16,7 @@ def main():
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
+    parser.add_pid_decode_arguments()
     parser.add_output_arguments()
     args = parser.parse_args()
 
@@ -63,12 +63,10 @@ def main():
                 num_inference_steps=args.steps,
                 image_strength=args.image_strength,
                 scheduler="flow_match_euler_discrete",
+                pid_decode=args.pid_decode,
+                pid_degrade_sigma=args.pid_degrade_sigma,
             )
-            ImageUtil.save_image(
-                image=image,
-                path=args.output.format(seed=seed),
-                export_json_metadata=args.metadata,
-            )
+            image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:
         print(exc)
     finally:

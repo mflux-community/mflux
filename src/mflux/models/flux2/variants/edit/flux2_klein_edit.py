@@ -84,13 +84,12 @@ class Flux2KleinEdit(nn.Module):
             width=config.width,
         )
 
-        # 3. Reference image conditioning (edit-style, concat reference tokens)
+        # 3. Reference image conditioning (edit-style, concat reference tokens).
+        #    Each reference is encoded at its own (aspect-preserved) size, not the output dims.
         image_latents, image_latent_ids = _Flux2KleinEditHelpers.prepare_reference_image_conditioning(
             vae=self.vae,
             tiling_config=self.tiling_config,
             image_paths=image_paths,
-            height=config.height,
-            width=config.width,
             batch_size=latents.shape[0],
         )
 

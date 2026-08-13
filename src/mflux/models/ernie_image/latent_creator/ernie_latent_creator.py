@@ -18,6 +18,8 @@ class ErnieLatentCreator:
 
     @staticmethod
     def pack_latents(latents: mx.array, height: int, width: int) -> mx.array:  # noqa: ARG004
+        if latents.ndim == 5:
+            latents = latents[:, :, 0, :, :]
         B, C, H, W = latents.shape
         h, w = H // 2, W // 2
         latents = latents.reshape(B, C, h, 2, w, 2)

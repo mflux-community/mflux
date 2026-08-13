@@ -51,14 +51,20 @@ class Optimizer:
                 return optim.join_schedules([optim.linear_schedule(0.0, lr, warmup), main], [warmup])
             return main
         if warmup > 0:  # warmup then constant
-            return optim.join_schedules([optim.linear_schedule(0.0, lr, warmup), optim.cosine_decay(lr, 10**12)], [warmup])
+            return optim.join_schedules(
+                [optim.linear_schedule(0.0, lr, warmup), optim.cosine_decay(lr, 10**12)], [warmup]
+            )
         return lr
 
     @staticmethod
     def from_spec(training_spec: TrainingSpec) -> "Optimizer":
         opt_cls = Optimizers.from_alias(training_spec.optimizer.name)
+        # Forward any caller-provided optimizer kwargs (weight_decay, betas, eps, ...).
+        # Previously only learning_rate was passed, so values set in the training config's
+        # "optimizer" section were silently ignored in favor of the MLX defaults.
+        extra_params = getattr(training_spec.optimizer, "optimizer_params", None) or {}
         # noinspection PyCallingNonCallable
-        opt = opt_cls(learning_rate=Optimizer._build_lr(training_spec.optimizer))
+        opt = opt_cls(learning_rate=Optimizer._build_lr(training_spec.optimizer), **extra_params)
 
         if training_spec.optimizer.state_path is not None:
             state = ZipUtil.unzip(

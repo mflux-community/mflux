@@ -21,6 +21,7 @@ class CannyImageSaver(BeforeLoopCallback):
         config: Config,
         canny_image: PIL.Image.Image | None = None,
         depth_image: PIL.Image.Image | None = None,
+        control_images: list[PIL.Image.Image] | None = None,
     ) -> None:
         base, ext = os.path.splitext(self.path)
         ImageUtil.save_image(

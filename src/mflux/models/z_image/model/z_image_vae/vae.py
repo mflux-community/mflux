@@ -10,6 +10,7 @@ class VAE(nn.Module):
     shift_factor: float = 0.1159
     spatial_scale = 8
     latent_channels = 16
+    pid_variant = "flux"  # Z-Image shares Flux's 16ch/8x latent space; nvidia/PiD ships no z-image checkpoint
 
     def __init__(self):
         super().__init__()

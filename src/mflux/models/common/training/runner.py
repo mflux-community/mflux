@@ -5,7 +5,6 @@ from pathlib import Path
 
 import mlx.core as mx
 import mlx.core.random as mx_random  # type: ignore[import-not-found]
-from PIL import Image as PILImage
 
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.training.adapters.base import TrainingAdapter
@@ -28,6 +27,7 @@ from mflux.models.flux2.training_adapter.flux2_edit_training_adapter import Flux
 from mflux.models.flux2.training_adapter.flux2_training_adapter import Flux2TrainingAdapter
 from mflux.models.z_image.training_adapter.z_image_training_adapter import ZImageTrainingAdapter
 from mflux.utils.exceptions import StopTrainingException
+from mflux.utils.exif_orientation import oriented_size
 
 
 class TrainingRunner:
@@ -43,8 +43,7 @@ class TrainingRunner:
     @staticmethod
     def _resolve_data_dimensions(*, training_spec: TrainingSpec, image_path) -> tuple[int, int]:
         # Infer per-image size from the image file (may vary per image).
-        with PILImage.open(image_path.resolve()) as img:
-            width, height = img.size
+        width, height = oriented_size(image_path.resolve())
         return TrainingUtil.resolve_dimensions(
             width=width,
             height=height,
