@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 
 from mflux.utils.exceptions import PromptFileReadError
+from mflux.utils.exif_orientation import open_oriented
 
 
 class FiboVLMUtil:
@@ -36,7 +37,7 @@ class FiboVLMUtil:
         if not image_path.exists():
             raise PromptFileReadError(f"Image file does not exist: {image_path}")
         try:
-            image = Image.open(image_path).convert("RGB")
+            image = open_oriented(image_path).convert("RGB")
         except (OSError, IOError, ValueError) as e:
             raise PromptFileReadError(f"Failed to load image: {e}")
         return image

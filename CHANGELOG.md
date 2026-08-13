@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Ideogram 4 quantization**: `mflux-save -q` now actually quantizes Ideogram 4. Every weight-bearing linear in the model is an `Fp8Linear`, which defined no `to_quantized` and whose components were marked `skip_quantization`, so `-q 4` wrote an FP8 checkpoint stamped `quantization_level: 4` and only the VAE was touched. Adds `Fp8Linear.to_quantized`, drops the skip flags, derives bits and group size from the stored shapes when rebuilding a saved checkpoint instead of assuming q8/group-64, and rebuilds quantized embeddings as embeddings rather than linears. `-q 8` is 26 GB and `-q 4` is 14 GB, both visually indistinguishable from FP8. (#559)
+
+### 📝 Documentation
+
+- **Ideogram 4 gated weights**: Document the `HF_TOKEN` / `hf auth login` step alongside the existing note that access must be approved on the model card — authenticating is the half people miss, and without it an approved account still fails with a bare `401`/`403`. Adds a quantization section covering `mflux-save -q` and loading a saved checkpoint with `--model-path`. (#559)
+
 ## [0.18.1] - 2026-08-07
 
 ### 🎨 New Model Support
@@ -37,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **@plz12345**
 
 ---
+
+### ✨ Features
+
+- **LyCORIS LoKr adapters (FLUX.1 and FLUX.2)**: Load community LyCORIS LoKr safetensors through the existing `--lora-paths` / `lora_paths` API. Supports direct and factorized (`lokr_w1_a`/`lokr_w1_b`, `lokr_w2_a`/`lokr_w2_b`, optional `lokr_t2`) tensors, observed LyCORIS key layouts, alpha scaling for decomposed factors, optional `dora_scale`, multi-adapter fusion with classic LoRA, and baking into non-quantized base weights as well as quantized layers (via dequantization and re-quantization). Inference applies the Kronecker product without materializing full dense deltas for standard (non-DoRA) LoKr layers.
 
 ## [0.18.0] - 2026-06-07
 

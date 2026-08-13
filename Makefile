@@ -89,13 +89,21 @@ check: ensure-ruff
 	# 🏗️ Running pre-commit linter and formatters on files...
 	@(pre-commit run --all-files)
 
-# Run tests
+# Run the default test selection (excludes slow model tests, see addopts in pyproject.toml)
 .PHONY: test
 test: ensure-pytest
 	# 🏗️ Running tests...
 	uv pip install -e '.[dev]' # Install pinned MLX version specifically for testing
 	MFLUX_PRESERVE_TEST_OUTPUT=1 uv run python -m pytest
 	# ✅ Tests completed
+
+# Run the whole suite, slow tests included (downloads model weights)
+.PHONY: test-all
+test-all: ensure-pytest
+	# 🏗️ Running all tests (slow tests download model weights)...
+	uv pip install -e '.[dev]' # Install pinned MLX version specifically for testing
+	MFLUX_PRESERVE_TEST_OUTPUT=1 uv run python -m pytest -m "not high_memory_requirement"
+	# ✅ All tests completed
 
 # Run fast tests only (no image generation)
 .PHONY: test-fast
@@ -145,7 +153,8 @@ help:
 	@echo "  make lint        - Run ruff python linter"
 	@echo "  make format      - Run ruff code formatter"
 	@echo "  make check       - Run linters auto fixes *and* style formatter via pre-commit hook"
-	@echo "  make test        - Run all tests"
+	@echo "  make test        - Run the default test selection (skips slow model tests)"
+	@echo "  make test-all    - Run the whole suite, slow tests included (downloads weights)"
 	@echo "  make test-fast   - Run fast tests only (no image generation)"
 	@echo "  make test-slow   - Run slow tests only (image generation)"
 	@echo "  make build       - Build distribution packages and check sizes"

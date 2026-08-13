@@ -150,6 +150,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def boogu_image_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["boogu-image-turbo"]
+
+    @staticmethod
+    @lru_cache
     def fibo() -> "ModelConfig":
         return AVAILABLE_MODELS["fibo"]
 
@@ -187,6 +192,11 @@ class ModelConfig:
     @lru_cache
     def z_image() -> "ModelConfig":
         return AVAILABLE_MODELS["z-image"]
+
+    @staticmethod
+    @lru_cache
+    def z_image_turbo_controlnet_union_2_1() -> "ModelConfig":
+        return AVAILABLE_MODELS["z-image-turbo-controlnet-union-2.1"]
 
     @staticmethod
     @lru_cache
@@ -234,7 +244,10 @@ AVAILABLE_MODELS = {
         max_sequence_length=1024,
         supports_guidance=True,
         requires_sigma_shift=True,
+        # Per krea/Krea-2-Raw scheduler_config.json: base_shift 0.5, max_shift 1.15,
+        # base/max image seq len 256/6400, exponential dynamic shifting.
         sigma_max_shift=1.15,
+        sigma_max_seq_len=6400,
     ),
     "dev": ModelConfig(
         priority=0,
@@ -501,8 +514,8 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image": ModelConfig(
         priority=15,
-        aliases=["qwen-image", "qwen"],
-        model_name="Qwen/Qwen-Image",
+        aliases=["qwen-image", "qwen", "qwen-image-2512", "qwen-2512"],
+        model_name="Qwen/Qwen-Image-2512",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -516,8 +529,15 @@ AVAILABLE_MODELS = {
     ),
     "qwen-image-edit": ModelConfig(
         priority=16,
-        aliases=["qwen-image-edit", "qwen-edit", "qwen-edit-plus", "qwen-edit-2509"],
-        model_name="Qwen/Qwen-Image-Edit-2509",
+        aliases=[
+            "qwen-image-edit",
+            "qwen-edit",
+            "qwen-edit-plus",
+            "qwen-edit-2509",
+            "qwen-edit-2511",
+            "qwen-image-edit-2511",
+        ],
+        model_name="Qwen/Qwen-Image-Edit-2511",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,
@@ -587,6 +607,23 @@ AVAILABLE_MODELS = {
         num_train_steps=1000,
         max_sequence_length=512,
         supports_guidance=True,
+        requires_sigma_shift=True,
+    ),
+    "z-image-turbo-controlnet-union-2.1": ModelConfig(
+        priority=15,
+        aliases=[
+            "z-image-turbo-controlnet-union-2.1",
+            "z-image-controlnet-union-2.1",
+            "z-image-controlnet",
+            "z-image-turbo-controlnet",
+        ],
+        model_name="Tongyi-MAI/Z-Image-Turbo",
+        base_model=None,
+        controlnet_model="alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=512,
+        supports_guidance=False,
         requires_sigma_shift=True,
     ),
     "z-image-turbo": ModelConfig(
@@ -687,6 +724,18 @@ AVAILABLE_MODELS = {
         num_train_steps=None,
         max_sequence_length=2048,
         supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "boogu-image-turbo": ModelConfig(
+        priority=28,
+        aliases=["boogu-image-turbo", "boogu-turbo", "boogu-image", "boogu"],
+        model_name="Boogu/Boogu-Image-0.1-Turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=1024,
+        supports_guidance=False,
         requires_sigma_shift=False,
     ),
 }

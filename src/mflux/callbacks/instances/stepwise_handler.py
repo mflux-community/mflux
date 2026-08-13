@@ -32,6 +32,7 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
         config: Config,
         canny_image: PIL.Image.Image | None = None,
         depth_image: PIL.Image.Image | None = None,
+        control_images: list[PIL.Image.Image] | None = None,
     ) -> None:
         self._save_image(
             step=config.init_time_step,
@@ -97,8 +98,8 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
             seed=seed,
             prompt=prompt,
             quantization=self.model.bits,
-            lora_paths=self.model.lora_paths,
-            lora_scales=self.model.lora_scales,
+            lora_paths=getattr(self.model, "lora_paths", None),
+            lora_scales=getattr(self.model, "lora_scales", None),
             generation_time=generation_time,
         )
         stepwise_img.save(

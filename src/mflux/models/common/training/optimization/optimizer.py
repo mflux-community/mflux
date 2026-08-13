@@ -15,6 +15,8 @@ from mflux.models.common.training.state.zip_util import ZipUtil
 class Optimizers(Enum):
     ADAM = ("Adam", optim.Adam)
     ADAMW = ("AdamW", optim.AdamW)
+    ADAFACTOR = ("Adafactor", optim.Adafactor)  # ~half the optimizer state of Adam (memory-light)
+    LION = ("Lion", optim.Lion)
 
     def __init__(self, alias: str, optimizer: mlx.optimizers.Optimizer):
         self.alias = alias
@@ -37,10 +39,32 @@ class Optimizer:
         mx.save_safetensors(str(path), dict(state))
 
     @staticmethod
+    def _build_lr(spec):
+        # Returns a float (constant) or an MLX schedule callable. A linear warmup (lr_warmup_steps)
+        # is prepended when set; "cosine" decays over the remaining steps (needs lr_total_steps).
+        lr = spec.learning_rate
+        warmup = spec.lr_warmup_steps or 0
+        if spec.lr_schedule == "cosine" and spec.lr_total_steps:
+            decay_steps = max(1, int(spec.lr_total_steps) - warmup)
+            main = optim.cosine_decay(lr, decay_steps)
+            if warmup > 0:
+                return optim.join_schedules([optim.linear_schedule(0.0, lr, warmup), main], [warmup])
+            return main
+        if warmup > 0:  # warmup then constant
+            return optim.join_schedules(
+                [optim.linear_schedule(0.0, lr, warmup), optim.cosine_decay(lr, 10**12)], [warmup]
+            )
+        return lr
+
+    @staticmethod
     def from_spec(training_spec: TrainingSpec) -> "Optimizer":
         opt_cls = Optimizers.from_alias(training_spec.optimizer.name)
+        # Forward any caller-provided optimizer kwargs (weight_decay, betas, eps, ...).
+        # Previously only learning_rate was passed, so values set in the training config's
+        # "optimizer" section were silently ignored in favor of the MLX defaults.
+        extra_params = getattr(training_spec.optimizer, "optimizer_params", None) or {}
         # noinspection PyCallingNonCallable
-        opt = opt_cls(learning_rate=training_spec.optimizer.learning_rate)
+        opt = opt_cls(learning_rate=Optimizer._build_lr(training_spec.optimizer), **extra_params)
 
         if training_spec.optimizer.state_path is not None:
             state = ZipUtil.unzip(

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import mlx.core as mx
 from mlx import nn
-from mlx.utils import tree_unflatten
-from PIL import Image as PILImage
+from mlx.optimizers import clip_grad_norm
+from mlx.utils import tree_map, tree_unflatten
 from tqdm import tqdm
 
 from mflux.models.common.latent_creator.latent_creator import LatentCreator
@@ -20,9 +20,28 @@ from mflux.models.common.training.state.training_spec import TrainingSpec
 from mflux.models.common.training.state.training_state import TrainingState
 from mflux.models.common.training.statistics.plotter import Plotter
 from mflux.models.common.training.utils import TrainingUtil
+from mflux.utils.exif_orientation import oriented_size
 
 
 class TrainingTrainer:
+    @staticmethod
+    def _sample_timestep_index(timestep_type: str, low: int, high: int, rng) -> int:
+        # Map a [0,1) draw shaped by the distribution to a timestep index in [low, high).
+        import math
+
+        span = high - low
+        if span <= 0:
+            return low
+        if timestep_type == "sigmoid":  # mid-concentrated (ai-toolkit default; best for identity)
+            frac = 1.0 / (1.0 + math.exp(-rng.gauss(0.0, 1.0)))
+        elif timestep_type == "content":  # cubic, favors low noise (fine detail)
+            frac = rng.random() ** 3
+        elif timestep_type == "style":  # favors high noise (coarse style)
+            frac = 1.0 - rng.random() ** 3
+        else:
+            frac = rng.random()
+        return min(max(low + int(frac * span), low), high - 1)
+
     @staticmethod
     def compute_loss(
         adapter: TrainingAdapter,
@@ -65,14 +84,20 @@ class TrainingTrainer:
             else training_spec.training_loop.timestep_high
         )
 
-        t = int(
-            mx.random.randint(
-                low=low,
-                high=high,
-                shape=[],
-                key=mx.random.key(time_seed),
+        timestep_type = training_spec.training_loop.timestep_type
+        if timestep_type and timestep_type != "uniform":
+            # Non-uniform timestep-index sampling (sigmoid/content/style). Identity learning
+            # lives in the mid/low-noise band that flat sampling under-weights.
+            t = TrainingTrainer._sample_timestep_index(timestep_type, low, high, rng)
+        else:
+            t = int(
+                mx.random.randint(
+                    low=low,
+                    high=high,
+                    shape=[],
+                    key=mx.random.key(time_seed),
+                )
             )
-        )
 
         clean_image = item.clean_latents
         pure_noise = mx.random.normal(
@@ -137,11 +162,44 @@ class TrainingTrainer:
             initial=training_state.iterator.num_iterations,
         )
 
+        max_grad_norm = training_spec.optimizer.max_grad_norm
+        accum_steps = max(1, training_spec.optimizer.gradient_accumulation_steps)
+        accumulated_grads = None
+        accumulated_count = 0
+        nonfinite_skips = 0
         for batch in batches:
             loss, grads = train_step_function(batch)
-            training_state.optimizer.optimizer.update(model=adapter.model(), gradients=grads)
-            mx.eval(adapter.model().parameters(), training_state.optimizer.optimizer.state)
-            del loss, grads
+            if not TrainingTrainer._step_is_finite(loss):
+                del loss, grads
+                nonfinite_skips += 1
+                # Drop any partial accumulation window: a skipped micro-batch (especially on a
+                # window boundary) must not carry its accumulated grads into the next window,
+                # which would apply an oversized optimizer step.
+                accumulated_grads, accumulated_count = None, 0
+                if training_spec.low_ram:
+                    mx.clear_cache()
+                continue
+            del loss
+
+            # Gradient accumulation: average grads across accum_steps micro-batches and only step
+            # the optimizer on the window boundary, for an effective batch of batch_size *
+            # accum_steps.
+            at_step_boundary = True
+            if accum_steps > 1:
+                grads, accumulated_count, at_step_boundary = TrainingTrainer._fold_into_window(
+                    grads, accumulated_grads, accum_steps, accumulated_count
+                )
+                accumulated_grads = None if at_step_boundary else grads
+
+            if at_step_boundary:
+                if max_grad_norm is not None:
+                    grads, _ = clip_grad_norm(grads, max_grad_norm)
+                training_state.optimizer.optimizer.update(model=adapter.model(), gradients=grads)
+                mx.eval(adapter.model().parameters(), training_state.optimizer.optimizer.state)
+            else:
+                # Keep the partial sum materialized so the graph doesn't grow across the window.
+                mx.eval(accumulated_grads)
+            del grads
 
             if training_state.should_plot_loss(training_spec):
                 validation_batch = training_state.iterator.get_validation_batch()
@@ -159,6 +217,8 @@ class TrainingTrainer:
             if training_spec.low_ram:
                 mx.clear_cache()
 
+        if nonfinite_skips:
+            print(f"Skipped {nonfinite_skips} non-finite (NaN/Inf) training step(s).")
         training_state.save(adapter, training_spec)
 
     @staticmethod
@@ -177,8 +237,7 @@ class TrainingTrainer:
         if training_spec.monitoring is None:
             return 1024, 1024
         if preview_image is not None:
-            with PILImage.open(preview_image) as img:
-                width, height = img.size
+            width, height = oriented_size(preview_image)
         else:
             width = int(training_spec.monitoring.preview_width)
             height = int(training_spec.monitoring.preview_height)
@@ -231,6 +290,33 @@ class TrainingTrainer:
                 )
             )
             del image
+
+    @staticmethod
+    def _fold_into_window(grads, accumulated, accum_steps: int, count: int):
+        """Fold one valid micro-batch into the accumulation window.
+
+        The window closes after accum_steps VALID micro-batches rather than after
+        accum_steps iterations. Counting iterations closes it early whenever a
+        non-finite step reset the window mid-way, and the optimizer then steps on a
+        partial sum that was still divided by the full accum_steps: a smaller update
+        than either the accumulated or the unaccumulated setting asks for.
+        """
+        scaled = tree_map(lambda g: g / accum_steps, grads)
+        if accumulated is not None:
+            scaled = tree_map(lambda a, g: a + g, accumulated, scaled)
+        count += 1
+        if count >= accum_steps:
+            return scaled, 0, True
+        return scaled, count, False
+
+    @staticmethod
+    def _step_is_finite(loss) -> bool:
+        """A non-finite loss (bf16 activation spikes, a NaN from one bad batch) must never
+        reach optimizer.update: the gradients it came with poison the LoRA weights and the
+        optimizer moments in a single step. The caller skips the step and the run continues
+        from the last good state. clip_grad_norm handles ordinary spikes; this catches
+        Inf/NaN."""
+        return bool(mx.isfinite(loss).item())
 
     @staticmethod
     def _generate_previews_with_optimizer_offload(

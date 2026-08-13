@@ -56,6 +56,7 @@ class ImageGeneratorIdeogram4TestHelper:
         quantize: int | None = None,
         mismatch_threshold: float | None = None,
         model_config: ModelConfig | None = None,
+        model_path: str | None = None,
         prompt: str | dict[str, Any] | None = None,
     ) -> None:
         reference_image_path = ImageGeneratorIdeogram4TestHelper.resolve_path(reference_image_path)
@@ -63,7 +64,11 @@ class ImageGeneratorIdeogram4TestHelper:
 
         model = None
         try:
-            model = Ideogram4(quantize=quantize, model_config=model_config or ModelConfig.ideogram4_fp8())
+            model = Ideogram4(
+                quantize=quantize,
+                model_path=model_path,
+                model_config=model_config or ModelConfig.ideogram4_fp8(),
+            )
             result = model.generate_image(
                 seed=seed,
                 prompt=prompt or ImageGeneratorIdeogram4TestHelper.JAZZ_FEST_JSON_CAPTION,

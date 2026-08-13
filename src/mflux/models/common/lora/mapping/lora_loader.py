@@ -7,8 +7,11 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from mflux.models.common.lora.layer.fused_linear_lora_layer import FusedLoRALinear
+from mflux.models.common.lora.layer.linear_lokr_layer import LoKrLinear
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
+from mflux.models.common.lora.mapping.lokr_factors import is_lokr_adapter, rebuild_lokr_factors
 from mflux.models.common.lora.mapping.lora_mapping import LoRATarget
+from mflux.models.common.lora.mapping.lora_saver import LoRASaver
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 
 
@@ -16,7 +19,7 @@ from mflux.models.common.resolution.lora_resolution import LoraResolution
 class PatternMatch:
     source_pattern: str
     target_path: str
-    matrix_name: str  # "lora_A", "lora_B", or "alpha"
+    matrix_name: str
     transpose: bool
     transform: Callable[[mx.array], mx.array] | None = None
 
@@ -29,6 +32,7 @@ class LoRALoader:
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         role: str | None = None,
+        bake_lora: bool = True,
     ) -> tuple[list[str], list[float]]:
         resolved_paths = LoraResolution.resolve_paths(lora_paths)
         if not resolved_paths:
@@ -46,6 +50,12 @@ class LoRALoader:
             LoRALoader._apply_single_lora(transformer, lora_file, scale, lora_mapping, role=role)
 
         print("✅ All LoRA weights applied successfully")
+
+        if bake_lora:
+            print("Baking LoRA weights into the base model for faster inference...")
+            LoRASaver.bake_and_strip_lora(transformer)
+            mx.eval(transformer.parameters())
+            print("✅ LoRA weights baked successfully")
 
         return resolved_paths, resolved_scales
 
@@ -83,7 +93,8 @@ class LoRALoader:
         total_keys = len(weights)
         unmatched_keys = set(weights.keys()) - matched_keys
 
-        print(f"   ✅ Applied to {applied_count} layers ({len(matched_keys)}/{total_keys} keys matched)")
+        if applied_count:
+            print(f"   ✅ Applied to {applied_count} layers ({len(matched_keys)}/{total_keys} keys matched)")
 
         if unmatched_keys:
             print(f"   ⚠️  {len(unmatched_keys)} unmatched keys in LoRA file:")
@@ -91,6 +102,19 @@ class LoRALoader:
                 print(f"      - {key}")
             if len(unmatched_keys) > 5:
                 print(f"      ... and {len(unmatched_keys) - 5} more")
+
+        if applied_count == 0:
+            # A LoRA that applies to nothing must not silently generate base-model output,
+            # and the one case where the user has no idea what went wrong must not be the
+            # one case that says nothing: show how the file's keys end against what the
+            # mapping understands, so a naming-format mismatch reads as one.
+            seen_endings = sorted({".".join(k.split(".")[-2:]) for k in weights})[:8]
+            raise ValueError(
+                f"No LoRA layers were applied from {Path(lora_file).name}. "
+                f"Key endings seen in the file: {seen_endings}. This model's mapping expects "
+                f"endings like lora_A/lora_B, lora_up/lora_down or lora.up/lora.down (with or "
+                f"without a trailing .weight) under its module paths."
+            )
 
     @staticmethod
     def _build_pattern_mappings(targets: list[LoRATarget]) -> list[PatternMatch]:
@@ -133,7 +157,91 @@ class LoRALoader:
                 for pattern in target.possible_alpha_patterns
             )
 
+            mappings.extend(
+                LoRALoader._lokr_factor_pattern_matches(
+                    target.possible_lokr_w1_patterns,
+                    target.model_path,
+                    full_name="lokr_w1",
+                    factor_names=("lokr_w1_a", "lokr_w1_b"),
+                    transform=target.lokr_w1_transform,
+                )
+            )
+
+            mappings.extend(
+                LoRALoader._lokr_factor_pattern_matches(
+                    target.possible_lokr_w2_patterns,
+                    target.model_path,
+                    full_name="lokr_w2",
+                    factor_names=("lokr_w2_a", "lokr_w2_b"),
+                    transform=target.lokr_w2_transform,
+                    extra_factor_suffix="lokr_t2",
+                )
+            )
+
+            mappings.extend(
+                PatternMatch(
+                    source_pattern=pattern,
+                    target_path=target.model_path,
+                    matrix_name="dora_scale",
+                    transpose=False,
+                    transform=None,
+                )
+                for pattern in target.possible_dora_scale_patterns
+            )
+
         return mappings
+
+    @staticmethod
+    def _lokr_factor_pattern_matches(
+        patterns: list[str],
+        target_path: str,
+        *,
+        full_name: str,
+        factor_names: tuple[str, str],
+        transform: Callable[[mx.array], mx.array] | None,
+        extra_factor_suffix: str | None = None,
+    ) -> list[PatternMatch]:
+        matches: list[PatternMatch] = []
+        full_suffix = f".{full_name}"
+
+        for pattern in patterns:
+            matches.append(
+                PatternMatch(
+                    source_pattern=pattern,
+                    target_path=target_path,
+                    matrix_name=full_name,
+                    transpose=False,
+                    transform=transform,
+                )
+            )
+
+            if not pattern.endswith(full_suffix):
+                continue
+
+            base = pattern[: -len(full_suffix)]
+            matches.extend(
+                PatternMatch(
+                    source_pattern=f"{base}.{factor_name}",
+                    target_path=target_path,
+                    matrix_name=factor_name,
+                    transpose=False,
+                    transform=transform,
+                )
+                for factor_name in factor_names
+            )
+
+            if extra_factor_suffix is not None:
+                matches.append(
+                    PatternMatch(
+                        source_pattern=f"{base}.{extra_factor_suffix}",
+                        target_path=target_path,
+                        matrix_name=extra_factor_suffix,
+                        transpose=False,
+                        transform=transform,
+                    )
+                )
+
+        return matches
 
     @staticmethod
     def _apply_lora_with_mapping(
@@ -181,13 +289,34 @@ class LoRALoader:
 
         # Apply LoRA to each target
         for target_path, lora_data in lora_data_by_target.items():
-            if LoRALoader._apply_lora_matrices_to_target(transformer, target_path, lora_data, scale, role=role):
+            if LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
                 applied_count += 1
 
         return applied_count, matched_keys
 
     @staticmethod
+    def _apply_adapter_to_target(
+        transformer: nn.Module, target_path: str, lora_data: dict, scale: float, *, role: str | None
+    ) -> bool:
+        if is_lokr_adapter(lora_data):
+            return LoRALoader._apply_lokr_matrices_to_target(transformer, target_path, lora_data, scale, role=role)
+
+        return LoRALoader._apply_lora_matrices_to_target(transformer, target_path, lora_data, scale, role=role)
+
+    @staticmethod
     def _match_pattern(weight_key: str, pattern: str) -> int | None:
+        # ComfyUI-format adapters name the tensor itself "lora_B", not "lora_B.weight".
+        # Accept the bare spelling for every ".weight" pattern here, centrally, so no
+        # family mapping needs to spell both forms (only flux ever did, and only under
+        # its transformer. prefix). Exact equality on the derived string cannot
+        # over-match: both spellings of a pattern name the same target module.
+        result = LoRALoader._match_pattern_exact(weight_key, pattern)
+        if result is None and pattern.endswith(".weight"):
+            result = LoRALoader._match_pattern_exact(weight_key, pattern[: -len(".weight")])
+        return result
+
+    @staticmethod
+    def _match_pattern_exact(weight_key: str, pattern: str) -> int | None:
         if "{block}" in pattern:
             # Find all numbers in the weight key
             numbers_in_key = re.findall(r"\d+", weight_key)
@@ -206,18 +335,8 @@ class LoRALoader:
     def _apply_lora_matrices_to_target(
         transformer: nn.Module, target_path: str, lora_data: dict, scale: float, *, role: str | None
     ) -> bool:
-        # Navigate to the target layer
-        current_module = transformer
-        path_parts = target_path.split(".")
-
         try:
-            for part in path_parts:
-                if part.isdigit():
-                    current_module = current_module[int(part)]
-                elif isinstance(current_module, dict) and part in current_module:
-                    current_module = current_module[part]
-                else:
-                    current_module = getattr(current_module, part)
+            current_module = LoRALoader._get_target_module(transformer, target_path)
         except (AttributeError, IndexError, KeyError):
             print(f"❌ Could not find target path: {target_path}")
             return False
@@ -245,11 +364,12 @@ class LoRALoader:
         # Check if it's a linear layer (either nn.Linear, LoRALinear, or FusedLoRALinear)
         is_linear = hasattr(current_module, "weight")
         is_lora_linear = isinstance(current_module, LoRALinear)
+        is_lokr_linear = isinstance(current_module, LoKrLinear)
         is_fused_linear = isinstance(current_module, FusedLoRALinear)
 
-        if is_linear or is_lora_linear or is_fused_linear:
+        if is_linear or is_lora_linear or is_lokr_linear or is_fused_linear:
             # Handle fusion: if the current module is already a LoRA layer, fuse them
-            if is_lora_linear:
+            if is_lora_linear or is_lokr_linear:
                 print(f"   🔀 Fusing with existing LoRA at {target_path}")
                 lora_layer = LoRALinear.from_linear(current_module.linear, r=lora_A.shape[1], scale=effective_scale)
                 lora_layer._mflux_lora_role = role
@@ -283,25 +403,94 @@ class LoRALoader:
                     lora_layer.lora_B = lora_layer.lora_B * alpha_scale
                 replacement_layer = lora_layer
 
-            # Replace the layer in the parent module
-            parent_module = transformer
-            for part in path_parts[:-1]:
-                if part.isdigit():
-                    parent_module = parent_module[int(part)]
-                elif isinstance(parent_module, dict) and part in parent_module:
-                    parent_module = parent_module[part]
-                else:
-                    parent_module = getattr(parent_module, part)
-
-            final_attr = path_parts[-1]
-            if final_attr.isdigit():
-                parent_module[int(final_attr)] = replacement_layer
-            elif isinstance(parent_module, dict) and final_attr in parent_module:
-                parent_module[final_attr] = replacement_layer
-            else:
-                setattr(parent_module, final_attr, replacement_layer)
+            LoRALoader._replace_target_module(transformer, target_path, replacement_layer)
 
             return True
         else:
             print(f"❌ Target layer {target_path} is not a linear layer")
             return False
+
+    @staticmethod
+    def _apply_lokr_matrices_to_target(
+        transformer: nn.Module, target_path: str, lora_data: dict, scale: float, *, role: str | None
+    ) -> bool:
+        try:
+            current_module = LoRALoader._get_target_module(transformer, target_path)
+        except (AttributeError, IndexError, KeyError):
+            print(f"❌ Could not find target path: {target_path}")
+            return False
+
+        try:
+            lokr_w1, lokr_w2, alpha_scale = rebuild_lokr_factors(lora_data)
+        except ValueError as error:
+            raise ValueError(f"Invalid LoKr matrices for {target_path}: {error}") from error
+
+        effective_scale = scale * alpha_scale
+
+        if not hasattr(current_module, "weight") and not isinstance(
+            current_module, (LoRALinear, FusedLoRALinear, LoKrLinear)
+        ):
+            print(f"❌ Target layer {target_path} is not a linear layer")
+            return False
+
+        if isinstance(current_module, FusedLoRALinear):
+            base_linear = current_module.base_linear
+            existing_loras = current_module.loras
+        elif isinstance(current_module, (LoRALinear, LoKrLinear)):
+            base_linear = current_module.linear
+            existing_loras = [current_module]
+        else:
+            base_linear = current_module
+            existing_loras = []
+
+        try:
+            replacement_layer = LoKrLinear.from_linear(
+                base_linear,
+                lokr_w1=lokr_w1,
+                lokr_w2=lokr_w2,
+                dora_scale=lora_data.get("dora_scale"),
+                scale=effective_scale,
+            )
+        except ValueError as error:
+            raise ValueError(f"Invalid LoKr matrices for {target_path}: {error}") from error
+
+        replacement_layer._mflux_lora_role = role
+        if existing_loras:
+            print(f"   🔀 Adding LoKr to existing fusion at {target_path}")
+            replacement_layer = FusedLoRALinear(base_linear=base_linear, loras=existing_loras + [replacement_layer])
+
+        LoRALoader._replace_target_module(transformer, target_path, replacement_layer)
+        return True
+
+    @staticmethod
+    def _get_target_module(transformer: nn.Module, target_path: str):
+        current_module = transformer
+        for part in target_path.split("."):
+            if part.isdigit():
+                current_module = current_module[int(part)]
+            elif isinstance(current_module, dict) and part in current_module:
+                current_module = current_module[part]
+            else:
+                current_module = getattr(current_module, part)
+
+        return current_module
+
+    @staticmethod
+    def _replace_target_module(transformer: nn.Module, target_path: str, replacement_layer: nn.Module) -> None:
+        path_parts = target_path.split(".")
+        parent_module = transformer
+        for part in path_parts[:-1]:
+            if part.isdigit():
+                parent_module = parent_module[int(part)]
+            elif isinstance(parent_module, dict) and part in parent_module:
+                parent_module = parent_module[part]
+            else:
+                parent_module = getattr(parent_module, part)
+
+        final_attr = path_parts[-1]
+        if final_attr.isdigit():
+            parent_module[int(final_attr)] = replacement_layer
+        elif isinstance(parent_module, dict) and final_attr in parent_module:
+            parent_module[final_attr] = replacement_layer
+        else:
+            setattr(parent_module, final_attr, replacement_layer)

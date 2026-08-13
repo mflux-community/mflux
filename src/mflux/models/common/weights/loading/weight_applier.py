@@ -96,8 +96,16 @@ class WeightApplier:
         components: dict,
         weight_definition: "WeightDefinitionType",
     ) -> None:
+        # Models whose dims are not divisible by 64 (e.g. Boogu's 3360 hidden size)
+        # can opt into a smaller group size; defaults to MLX's 64 for every other model.
+        group_size = getattr(weight_definition, "quantization_group_size", 64)
         for name, model in models.items():
             component = components.get(name)
             if component and component.skip_quantization:
                 continue
-            nn.quantize(model, class_predicate=weight_definition.quantization_predicate, bits=bits)
+            nn.quantize(
+                model,
+                group_size=group_size,
+                class_predicate=weight_definition.quantization_predicate,
+                bits=bits,
+            )

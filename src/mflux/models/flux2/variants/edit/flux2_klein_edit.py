@@ -28,6 +28,7 @@ class Flux2KleinEdit(nn.Module):
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
         model_config: ModelConfig | None = None,
     ):
         super().__init__()
@@ -37,6 +38,7 @@ class Flux2KleinEdit(nn.Module):
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
             model_config=model_config or ModelConfig.flux2_klein_4b(),
         )
 
@@ -82,13 +84,12 @@ class Flux2KleinEdit(nn.Module):
             width=config.width,
         )
 
-        # 3. Reference image conditioning (edit-style, concat reference tokens)
+        # 3. Reference image conditioning (edit-style, concat reference tokens).
+        #    Each reference is encoded at its own (aspect-preserved) size, not the output dims.
         image_latents, image_latent_ids = _Flux2KleinEditHelpers.prepare_reference_image_conditioning(
             vae=self.vae,
             tiling_config=self.tiling_config,
             image_paths=image_paths,
-            height=config.height,
-            width=config.width,
             batch_size=latents.shape[0],
         )
 

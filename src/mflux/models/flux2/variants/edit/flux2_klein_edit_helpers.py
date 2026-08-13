@@ -1,12 +1,23 @@
+import math
 from pathlib import Path
 
 import mlx.core as mx
+import PIL.Image
 
-from mflux.models.common.latent_creator.latent_creator import LatentCreator
+from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.model.flux2_text_encoder.prompt_encoder import Flux2PromptEncoder
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
+from mflux.utils.image_util import ImageUtil
+
+# Reference images are conditioned at (at most) this many pixels, like the
+# diffusers Flux2KleinPipeline. Larger references are downscaled (aspect-preserving)
+# to fit; they are never resized to the output dimensions.
+MAX_REFERENCE_AREA = 1024 * 1024
+
+# Reference dims must be a multiple of 16 pixels (vae_scale_factor 8 * patch size 2).
+REFERENCE_DIM_MULTIPLE = 16
 
 
 class _Flux2KleinEditHelpers:
@@ -86,13 +97,45 @@ class _Flux2KleinEditHelpers:
         return (encoded - bn_mean) / bn_std
 
     @staticmethod
+    def reference_dims(width: int, height: int) -> tuple[int, int]:
+        # 1. Aspect-preserving downscale so the area is at most MAX_REFERENCE_AREA
+        area = width * height
+        if area > MAX_REFERENCE_AREA:
+            scale = math.sqrt(MAX_REFERENCE_AREA / area)
+            width = round(width * scale)
+            height = round(height * scale)
+
+        # 2. Snap each dim down to a multiple of 16 (realized as a center-crop, never a squash)
+        width -= width % REFERENCE_DIM_MULTIPLE
+        height -= height % REFERENCE_DIM_MULTIPLE
+        if width == 0 or height == 0:
+            raise ValueError(f"Reference image too small to condition on (needs >= {REFERENCE_DIM_MULTIPLE}px per side)")  # fmt: off
+        return width, height
+
+    @staticmethod
+    def prepare_reference_image(image: PIL.Image.Image) -> PIL.Image.Image:
+        # Each reference keeps its OWN aspect ratio, independent of the output dims:
+        # aspect-preserving downscale to at most MAX_REFERENCE_AREA, then center-crop
+        # the sub-16px residual so each dim is a multiple of 16.
+        target_width, target_height = _Flux2KleinEditHelpers.reference_dims(image.width, image.height)
+
+        area = image.width * image.height
+        if area > MAX_REFERENCE_AREA:
+            scale = math.sqrt(MAX_REFERENCE_AREA / area)
+            image = image.resize((round(image.width * scale), round(image.height * scale)), PIL.Image.LANCZOS)
+
+        if (image.width, image.height) != (target_width, target_height):
+            left = (image.width - target_width) // 2
+            top = (image.height - target_height) // 2
+            image = image.crop((left, top, left + target_width, top + target_height))
+        return image
+
+    @staticmethod
     def prepare_reference_image_conditioning(
         *,
         vae: Flux2VAE,
         tiling_config,
         image_paths: list[Path | str] | None = None,
-        height: int,
-        width: int,
         batch_size: int = 1,
     ):
         if not image_paths:
@@ -101,11 +144,10 @@ class _Flux2KleinEditHelpers:
         packed_latents_list: list[mx.array] = []
         ids_list: list[mx.array] = []
         for i, p in enumerate(image_paths):
-            encoded = LatentCreator.encode_image(
+            image = _Flux2KleinEditHelpers.prepare_reference_image(ImageUtil.load_image(p).convert("RGB"))
+            encoded = VAEUtil.encode(
                 vae=vae,
-                image_path=p,
-                height=height,
-                width=width,
+                image=ImageUtil.to_array(image),
                 tiling_config=tiling_config,
             )
             encoded = _Flux2KleinEditHelpers.ensure_4d_latents(encoded)

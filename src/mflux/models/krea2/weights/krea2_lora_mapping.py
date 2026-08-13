@@ -70,6 +70,8 @@ class Krea2LoRAMapping(LoRAMapping):
             possible_up_patterns=Krea2LoRAMapping._matrix_patterns(module_paths, flat_paths, "up"),
             possible_down_patterns=Krea2LoRAMapping._matrix_patterns(module_paths, flat_paths, "down"),
             possible_alpha_patterns=Krea2LoRAMapping._alpha_patterns(module_paths, flat_paths),
+            possible_lokr_w1_patterns=Krea2LoRAMapping._lokr_patterns(module_paths, "lokr_w1"),
+            possible_lokr_w2_patterns=Krea2LoRAMapping._lokr_patterns(module_paths, "lokr_w2"),
         )
 
     @staticmethod
@@ -107,6 +109,18 @@ class Krea2LoRAMapping(LoRAMapping):
                 ]
             )
 
+        return patterns
+
+    @staticmethod
+    def _lokr_patterns(module_paths: list[str], factor: str) -> list[str]:
+        # ai-toolkit exports LoKr factors as `<prefix><path>.lokr_w1` / `.lokr_w2`
+        # (full matrices) using the official Krea module names. The loader derives
+        # the decomposed `_a`/`_b`/`lokr_t2` variants from these base patterns.
+        patterns = []
+        for path in module_paths:
+            patterns.extend(
+                f"{prefix}{path}.{factor}" for prefix in ("", "transformer.", "diffusion_model.", "base_model.model.")
+            )
         return patterns
 
     @staticmethod

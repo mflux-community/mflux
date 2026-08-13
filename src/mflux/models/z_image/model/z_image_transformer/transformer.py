@@ -1,3 +1,5 @@
+import math
+
 import mlx.core as mx
 from mlx import nn
 
@@ -60,6 +62,7 @@ class ZImageTransformer(nn.Module):
         timestep: mx.array | float | int,
         sigmas: mx.array,
         cap_feats: mx.array,
+        controlnet_block_samples: dict[int, mx.array] | list[mx.array] | None = None,
     ) -> mx.array:
         key = f"{self.patch_size}-{self.f_patch_size}"
 
@@ -119,13 +122,22 @@ class ZImageTransformer(nn.Module):
         unified_freqs_cis = mx.concatenate([x_freqs_cis, cap_freqs_cis], axis=0)
         unified_attn_mask = mx.ones((1, unified.shape[1]), dtype=mx.bool_)
 
-        for layer in self.layers:
+        for layer_idx, layer in enumerate(self.layers):
             unified = layer(
                 x=unified,
                 attn_mask=unified_attn_mask,
                 freqs_cis=unified_freqs_cis,
                 t_emb=t_emb,
             )
+            if controlnet_block_samples is not None:
+                if isinstance(controlnet_block_samples, dict):
+                    if layer_idx in controlnet_block_samples:
+                        unified = unified + controlnet_block_samples[layer_idx]
+                else:
+                    # Interval mapping fallback (like FLUX)
+                    sample = ZImageTransformer._get_controlnet_sample(layer_idx, self.layers, controlnet_block_samples)
+                    if sample is not None:
+                        unified = unified + sample
 
         # Final layer and unpatchify
         unified = self.all_final_layer[key](unified, t_emb)
@@ -137,6 +149,20 @@ class ZImageTransformer(nn.Module):
             out_channels=self.out_channels,
         )
         return -output
+
+    @staticmethod
+    def _get_controlnet_sample(idx: int, blocks: list, controlnet_samples: list[mx.array] | None) -> mx.array | None:
+        if controlnet_samples is None:
+            return None
+        if len(controlnet_samples) == 0:
+            return None
+        num_blocks = len(blocks)
+        num_samples = len(controlnet_samples)
+        interval_control = int(math.ceil(num_blocks / num_samples))
+        control_index = idx // interval_control
+        if control_index >= num_samples:
+            control_index = num_samples - 1
+        return controlnet_samples[control_index]
 
     @staticmethod
     def _patchify(

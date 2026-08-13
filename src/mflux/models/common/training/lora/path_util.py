@@ -50,8 +50,8 @@ def expand_module_paths(target: LoraTargetSpec) -> list[str]:
     return [target.module_path.format(block=b) for b in blocks.get_blocks()]
 
 
-def expand_module_paths_from_targets(targets: list[LoraTargetSpec]) -> list[tuple[str, int]]:
-    expanded: list[tuple[str, int]] = []
+def expand_module_paths_from_targets(targets: list[LoraTargetSpec]) -> list[tuple[str, int, float | None]]:
+    expanded: list[tuple[str, int, float | None]] = []
     for t in targets:
-        expanded.extend((p, t.rank) for p in expand_module_paths(t))
+        expanded.extend((p, t.rank, t.alpha) for p in expand_module_paths(t))
     return expanded

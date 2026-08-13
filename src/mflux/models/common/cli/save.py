@@ -1,4 +1,5 @@
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.boogu.variants.txt2img.boogu_image import BooguImage
 from mflux.models.common.config import ModelConfig
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
@@ -22,7 +23,9 @@ def main():
     # 1. Determine model class based on model name
     model_name_lower = args.model.lower()
     base_model_lower = (args.base_model or "").lower()
-    if "ernie" in model_name_lower:
+    if "boogu" in model_name_lower:
+        model_class = BooguImage
+    elif "ernie" in model_name_lower:
         model_class = ErnieImage
     elif "qwen" in model_name_lower and "edit" in model_name_lower:
         model_class = QwenImageEdit
@@ -44,7 +47,6 @@ def main():
     else:
         model_class = Flux1
 
-    # 2. Load, quantize and save the model
     if model_class is Ideogram4:
         model_config = Ideogram4WeightDefinition.resolve_inference_config(
             args.model,
@@ -52,23 +54,17 @@ def main():
             args.model_path,
         )
         model_path = None if Ideogram4WeightDefinition.is_builtin_name(args.model) else args.model_path
-        model = model_class(
-            quantize=args.quantize,
-            lora_paths=args.lora_paths,
-            lora_scales=args.lora_scales,
-            model_path=model_path,
-            model_config=model_config,
-        )
     else:
         model_config = ModelConfig.from_name(args.model, base_model=args.base_model)
-        model = model_class(
-            quantize=args.quantize,
-            lora_paths=args.lora_paths,
-            lora_scales=args.lora_scales,
-            model_path=args.model_path,
-            model_config=model_config,
-        )
+        model_path = args.model_path
 
+    # 2. Load, quantize and save the model
+    model = model_class(
+        quantize=args.quantize,
+        **lora_init_kwargs_from_args(args),
+        model_path=model_path,
+        model_config=model_config,
+    )
     model.save_model(args.path)
 
 

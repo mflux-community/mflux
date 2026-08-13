@@ -1,5 +1,5 @@
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config import ModelConfig
 from mflux.models.krea2.latent_creator import Krea2LatentCreator
 from mflux.models.krea2.variants.txt2img.krea2 import Krea2
@@ -7,7 +7,8 @@ from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
-# Krea-2 turbo defaults (reference: 8 steps, CFG 1.0, er_sde, shift 1.15).
+# Krea-2 turbo defaults (reference: 8 steps, CFG 1.0, er_sde; sigmas use the official
+# dynamic exponential shift, base/max 0.5/1.15 over image seq len 256..6400).
 DEFAULT_STEPS = 8
 DEFAULT_GUIDANCE = 1.0
 
@@ -20,6 +21,7 @@ def main():
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
+    parser.add_pid_decode_arguments()
     parser.add_output_arguments()
     args = parser.parse_args()
 
@@ -28,8 +30,7 @@ def main():
         model_config=ModelConfig.krea2(),
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
+        **lora_init_kwargs_from_args(args),
     )
 
     # 2. Register callbacks (stepwise image output, memory stats, battery saver)
@@ -60,6 +61,8 @@ def main():
                 negative_prompt=args.negative_prompt,
                 image_path=args.image_path,
                 image_strength=args.image_strength,
+                pid_decode=args.pid_decode,
+                pid_degrade_sigma=args.pid_degrade_sigma,
             )
             # 4. Save the image
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)

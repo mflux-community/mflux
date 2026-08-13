@@ -4,16 +4,112 @@ from mflux.models.common.lora.mapping.lora_transforms import LoraTransforms
 
 class FluxLoRAMapping(LoRAMapping):
     @staticmethod
+    def _dora_scale_patterns(*base_patterns: str) -> list[str]:
+        patterns: list[str] = []
+        for base_pattern in base_patterns:
+            patterns.append(f"{base_pattern}.dora_scale")
+            if base_pattern.startswith(("lycoris_", "lycoris__")):
+                patterns.append(f"{FluxLoRAMapping._lycoris_to_lora_unet_base(base_pattern)}.dora_scale")
+        return patterns
+
+    @staticmethod
+    def _lycoris_to_lora_unet_base(lycoris_base: str) -> str:
+        if lycoris_base.startswith("lycoris__"):
+            return f"lora_unet_{lycoris_base[len('lycoris__') :]}"
+        if lycoris_base.startswith("lycoris_"):
+            return f"lora_unet_{lycoris_base[len('lycoris_') :]}"
+        return f"lora_unet_{lycoris_base}"
+
+    @staticmethod
     def get_mapping() -> list[LoRATarget]:
         targets = []
 
+        targets.extend(FluxLoRAMapping._get_observed_lycoris_global_targets())
         targets.extend(FluxLoRAMapping._get_standard_transformer_block_targets())
         targets.extend(FluxLoRAMapping._get_standard_single_transformer_block_targets())
 
         targets.extend(FluxLoRAMapping._get_bfl_transformer_block_targets())
         targets.extend(FluxLoRAMapping._get_bfl_single_transformer_block_targets())
 
+        FluxLoRAMapping._add_observed_lycoris_lokr_patterns(targets)
         return targets
+
+    @staticmethod
+    def _get_observed_lycoris_global_targets() -> list[LoRATarget]:
+        return [
+            FluxLoRAMapping._observed_lycoris_lokr_target("x_embedder", "lycoris__x_embedder"),
+            FluxLoRAMapping._observed_lycoris_lokr_target("context_embedder", "lycoris__context_embedder"),
+            FluxLoRAMapping._observed_lycoris_lokr_target("norm_out.linear", "lycoris__norm_out_linear"),
+            FluxLoRAMapping._observed_lycoris_lokr_target("proj_out", "lycoris__proj_out"),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.timestep_embedder.linear_1",
+                "lycoris__time_text_embed_timestep_embedder_linear_1",
+            ),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.timestep_embedder.linear_2",
+                "lycoris__time_text_embed_timestep_embedder_linear_2",
+            ),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.text_embedder.linear_1",
+                "lycoris__time_text_embed_text_embedder_linear_1",
+            ),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.text_embedder.linear_2",
+                "lycoris__time_text_embed_text_embedder_linear_2",
+            ),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.guidance_embedder.linear_1",
+                "lycoris__time_text_embed_guidance_embedder_linear_1",
+            ),
+            FluxLoRAMapping._observed_lycoris_lokr_target(
+                "time_text_embed.guidance_embedder.linear_2",
+                "lycoris__time_text_embed_guidance_embedder_linear_2",
+            ),
+        ]
+
+    @staticmethod
+    def _observed_lycoris_lokr_target(model_path: str, source_base: str) -> LoRATarget:
+        lora_unet_base = FluxLoRAMapping._lycoris_to_lora_unet_base(source_base)
+        return LoRATarget(
+            model_path=model_path,
+            possible_up_patterns=[],
+            possible_down_patterns=[],
+            possible_alpha_patterns=[f"{source_base}.alpha"],
+            possible_lokr_w1_patterns=[f"{source_base}.lokr_w1", f"{lora_unet_base}.lokr_w1"],
+            possible_lokr_w2_patterns=[f"{source_base}.lokr_w2", f"{lora_unet_base}.lokr_w2"],
+            possible_dora_scale_patterns=FluxLoRAMapping._dora_scale_patterns(source_base),
+        )
+
+    @staticmethod
+    def _add_observed_lycoris_lokr_patterns(targets: list[LoRATarget]) -> None:
+        for target in targets:
+            if not target.model_path.startswith(("transformer_blocks.", "single_transformer_blocks.")):
+                continue
+
+            source_bases = {target.model_path}
+            for alpha_pattern in target.possible_alpha_patterns:
+                if not alpha_pattern.endswith(".alpha"):
+                    continue
+                source_base = alpha_pattern.removesuffix(".alpha")
+                if source_base.startswith("transformer."):
+                    source_base = source_base.removeprefix("transformer.")
+                if source_base.startswith(("transformer_blocks.", "single_transformer_blocks.")):
+                    source_bases.add(source_base)
+
+            observed_bases = []
+            for source_base in source_bases:
+                source_key = source_base.replace(".", "_")
+                observed_bases.extend(
+                    [
+                        f"lycoris_{source_key}",
+                        f"lycoris__{source_key}",
+                        f"lora_unet_{source_key}",
+                    ]
+                )
+            target.possible_alpha_patterns.extend(f"{base}.alpha" for base in observed_bases)
+            target.possible_lokr_w1_patterns.extend(f"{base}.lokr_w1" for base in observed_bases)
+            target.possible_lokr_w2_patterns.extend(f"{base}.lokr_w2" for base in observed_bases)
+            target.possible_dora_scale_patterns.extend(FluxLoRAMapping._dora_scale_patterns(*observed_bases))
 
     @staticmethod
     def _get_standard_transformer_block_targets() -> list[LoRATarget]:

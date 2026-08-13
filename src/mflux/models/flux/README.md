@@ -5,6 +5,17 @@
 
 Supported base models include `schnell`, `dev`, and `krea-dev` (alias `dev-krea`), typically run via `mflux-generate`.
 
+LyCORIS LoKr adapters load through the same `--lora-paths` and `--lora-scales` flags as classic LoRA (see [LoRA basics](../common/README.md#lora-basics) for shared API details). Key layouts from ComfyUI / SimpleTuner (`lycoris_*`, `lora_unet_*`, factorized `lokr_w1_a` / `lokr_w2_b`, optional `dora_scale`) are supported on transformer and single-transformer blocks.
+
+```sh
+mflux-generate \
+  --model dev \
+  --prompt "a portrait" \
+  --steps 20 \
+  --lora-paths "/path/to/flux1-lycoris-lokr.safetensors" \
+  --lora-scales 1.0
+```
+
 ---
 
 ### FLUX.1 Krea [dev]: Enhanced Photorealism

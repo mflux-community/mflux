@@ -16,7 +16,8 @@ This repo uses pytest with image-producing tests. Always preserve outputs for in
 - Prefer the Makefile test targets:
   - `make test-fast` (fast tests, no image generation)
   - `make test-slow` (slow tests, image generation)
-  - `make test` (full suite)
+  - `make test` (default selection, skips slow model tests)
+  - `make test-all` (full suite, slow tests download model weights)
 - Always keep `MFLUX_PRESERVE_TEST_OUTPUT=1` on test runs (already built into the Makefile test targets).
 - If a change affects defaults, config resolution, metadata fields, or CLI behavior, add or update tests that cover the changed behavior directly instead of relying only on manual verification.
 - If tests fail:

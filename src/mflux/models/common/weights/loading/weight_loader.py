@@ -32,6 +32,13 @@ class WeightLoader:
         file_pattern: str = "*.safetensors",
     ) -> LoadedWeights:
         root_path = Path(snapshot_download(repo_id=repo_id, allow_patterns=[file_pattern, "config.json"]))
+        return WeightLoader.load_single_local(component=component, root_path=root_path)
+
+    @staticmethod
+    def load_single_local(
+        component: ComponentDefinition,
+        root_path: Path,
+    ) -> LoadedWeights:
         weights, q_level, version = WeightLoader._load_component(root_path, component)
         return LoadedWeights(
             components={component.name: weights},

@@ -11,6 +11,8 @@ class Krea2LatentCreator:
 
     @staticmethod
     def pack_latents(latents: mx.array, height: int, width: int) -> mx.array:
+        if latents.ndim == 5:
+            latents = latents[:, :, 0, :, :]
         return latents
 
     @staticmethod

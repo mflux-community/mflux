@@ -7,6 +7,7 @@ import mlx.core as mx
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.lora.mapping.lora_saver import LoRASaver
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
@@ -27,6 +28,7 @@ class Ideogram4Initializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ) -> None:
         path = model_path if model_path else model_config.model_name
         root_path = Ideogram4Initializer._resolve_model_path(path)
@@ -38,7 +40,7 @@ class Ideogram4Initializer:
         del weights
         mx.eval(model)
         mx.clear_cache()
-        Ideogram4Initializer._apply_lora(model, lora_paths, lora_scales)
+        Ideogram4Initializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
 
     @staticmethod
     def _resolve_model_path(path: str) -> Path:
@@ -86,7 +88,113 @@ class Ideogram4Initializer:
         model.text_encoder = Qwen3TextEncoder(**Ideogram4Initializer._text_encoder_kwargs(model_path / "text_encoder"))
 
     @staticmethod
+    def _rebuild_q8_folded_layers(module, tree) -> None:
+        """A native save can hold layers folded to an MLX quantized form: baking a LoRA
+        over an fp8 base (LoRASaver.bake_and_strip_lora) dequantizes and requantizes the
+        merged weight, and `mflux-save -q` quantizes every layer outright, so the
+        checkpoint stores a packed 'weight' plus 'scales'/'biases'. Fp8Linear cannot hold
+        those tensors and update(strict=False) skips them silently, failing at the first
+        forward. Rebuild any such layer as QuantizedLinear before the update, so both
+        mixed fp8/quantized and fully quantized checkpoints load. Original fp8 checkpoints
+        carry 'weight_scale' instead of 'scales'/'biases' and are left untouched.
+
+        Bits and group size are derived from the stored shapes rather than assumed: a
+        4-bit save packs twice as many weights into each uint32 as an 8-bit one, so
+        hard-coding q8 here would rebuild a q4 checkpoint at the wrong width and the
+        update would skip every layer it touched."""
+        from mlx import nn as _nn
+
+        if isinstance(tree, list):
+            children = list(module) if hasattr(module, "__iter__") else []
+            for idx, sub in enumerate(tree):
+                if idx < len(children):
+                    Ideogram4Initializer._rebuild_q8_folded_layers(children[idx], sub)
+            return
+        if not isinstance(tree, dict):
+            return
+        for key, sub in tree.items():
+            if not isinstance(sub, (dict, list)):
+                continue
+            child = getattr(module, key, None)
+            if child is None and isinstance(module, dict):
+                child = module.get(key)
+            if child is None:
+                continue
+            if (
+                isinstance(sub, dict)
+                and "scales" in sub
+                and "biases" in sub
+                and "weight" in sub
+                and not isinstance(child, (_nn.QuantizedLinear, _nn.QuantizedEmbedding))
+            ):
+                outer_dims, group_size, bits = Ideogram4Initializer._infer_quantization(child, sub)
+                inner_dims = sub["scales"].shape[1] * group_size
+                # A quantized embedding stores exactly the same three tensors as a
+                # quantized linear, so the shape of the payload cannot tell them apart.
+                # The layer being replaced can: rebuilding an embedding as a linear turns
+                # its lookup into a matmul against token indices, which fails on the first
+                # forward. Only the transformer's image-indicator embedding hits this.
+                if isinstance(child, (_nn.Embedding, _nn.QuantizedEmbedding)):
+                    replacement = _nn.QuantizedEmbedding(
+                        num_embeddings=outer_dims,
+                        dims=inner_dims,
+                        group_size=group_size,
+                        bits=bits,
+                    )
+                else:
+                    replacement = _nn.QuantizedLinear(
+                        inner_dims,
+                        outer_dims,
+                        bias="bias" in sub,
+                        group_size=group_size,
+                        bits=bits,
+                    )
+                if isinstance(module, dict):
+                    module[key] = replacement
+                else:
+                    setattr(module, key, replacement)
+            else:
+                Ideogram4Initializer._rebuild_q8_folded_layers(child, sub)
+
+    @staticmethod
+    def _infer_quantization(child, sub) -> tuple[int, int, int]:
+        """Recover (outer_dims, group_size, bits) from a stored quantized layer.
+
+        Both quantized linears and quantized embeddings store `scales` as
+        (outer_dims, num_groups) and the packed `weight` as
+        (outer_dims, inner_dims * bits // 32) — output/input features for a linear,
+        vocabulary/embedding size for an embedding. Once the inner dimension is known,
+        the group size and the bit width follow.
+
+        The layer being replaced is the authority on the inner dimension, but it states
+        it differently depending on what it is: `Fp8Linear` and `Linear` carry
+        `in_features`, `QuantizedEmbedding` carries `dims`, and a plain `Embedding`
+        carries neither — its only state is `weight`, shaped (num_embeddings, dims).
+        Falling back to MLX's default group size is the last resort, and is only right
+        when the checkpoint was written at that default.
+        """
+        scales = sub["scales"]
+        outer_dims, num_groups = scales.shape[0], scales.shape[1]
+
+        inner_dims = getattr(child, "in_features", None) or getattr(child, "dims", None)
+        if not isinstance(inner_dims, int) or inner_dims <= 0:
+            # A plain Embedding, or a lazily initialised layer that has not been sized.
+            weight = getattr(child, "weight", None)
+            if weight is not None and getattr(weight, "ndim", 0) == 2:
+                inner_dims = weight.shape[-1]
+        if not isinstance(inner_dims, int) or inner_dims <= 0:
+            inner_dims = num_groups * 64
+
+        group_size = inner_dims // num_groups
+        bits = (sub["weight"].shape[-1] * 32) // inner_dims
+        return outer_dims, group_size, bits
+
+    @staticmethod
     def _apply_weights(model, weights: LoadedWeights, quantize: int | None) -> None:
+        for name in ("conditional_transformer", "unconditional_transformer"):
+            tree = weights.components.get(name)
+            if tree:
+                Ideogram4Initializer._rebuild_q8_folded_layers(getattr(model, name), tree)
         model.bits = WeightApplier.apply_and_quantize(
             weights=weights,
             quantize_arg=quantize,
@@ -100,13 +208,19 @@ class Ideogram4Initializer:
         )
 
     @staticmethod
-    def _apply_lora(model, lora_paths: list[str] | None, lora_scales: list[float] | None) -> None:
+    def _apply_lora(
+        model,
+        lora_paths: list[str] | None,
+        lora_scales: list[float] | None,
+        bake_lora: bool,
+    ) -> None:
         lora_mapping = Ideogram4LoRAMapping.get_mapping()
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=lora_mapping,
             transformer=model.conditional_transformer,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
         if not model.lora_paths:
             return
@@ -118,6 +232,11 @@ class Ideogram4Initializer:
                 lora_mapping,
                 role=None,
             )
+        # load_and_apply_lora baked the conditional transformer; the unconditional one
+        # is populated by hand above, so bake it here to match.
+        if bake_lora:
+            LoRASaver.bake_and_strip_lora(model.unconditional_transformer)
+            mx.eval(model.unconditional_transformer.parameters())
 
     @staticmethod
     def _text_encoder_kwargs(directory: Path) -> dict[str, Any]:

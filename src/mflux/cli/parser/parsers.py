@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import random
 import sys
 import time
@@ -10,6 +11,13 @@ from mflux.cli.defaults import defaults as ui_defaults
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
+
+
+def finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError(f"expected a finite number, got {value!r}")
+    return parsed
 
 
 class ModelSpecAction(argparse.Action):
@@ -34,6 +42,14 @@ def int_or_special_value(value) -> int | scale_factor.ScaleFactor:
         raise argparse.ArgumentTypeError(
             f"'{value}' is not a valid integer or 'auto' or a scale factor like '2x' or '3.5x'"
         )
+
+
+def lora_init_kwargs_from_args(args: argparse.Namespace) -> dict[str, t.Any]:
+    return {
+        "lora_paths": args.lora_paths,
+        "lora_scales": args.lora_scales,
+        "bake_lora": args.bake_lora,
+    }
 
 
 def positive_float(value: str) -> float:
@@ -97,6 +113,12 @@ class CommandLineParser(argparse.ArgumentParser):
         lora_group.add_argument("--lora", dest="lora", action="append", nargs="+", default=None, metavar=("PATH", "SCALE"), help="Add a LoRA as an atomic PATH with optional SCALE (default 1.0). Repeatable: --lora A.safetensors 0.7 --lora B.safetensors. PATH accepts local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Preferred over --lora-paths/--lora-scales.")
         self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors)")
         self.add_argument("--lora-scales", type=float, nargs="*", default=None, help="[DEPRECATED: use --lora] Scaling factor to adjust the impact of LoRA weights on the model. A value of 1.0 applies the LoRA weights as they are.")
+        lora_group.add_argument(
+            "--bake-lora",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Merge LoRA/LoKr deltas into base weights after load (default: on). Use --no-bake-lora to keep runtime adapters.",
+        )
 
     def _add_image_generator_common_arguments(self, supports_dimension_scale_factor=False) -> None:
         self.supports_image_generation = True
@@ -171,8 +193,13 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--redux-image-paths", type=Path, nargs="*", required=True, help="Local path to the source image")
         self.add_argument("--redux-image-strengths", type=float, nargs="*", default=None, help="Strength values (between 0.0 and 1.0) for each reference image. Default is 1.0 for all images.")
 
+    def add_pid_decode_arguments(self) -> None:
+        self.add_argument("--pid-decode", action="store_true", help="Decode with NVIDIA PiD's pixel-diffusion super-resolving decoder instead of the standard VAE. First run downloads two separate Hugging Face checkpoints (~8GB total); google/gemma-2-2b-it is gated and requires accepting its license + `hf auth login`.")
+        self.add_argument("--pid-degrade-sigma", type=float, default=0.0, help="With --pid-decode, deliberately noise the latent to this flow-matching sigma before decoding (0.0-0.8). PiD's LQ gate was distilled on latents noised at sigma~U[0.0, 0.8]; a fully clean latent (the default, sigma=0.0) is the input it saw least during training, which can show up as over-textured detail invented on smooth areas like skin. Try 0.2 if you see that. Ignored without --pid-decode.")
+
     def add_output_arguments(self) -> None:
         self.add_argument("--metadata", action="store_true", help="Export image metadata as a JSON file.")
+        self.add_argument("--no-metadata", action="store_true", help="Do not embed generation metadata (EXIF UserComment and friends) in the output image. Independent of --metadata, which additionally writes a JSON sidecar.")
         self.add_argument("--output", type=str, default="image.png", help="The filename for the output image. Default is \"image.png\".")
         self.add_argument('--stepwise-image-output-dir', type=str, default=None, help='[EXPERIMENTAL] Output dir to write step-wise images and their final composite image to. This feature may change in future versions.')
 
@@ -186,6 +213,25 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--controlnet-strength", type=float, default=ui_defaults.CONTROLNET_STRENGTH, help=f"Controls how strongly the control image influences the output image. A value of 0.0 means no influence. (Default is {ui_defaults.CONTROLNET_STRENGTH})")
         if mode == 'canny':
             self.add_argument("--controlnet-save-canny", action="store_true", help="If set, save the Canny edge detection reference input image.")
+
+    def add_union_controlnet_arguments(self, require_controls: bool = True) -> None:
+        """
+        Union-style ControlNet inputs (e.g. pose/depth/canny/hed/mlsd).\n
+        Uses a repeatable `--control` argument with format: `type:path[:strength]`.
+        """
+        self.supports_controlnet = True
+        self.add_argument(
+            "--control",
+            action="append",
+            required=require_controls,
+            help="Repeatable control spec: type:path[:strength] (e.g. pose:pose.png:0.8).",
+        )
+        self.add_argument(
+            "--controlnet-strength",
+            type=finite_float,
+            default=ui_defaults.CONTROLNET_STRENGTH,
+            help=f"Global multiplier applied to all controls. (Default is {ui_defaults.CONTROLNET_STRENGTH})",
+        )
 
     def add_concept_attention_arguments(self) -> None:
         concept_group = self.add_argument_group("Concept Attention configuration")
@@ -286,6 +332,11 @@ class CommandLineParser(argparse.ArgumentParser):
     def parse_args(self) -> argparse.Namespace:  # type: ignore
         namespace = super().parse_args()
 
+        if getattr(namespace, "no_metadata", False):
+            from mflux.utils.image_util import ImageUtil
+
+            ImageUtil.embed_metadata_enabled = False
+
         # Fold the atomic --lora / --image flags into the legacy lora_paths/lora_scales
         # and image_path/image_strength fields so all downstream logic (metadata merge,
         # path resolution, model init) stays unchanged. Runs before the metadata block.
@@ -369,6 +420,18 @@ class CommandLineParser(argparse.ArgumentParser):
             if self.supports_image_outpaint:
                 if namespace.image_outpaint_padding is None:
                     namespace.image_outpaint_padding = prior_gen_metadata.get("image_outpaint_padding", None)
+
+            if hasattr(namespace, "pid_decode") and not self._option_was_provided("--pid-decode"):
+                namespace.pid_decode = prior_gen_metadata.get("pid_decode", False)
+
+
+            if hasattr(namespace, "pid_degrade_sigma") and not self._option_was_provided("--pid-degrade-sigma"):
+                # Non-PiD sidecars omit the key entirely, but a hand-edited one can carry an
+                # explicit null, which `.get(..., 0.0)` returns as-is. Normalize it, or
+                # `--config-from-metadata <such a sidecar> --pid-decode` hands None to the
+                # decoder's float-only sigma range check.
+                metadata_sigma = prior_gen_metadata.get("pid_degrade_sigma")
+                namespace.pid_degrade_sigma = 0.0 if metadata_sigma is None else metadata_sigma
 
         # Only require model if we're not in training mode and require_model_arg is True
         if hasattr(namespace, "model") and namespace.model is None and not has_training_args and self.require_model_arg:

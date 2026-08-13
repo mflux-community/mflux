@@ -4,6 +4,7 @@ import mlx.core as mx
 from mlx import nn
 
 from mflux.models.common.config import Config, ModelConfig
+from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.ideogram4.ideogram4_initializer import Ideogram4Initializer
@@ -31,6 +32,7 @@ class Ideogram4(nn.Module):
         model_config: ModelConfig = ModelConfig.ideogram4_fp8(),
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ):
         super().__init__()
         Ideogram4Initializer.init(
@@ -40,6 +42,7 @@ class Ideogram4(nn.Module):
             model_config=model_config,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
 
     def generate_image(
@@ -53,6 +56,9 @@ class Ideogram4(nn.Module):
         preset: str | None = None,
         strict_caption_validation: bool = False,
         warn_on_caption_issues: bool = True,
+        cfg_end: float | None = None,
+        pid_decode: bool = False,
+        pid_degrade_sigma: float = 0.0,
     ) -> GeneratedImage:
         prompt = Ideogram4PromptEncoder.resolve_prompt(
             prompt,
@@ -112,6 +118,11 @@ class Ideogram4(nn.Module):
             std=sampler.std,
         )
 
+        # CFG truncation: guidance shapes the result in the early steps (composition); the
+        # late steps mostly refine. cfg_end = fraction of steps that run CFG; the remaining
+        # steps run cond-only (guidance 1.0, which skips the unconditional forward entirely).
+        cfg_cutoff = num_steps if cfg_end is None else max(1, int(round(float(cfg_end) * num_steps)))
+
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(z)
         predict_conditional = self._predict_conditional(self.conditional_transformer)
@@ -124,7 +135,7 @@ class Ideogram4(nn.Module):
                     z=z,
                     t_value=float(t_values[schedule_index]),
                     s_value=float(s_values[schedule_index]),
-                    guidance_value=float(guidance_values[schedule_index]),
+                    guidance_value=float(guidance_values[schedule_index]) if step_index < cfg_cutoff else 1.0,
                     text_z_padding=text_z_padding,
                     llm_features=llm_features,
                     inputs=inputs,
@@ -141,7 +152,9 @@ class Ideogram4(nn.Module):
                 )
         ctx.after_loop(z)
 
-        decoded = self._decode_latents(z=z, config=config)
+        decoded = self._decode_latents(
+            z=z, config=config, prompt=prompt, seed=seed, pid_decode=pid_decode, degrade_sigma=pid_degrade_sigma
+        )
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
@@ -151,6 +164,8 @@ class Ideogram4(nn.Module):
             lora_paths=self.lora_paths,
             lora_scales=self.lora_scales,
             generation_time=time_steps.format_dict["elapsed"],
+            pid_decode=pid_decode,
+            pid_degrade_sigma=pid_degrade_sigma,
         )
 
     def save_model(self, base_path: str) -> None:
@@ -161,8 +176,22 @@ class Ideogram4(nn.Module):
             weight_definition=Ideogram4WeightDefinition,
         )
 
-    def _decode_latents(self, *, z: mx.array, config: Config) -> mx.array:
-        return self.vae.decode(Ideogram4LatentCreator.unpack_latents(z, config.height, config.width))
+    def _decode_latents(
+        self,
+        *,
+        z: mx.array,
+        config: Config,
+        prompt: str,
+        seed: int,
+        pid_decode: bool = False,
+        degrade_sigma: float = 0.0,
+    ) -> mx.array:
+        latents = Ideogram4LatentCreator.unpack_latents(z, config.height, config.width)
+        if pid_decode:
+            return pid_decode_latents(
+                vae=self.vae, latent=latents, caption=prompt, seed=seed, degrade_sigma=degrade_sigma
+            )
+        return self.vae.decode(latents)
 
     @staticmethod
     def _predict_conditional(transformer: Ideogram4Transformer):
@@ -232,6 +261,10 @@ class Ideogram4(nn.Module):
             llm_features=llm_features,
             inputs=inputs,
         )
+        # guidance == 1.0 makes the negative term vanish (v = pos_v exactly) — skip the
+        # whole unconditional forward, halving the cost of CFG-free steps.
+        if abs(guidance_value - 1.0) < 1e-6:
+            return z + pos_v * (s_value - t_value)
         neg_v = predict_unconditional(z=z, t=t, negative_inputs=negative_inputs)
         v = guidance_value * pos_v + (1.0 - guidance_value) * neg_v
         return z + v * (s_value - t_value)

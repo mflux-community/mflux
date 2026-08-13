@@ -70,6 +70,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                     "diffusion_model.layers.{block}.adaln_modulation.alpha",
                     "lora_unet_layers_{block}_adaln_modulation.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.adaln_modulation.lokr_w1",
+                    "diffusion_model.layers.{block}.adaln_modulation.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.adaln_modulation.lokr_w2",
+                    "diffusion_model.layers.{block}.adaln_modulation.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="layers.{block}.attention.qkv",
@@ -84,6 +92,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                 possible_alpha_patterns=[
                     "transformer.layers.{block}.attention.qkv.alpha",
                     "diffusion_model.layers.{block}.attention.qkv.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.attention.qkv.lokr_w1",
+                    "diffusion_model.layers.{block}.attention.qkv.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.attention.qkv.lokr_w2",
+                    "diffusion_model.layers.{block}.attention.qkv.lokr_w2",
                 ],
             ),
             LoRATarget(
@@ -100,6 +116,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                     "transformer.layers.{block}.attention.o.alpha",
                     "diffusion_model.layers.{block}.attention.o.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.attention.o.lokr_w1",
+                    "diffusion_model.layers.{block}.attention.o.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.attention.o.lokr_w2",
+                    "diffusion_model.layers.{block}.attention.o.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="layers.{block}.feed_forward.w1",
@@ -114,6 +138,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                 possible_alpha_patterns=[
                     "transformer.layers.{block}.feed_forward.w1.alpha",
                     "diffusion_model.layers.{block}.feed_forward.w1.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.feed_forward.w1.lokr_w1",
+                    "diffusion_model.layers.{block}.feed_forward.w1.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.feed_forward.w1.lokr_w2",
+                    "diffusion_model.layers.{block}.feed_forward.w1.lokr_w2",
                 ],
             ),
             LoRATarget(
@@ -130,6 +162,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                     "transformer.layers.{block}.feed_forward.w2.alpha",
                     "diffusion_model.layers.{block}.feed_forward.w2.alpha",
                 ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.feed_forward.w2.lokr_w1",
+                    "diffusion_model.layers.{block}.feed_forward.w2.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.feed_forward.w2.lokr_w2",
+                    "diffusion_model.layers.{block}.feed_forward.w2.lokr_w2",
+                ],
             ),
             LoRATarget(
                 model_path="layers.{block}.feed_forward.w3",
@@ -144,6 +184,14 @@ class Ideogram4LoRAMapping(LoRAMapping):
                 possible_alpha_patterns=[
                     "transformer.layers.{block}.feed_forward.w3.alpha",
                     "diffusion_model.layers.{block}.feed_forward.w3.alpha",
+                ],
+                possible_lokr_w1_patterns=[
+                    "transformer.layers.{block}.feed_forward.w3.lokr_w1",
+                    "diffusion_model.layers.{block}.feed_forward.w3.lokr_w1",
+                ],
+                possible_lokr_w2_patterns=[
+                    "transformer.layers.{block}.feed_forward.w3.lokr_w2",
+                    "diffusion_model.layers.{block}.feed_forward.w3.lokr_w2",
                 ],
             ),
         ]

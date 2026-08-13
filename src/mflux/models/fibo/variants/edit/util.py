@@ -9,6 +9,7 @@ from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.fibo.latent_creator.fibo_latent_creator import FiboLatentCreator
 from mflux.models.fibo.model.fibo_vae.wan_2_2_vae import Wan2_2_VAE
 from mflux.models.fibo_vlm.model.fibo_vlm import FiboVLM
+from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.image_util import ImageUtil
 from mflux.utils.prompt_util import PromptUtil
 
@@ -46,7 +47,7 @@ class FiboEditUtil:
 
         image = ImageUtil.load_image(args.image_path)
         if getattr(args, "mask_path", None) is not None:
-            mask_image = Image.open(args.mask_path).convert("L")
+            mask_image = open_oriented(args.mask_path).convert("L")
             if mask_image.size != image.size:
                 raise ValueError("Mask and image must have the same size.")
             image = FiboEditUtil._composite_mask_on_image(mask=mask_image, image=image)
@@ -98,7 +99,7 @@ class FiboEditUtil:
         if mask_path is None:
             return ImageUtil.scale_to_dimensions(image, width, height)
 
-        mask_image = Image.open(mask_path).convert("L")
+        mask_image = open_oriented(mask_path).convert("L")
         if mask_image.size != image.size:
             raise ValueError("Mask and image must have the same size.")
 
@@ -137,7 +138,7 @@ class FiboEditUtil:
 
     @staticmethod
     def build_rgba_composite_image(source_image_path: Path | str, matte_image: Image.Image) -> Image.Image:
-        base = Image.open(source_image_path).convert("RGB").copy()
+        base = open_oriented(source_image_path).convert("RGB").copy()
         alpha = matte_image.convert("L").resize(base.size, Image.LANCZOS)
         base.putalpha(alpha)
         return base
