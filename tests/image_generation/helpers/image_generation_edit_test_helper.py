@@ -47,10 +47,15 @@ class ImageGeneratorEditTestHelper:
 
         try:
             # given
+            # model_config has to reach the model. Without this the caller's config is
+            # accepted and dropped, the model falls back to whatever its own default
+            # alias resolves to, and the reference silently describes a checkpoint the
+            # test never named.
             model_kwargs = {
                 "quantize": quantize,
                 "lora_paths": lora_paths,
                 "lora_scales": lora_scales,
+                "model_config": model_config,
             }
 
             model = model_class(**model_kwargs)
