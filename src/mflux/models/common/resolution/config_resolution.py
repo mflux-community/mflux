@@ -127,22 +127,16 @@ class ConfigResolution:
     def _create_config(model_name: str, base: "ModelConfig") -> "ModelConfig":
         from mflux.models.common.config.model_config import ModelConfig
 
-        return ModelConfig(
-            aliases=base.aliases,
-            model_name=model_name,
-            base_model=base.model_name,
-            controlnet_model=base.controlnet_model,
-            custom_transformer_model=base.custom_transformer_model,
-            num_train_steps=base.num_train_steps,
-            max_sequence_length=base.max_sequence_length,
-            supports_guidance=base.supports_guidance,
-            requires_sigma_shift=base.requires_sigma_shift,
-            priority=base.priority,
-            transformer_overrides=dict(base.transformer_overrides),
-            text_encoder_overrides=dict(base.text_encoder_overrides),
-            sigma_base_shift=base.sigma_base_shift,
-            sigma_max_shift=base.sigma_max_shift,
-            sigma_base_seq_len=base.sigma_base_seq_len,
-            sigma_max_seq_len=base.sigma_max_seq_len,
-            sigma_shift_terminal=base.sigma_shift_terminal,
-        )
+        # Carry every field the base declares and rewrite only identity. Enumerating
+        # fields here is what silently dropped the sigma schedule (and, for ERNIE and
+        # klein-9b-kv, the LoRA guidance and KV-cache flag): each field added to
+        # ModelConfig had to be remembered here too, and eventually one wasn't.
+        # Mutable containers are copied so an inferred config cannot mutate its base.
+        carried = {
+            key: dict(value) if isinstance(value, dict) else list(value) if isinstance(value, list) else value
+            for key, value in vars(base).items()
+            if not key.startswith("_")
+        }
+        carried["model_name"] = model_name
+        carried["base_model"] = base.model_name
+        return ModelConfig(**carried)

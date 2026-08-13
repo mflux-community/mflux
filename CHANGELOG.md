@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--vae-tiling` and `--vae-tile-size` flags**: Restore user-facing control over tiled VAE decoding, decoupled from `--low-ram` (previously the only way to enable it). `--vae-tiling` enables tiled decode with the default 512px tiles; `--vae-tile-size 256` shrinks the tiles to further reduce peak decode memory and implies `--vae-tiling`. Both compose with `--low-ram`, whose implicit tiling defaults they override. The original `--vae-tiling`/`--vae-tiling-split` flags were removed in the Z-Image refactor (#284); this restores the capability on top of the generalized `VAETiler`. (#311, #407)
 ### 🐛 Bug Fixes
 
+- **Qwen Image Edit conditioning resolution**: Encode the transformer's image-conditioning latents at the edit target resolution, not the vision-language conditioning resolution (≈384px by area), preventing patchy/tiled artifacts in edit outputs. This changes edit output at every quantization level, not only `-q 4`. (#420)
+- **Qwen Image Edit default dimensions**: Preserve the first input image dimensions by default; explicit `--width`/`--height` values or scale factors such as `2x` still opt into resizing. (#420)
+- **Qwen Image Edit CLI scheduler**: Forward `--scheduler` to the Qwen edit pipeline (previously ignored). (#420)
+- **Inferred model configs lost their settings**: `ConfigResolution` rebuilt inferred configs field by field, so anything resolved from a local path or variant name (`/models/qwen-image-edit-q4`) silently fell back to generic defaults. It now carries every field and rewrites only identity. This restores the Qwen edit sigma schedule (`0.9`/`8192`/`0.02` rather than `1.15`/`4096`/`None`), ERNIE's LoRA training guidance, and `supports_kv_cache` on `flux2-klein-9b-kv`. (#420)
 - **Ideogram 4 quantization**: `mflux-save -q` now actually quantizes Ideogram 4. Every weight-bearing linear in the model is an `Fp8Linear`, which defined no `to_quantized` and whose components were marked `skip_quantization`, so `-q 4` wrote an FP8 checkpoint stamped `quantization_level: 4` and only the VAE was touched. Adds `Fp8Linear.to_quantized`, drops the skip flags, derives bits and group size from the stored shapes when rebuilding a saved checkpoint instead of assuming q8/group-64, and rebuilds quantized embeddings as embeddings rather than linears. `-q 8` is 26 GB and `-q 4` is 14 GB, both visually indistinguishable from FP8. (#559)
 
 ### 📝 Documentation
@@ -115,17 +119,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **@anthonywu**
 - **@f-gibellini**
 - **@JiwaniZakir**
-
----
-
-## [Unreleased]
-
-### 🐛 Bug Fixes
-
-- **Qwen Image Edit conditioning resolution**: Encode the transformer's image-conditioning latents at the edit target resolution, not the vision-language conditioning resolution (≈384px by area), preventing patchy/tiled artifacts in edit outputs.
-- **Qwen Image Edit default dimensions**: Preserve the first input image dimensions by default; explicit `--width`/`--height` values or scale factors such as `2x` still opt into resizing.
-- **Qwen Image Edit CLI scheduler**: Forward `--scheduler` to the Qwen edit pipeline (previously ignored).
-- **Inferred model config fields**: Preserve text-encoder overrides and sigma-shift settings when a config is inferred from a model name or local path, so `Qwen/Qwen-Image-Edit-2511` inherits the Qwen edit shift schedule instead of falling back to generic defaults.
 
 ---
 
