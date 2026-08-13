@@ -253,5 +253,4 @@ image.save("qwen_edit_monkey.png")
 8. **Output Size**: By default, edits keep the first input image size. Use `--width`/`--height` or scale factors like `2x` when you want resizing.
 
 > [!WARNING]
-> Note: The Qwen Image Edit model requires downloading the `Qwen/Qwen-Image-Edit-2511` model weights (~58GB for the full model, or use quantization for smaller sizes).
-
+> Note: The Qwen Image Edit model requires downloading the `Qwen/Qwen-Image-Edit-2509` model weights (~58GB for the full model, or use quantization for smaller sizes).

@@ -235,7 +235,10 @@ class ModelConfig:
 
     @staticmethod
     def from_name(
-        model_name: str,
+        model_name: str | None,
+        # Any root alias is accepted here, not just the three Flux ones this used to name.
+        # The resolver validates against every root config and raises InvalidBaseModel
+        # with the full list, so the annotation stays wide and the check stays in one place.
         base_model: str | None = None,
     ) -> "ModelConfig":
         return ConfigResolution.resolve(model_name=model_name, base_model=base_model)
@@ -562,7 +565,7 @@ AVAILABLE_MODELS = {
             "qwen-edit-2511",
             "qwen-image-edit-2511",
         ],
-        model_name="Qwen/Qwen-Image-Edit-2511",
+        model_name="Qwen/Qwen-Image-Edit-2509",
         base_model=None,
         controlnet_model=None,
         custom_transformer_model=None,

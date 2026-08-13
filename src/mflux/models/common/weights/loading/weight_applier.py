@@ -16,33 +16,6 @@ _INFERABLE_GROUP_SIZES = {32, 64, 128}
 
 class WeightApplier:
     @staticmethod
-    def quantization_predicate_for_bits(quantization_predicate, bits: int | None):
-        if quantization_predicate is None:
-            return None
-
-        try:
-            parameters = inspect.signature(quantization_predicate).parameters
-        except (TypeError, ValueError):
-            return quantization_predicate
-
-        if len(parameters) < 3:
-            return quantization_predicate
-
-        return lambda path, module: quantization_predicate(path, module, bits)
-
-    @staticmethod
-    def quantization_predicate_for_weights(
-        weight_definition: "WeightDefinitionType",
-        bits: int,
-        weights: LoadedWeights | None = None,
-    ):
-        predicate_getter = getattr(weight_definition, "quantization_predicate_for_loaded_weights", None)
-        if predicate_getter is not None:
-            quantization_predicate = predicate_getter(weights=weights, bits=bits)
-        else:
-            quantization_predicate = weight_definition.quantization_predicate
-
-        return WeightApplier.quantization_predicate_for_bits(quantization_predicate, bits)
     def _predicate_with_bits(predicate, bits: int | None):
         # Definition predicates may take (path, module) or (path, module, bits).
         # The three-argument form lets a family vary per-layer precision with the
@@ -140,7 +113,7 @@ class WeightApplier:
         if warning:
             print(f"⚠️  {warning}")
 
-        quantization_predicate = WeightApplier.quantization_predicate_for_bits(quantization_predicate, bits)
+        quantization_predicate = WeightApplier._predicate_with_bits(quantization_predicate, bits)
 
         if bits is None:
             model.update(component_weights, strict=False)
@@ -205,11 +178,6 @@ class WeightApplier:
         weight_definition: "WeightDefinitionType",
         weights: LoadedWeights | None = None,
     ) -> None:
-        quantization_predicate = WeightApplier.quantization_predicate_for_weights(
-            weight_definition=weight_definition,
-            bits=bits,
-            weights=weights,
-        )
         # Models whose dims are not divisible by 64 (e.g. Boogu's 3360 hidden size)
         # can opt into a smaller group size; defaults to MLX's 64 for every other model.
         group_size = getattr(weight_definition, "quantization_group_size", 64)
@@ -218,7 +186,6 @@ class WeightApplier:
             component = components.get(name)
             if component and component.skip_quantization:
                 continue
-            nn.quantize(model, class_predicate=quantization_predicate, bits=bits)
             model_predicate = predicate
             if weights is not None:
                 component_weights = weights.components.get(name)
