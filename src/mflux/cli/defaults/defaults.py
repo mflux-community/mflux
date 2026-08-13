@@ -90,13 +90,9 @@ MFLUX_LORA_CACHE_DIR = MFLUX_CACHE_DIR / "loras"
 
 
 def model_inference_steps(model_name: str | None) -> int:
-    """Default step count for a model name, alias, or HuggingFace repo id.
-
-    Resolves through AVAILABLE_MODELS so every alias of a model shares one step count.
-    Unknown names — third-party checkpoints and local paths — fall back to
-    DEFAULT_INFERENCE_STEPS, as does any registry entry with no declared count
-    (the SeedVR2 upscalers, which do not step at all).
-    """
+    # Accepts a canonical key, any alias, or a HuggingFace repo id. Unknown names —
+    # third-party checkpoints and local paths — fall back to DEFAULT_INFERENCE_STEPS, as
+    # does any registry entry with no declared count (the SeedVR2 upscalers never step).
     if model_name is None:
         return DEFAULT_INFERENCE_STEPS
 

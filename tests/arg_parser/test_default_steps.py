@@ -1,11 +1,10 @@
-"""Every image-generation CLI must default --steps to its own model's step count.
-
-The regression these guard: `--steps` is resolved in CommandLineParser.parse_args() from
-`namespace.model`, but most single-model CLIs pick their model in main() (`args.model or
-"..."`), so `namespace.model` is still None at parse time and every one of them silently
-inherited FLUX.1-dev's 25 steps — 6x the work on a 4-step distillation, half the work on
-a 50-step base model.
-"""
+# Every image-generation CLI must default --steps to its own model's step count.
+#
+# The regression these guard: --steps is resolved in CommandLineParser.parse_args() from
+# namespace.model, but most single-model CLIs pick their model in main() (`args.model or
+# "..."`), so namespace.model is still None at parse time and every one of them silently
+# inherited FLUX.1-dev's 25 steps — 6x the work on a 4-step distillation, half the work
+# on a 50-step base model.
 
 import sys
 
