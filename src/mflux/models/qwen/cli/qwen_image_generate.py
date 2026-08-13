@@ -7,11 +7,15 @@ from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# The model this CLI runs. The parser needs it to key the --steps default off the right
+# model instead of falling back to FLUX.1-dev's 25.
+DEFAULT_MODEL = "qwen-image"
+
 
 def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Qwen Image model.")
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)

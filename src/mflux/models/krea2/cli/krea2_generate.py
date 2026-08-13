@@ -10,8 +10,10 @@ from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationExcep
 from mflux.utils.prompt_util import PromptUtil
 
 # Krea-2 turbo defaults (reference: 8 steps, CFG 1.0, er_sde; sigmas use the official
-# dynamic exponential shift, base/max 0.5/1.15 over image seq len 256..6400).
-DEFAULT_STEPS = 8
+# dynamic exponential shift, base/max 0.5/1.15 over image seq len 256..6400). The 8-step
+# count lives in ui_defaults.MODEL_INFERENCE_STEPS under this model's registry key; the
+# parser applies it, so main() sees an already-resolved args.steps.
+DEFAULT_MODEL = "krea-2"
 DEFAULT_GUIDANCE = 1.0
 
 
@@ -27,7 +29,7 @@ CONDITIONAL_OPTIONS = {
 def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Krea-2 based on a prompt.")
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
@@ -57,7 +59,6 @@ def main():
     )
 
     try:
-        steps = args.steps if args.steps is not None else DEFAULT_STEPS
         guidance = args.guidance if args.guidance is not None else DEFAULT_GUIDANCE
         if guidance == 1.0 and CommandLineParser._option_was_provided("--negative-prompt"):
             # The declared condition, checked once the default has resolved: the encoder
@@ -76,7 +77,7 @@ def main():
             image = model.generate_image(
                 seed=seed,
                 prompt=PromptUtil.read_prompt(args),
-                num_inference_steps=steps,
+                num_inference_steps=args.steps,
                 height=height,
                 width=width,
                 guidance=guidance,

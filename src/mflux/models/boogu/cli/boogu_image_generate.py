@@ -5,6 +5,10 @@ from mflux.models.common.config import ModelConfig
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# The model this CLI runs when --model is omitted. The parser needs it too, to key the
+# --steps default off the right model instead of falling back to FLUX.1-dev's 25.
+DEFAULT_MODEL = "boogu-image-turbo"
+
 # Single source of truth for options this CLI accepts but cannot honour: the runtime
 # warning and the mflux-capabilities dump both read it.
 IGNORED_OPTIONS = {
@@ -19,7 +23,7 @@ def build_parser() -> CommandLineParser:
         "Tip: 4 steps is enough up to ~768px; use --steps 8 at 1024x1024, where 4 steps under-resolves detail."
     )
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_output_arguments()
@@ -32,7 +36,7 @@ def main():
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
-    model_config = ModelConfig.from_name(model_name=args.model or "boogu-image-turbo")
+    model_config = ModelConfig.from_name(model_name=args.model or DEFAULT_MODEL)
 
     model = BooguImage(
         model_config=model_config,

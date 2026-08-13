@@ -9,6 +9,11 @@ from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# The model this CLI runs when --model is omitted. --steps is ignored at generation time
+# (the preset owns the step count), but the parser still writes the resolved value into
+# the metadata sidecar, so it has to name this model rather than fall back to FLUX.1-dev.
+DEFAULT_MODEL = "ideogram4"
+
 # Single source of truth for options this CLI accepts but cannot honour: the runtime
 # warning and the mflux-capabilities dump both read it.
 IGNORED_OPTIONS = {
@@ -21,7 +26,7 @@ IGNORED_OPTIONS = {
 def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Ideogram 4.")
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_pid_decode_arguments()
@@ -52,7 +57,7 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    model_name = args.model or "ideogram4"
+    model_name = args.model or DEFAULT_MODEL
     if Ideogram4WeightDefinition.is_builtin_name(model_name):
         model_config = ModelConfig.from_name(model_name)
         model_path = None

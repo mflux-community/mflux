@@ -7,6 +7,10 @@ from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# The model this CLI runs when --model is omitted. The parser needs it too, to key the
+# --steps default off the right model instead of falling back to FLUX.1-dev's 25.
+DEFAULT_MODEL = "flux2-klein-4b"
+
 REJECTED_OPTIONS = {
     "--negative-prompt": "FLUX.2 has no negative branch; the CLI exits with an error when this is set.",
 }
@@ -22,7 +26,7 @@ CONDITIONAL_OPTIONS = {
 def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Flux2 Klein.")
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
@@ -38,7 +42,7 @@ def main():
     if getattr(args, "negative_prompt", ""):
         parser.error("--negative-prompt is not supported for FLUX.2. Focus on describing what you want.")
 
-    model_name = args.model or "flux2-klein-4b"
+    model_name = args.model or DEFAULT_MODEL
     model_config = ModelConfig.from_name(model_name=model_name)
 
     if args.guidance is None:

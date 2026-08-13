@@ -96,6 +96,7 @@ class CommandLineParser(argparse.ArgumentParser):
         self.supports_lora = False
         self.require_model_arg = True
         self.require_init_image = False
+        self.default_model = None
 
     def add_general_arguments(self) -> None:
         self.add_argument("--battery-percentage-stop-limit", "-B", type=lambda v: max(min(int(v), 99), 1), default=ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT, help=f"On Macs powered by battery, stop image generation when battery reaches this percentage. Default: {ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT}")
@@ -120,8 +121,13 @@ class CommandLineParser(argparse.ArgumentParser):
         seedvr2_group.add_argument("--resolution", "-r", type=int_or_special_value, default=384, help="Target resolution for the shortest edge (pixels) or scale factor (e.g., '2x').")
         seedvr2_group.add_argument("--softness", type=float, default=0.0, help="Value between 0.0 (off, factor 1) and 1.0 (max, factor 8). Default: 0.0.")
 
-    def add_model_arguments(self, path_type: t.Literal["load", "save"] = "load", require_model_arg: bool = True) -> None:
+    def add_model_arguments(self, path_type: t.Literal["load", "save"] = "load", require_model_arg: bool = True, default_model: str | None = None) -> None:
+        # `default_model` is the model this CLI runs when --model is omitted. It is only
+        # read to resolve defaults that depend on the model (--steps); it is deliberately
+        # NOT written to namespace.model, which stays None so the metadata-config restore
+        # and the model_path computation below keep their "user named nothing" signal.
         self.require_model_arg = require_model_arg
+        self.default_model = default_model
         self.add_argument("--model", "-m", type=str, required=require_model_arg, action=ModelSpecAction, help=f"The model to use ({' or '.join(ui_defaults.MODEL_CHOICES)}, a HuggingFace repo org/model, or a local path).")
         if path_type == "save":
             self.add_argument("--path", type=str, required=True, help="Local path for saving a model to disk.")
@@ -504,8 +510,11 @@ class CommandLineParser(argparse.ArgumentParser):
                 self.error("Either --prompt or --prompt-file argument is required, or 'prompt' required in metadata config file")
 
         if self.supports_image_generation and getattr(namespace, "steps", None) is None:
-            model_name = getattr(namespace, "model", None)
-            namespace.steps = ui_defaults.MODEL_INFERENCE_STEPS.get(model_name, 25)
+            # Fall back to the CLI's own model when --model was omitted: most single-model
+            # CLIs resolve that in main(), so namespace.model is still None here and a bare
+            # lookup would hand every one of them FLUX.1-dev's 25 steps.
+            model_name = getattr(namespace, "model", None) or self.default_model
+            namespace.steps = ui_defaults.model_inference_steps(model_name)
 
         # In-context edit specific validations
         if getattr(self, 'supports_in_context_edit', False):

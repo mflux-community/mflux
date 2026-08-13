@@ -5,6 +5,10 @@ from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
+# The model this CLI runs when --model is omitted. The parser needs it too, to key the
+# --steps default off the right model instead of falling back to FLUX.1-dev's 25.
+DEFAULT_MODEL = "lens-turbo"
+
 # Single source of truth for options this CLI accepts but cannot honour: the runtime
 # warning and the mflux-capabilities dump both read it.
 IGNORED_OPTIONS = {
@@ -16,7 +20,7 @@ IGNORED_OPTIONS = {
 def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Microsoft Lens (Turbo).")
     parser.add_general_arguments()
-    parser.add_model_arguments(require_model_arg=False)
+    parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_output_arguments()
     return parser
