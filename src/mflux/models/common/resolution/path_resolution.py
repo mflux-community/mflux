@@ -186,7 +186,7 @@ class PathResolution:
 
     @staticmethod
     def _patterns_satisfied(snapshot_path: Path, patterns: list[str]) -> bool:
-        """Whether every pattern matches at least one file that is really on disk."""
+        # Every pattern has to match at least one file that is really on disk.
         for pattern in patterns:
             # Check if this specific pattern has any matches
             matches = list(snapshot_path.glob(pattern))
