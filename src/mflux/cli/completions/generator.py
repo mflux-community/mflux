@@ -425,7 +425,7 @@ class CompletionGenerator:
         helpers = []
 
         # Model completion helper
-        model_choices = " ".join(f"'{m}[{m} model]'" for m in ui_defaults.MODEL_CHOICES)
+        model_choices = " ".join(f"'{m}[{m} model]'" for m in ui_defaults.model_choices())
         helpers.append(f"""_mflux_models() {{
     _values 'model' \\
         {model_choices} \\

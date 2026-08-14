@@ -127,7 +127,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 |---|---|
 | `pyproject.toml` | Register `mflux-generate-<model>` (and edit/turbo variants if separate) |
 | `ModelConfig` | Entry in `AVAILABLE_MODELS`: aliases, HF repo id, `num_train_steps`, guidance support, sigma shift, `transformer_overrides`, distilled vs base step defaults |
-| `cli/defaults/defaults.py` | `MODEL_CHOICES` + `MODEL_INFERENCE_STEPS` |
+| `cli/defaults/defaults.py` | `MODEL_INFERENCE_STEPS` (keyed by the canonical `AVAILABLE_MODELS` key — the `--model` choices derive from the registry, nothing to add there) |
 | `models/common/cli/save.py` | Route `mflux-save` to the **correct variant class** (txt2img vs edit vs turbo — wrong class silently drops weights; see [#405](https://github.com/filipstrand/mflux/pull/405)) |
 | Main `README.md` | Model table row + attribution line |
 | `src/mflux/models/<model>/README.md` | Examples aligned with Flux2-style layout; disk sizes measured (`du`, `mflux-save`) |

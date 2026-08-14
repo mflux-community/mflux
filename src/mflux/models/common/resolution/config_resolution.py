@@ -61,6 +61,29 @@ class ConfigResolution:
         raise ValueError(f"No rule matched for model_name: {model_name}")
 
     @staticmethod
+    def base_model_names() -> list[str]:
+        # Every value the explicit-base rule accepts: each root config's aliases and its
+        # repo id, in priority order. The CLI validates --base-model against this instead
+        # of a hand-maintained argparse choices= list, which had drifted far enough to
+        # reject names the resolver itself accepts (e.g. `--base-model qwen-image`).
+        from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
+        names = []
+        for config in sorted(AVAILABLE_MODELS.values(), key=lambda m: m.priority):
+            if config.base_model is None:
+                names.extend(config.aliases + [config.model_name])
+        return names
+
+    @staticmethod
+    def base_model_keys() -> list[str]:
+        # The canonical key of each root config: the short, printable form of
+        # base_model_names(), which is too long to put in an error message once every
+        # alias and repo id is spelled out.
+        from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
+        return [key for key, config in AVAILABLE_MODELS.items() if config.base_model is None]
+
+    @staticmethod
     def _check(check: str, ctx: dict) -> bool:
         if check == "is_exact_match":
             model_name = ctx["model_name"]
@@ -96,9 +119,7 @@ class ConfigResolution:
             raise ValueError("Exact match check passed but no match found")
 
         if action == ConfigAction.EXPLICIT_BASE:
-            allowed_names = []
-            for base in base_models:
-                allowed_names.extend(base.aliases + [base.model_name])
+            allowed_names = ConfigResolution.base_model_names()
             if base_model not in allowed_names:
                 raise InvalidBaseModel(f"Invalid base_model. Choose one of {allowed_names}")
 

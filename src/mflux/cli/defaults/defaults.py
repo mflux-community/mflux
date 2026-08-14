@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import platformdirs
@@ -12,32 +13,6 @@ GUIDANCE_SCALE = 3.5
 GUIDANCE_SCALE_KONTEXT = 2.5
 HEIGHT, WIDTH = 1024, 1024
 IMAGE_STRENGTH = 0.4
-MODEL_CHOICES = [
-    "dev",
-    "schnell",
-    "krea-dev",
-    "dev-krea",
-    "krea-2",
-    "krea2",
-    "qwen",
-    "fibo",
-    "fibo-lite",
-    "fibo-edit",
-    "fibo-edit-rmbg",
-    "z-image",
-    "z-image-turbo",
-    "z-image-controlnet",
-    "flux2-klein-4b",
-    "flux2-klein-9b",
-    "flux2-klein-9b-kv",
-    "flux2-klein-base-4b",
-    "flux2-klein-base-9b",
-    "ernie-image-turbo",
-    "ernie-image",
-    "ideogram4",
-    "boogu-image-turbo",
-    "boogu",
-]
 DEFAULT_INFERENCE_STEPS = 25
 
 # Keyed by the *canonical* AVAILABLE_MODELS key, never by alias: aliases are looked up
@@ -87,6 +62,30 @@ else:
     MFLUX_CACHE_DIR = Path(platformdirs.user_cache_dir(appname="mflux"))
 
 MFLUX_LORA_CACHE_DIR = MFLUX_CACHE_DIR / "loras"
+
+
+@lru_cache(maxsize=1)
+def model_choices() -> tuple[str, ...]:
+    # Every spelling of a built-in model: canonical AVAILABLE_MODELS keys plus their
+    # aliases. Hand-maintaining this list is what made `--model lens-turbo` (and ~40 other
+    # valid names) resolve to model_path='lens-turbo' and die with "Model not found" —
+    # anything missing here is treated as a local checkpoint directory.
+    # Imported lazily for the same cycle reason as model_inference_steps() below.
+    from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
+    names = set(AVAILABLE_MODELS)
+    for config in AVAILABLE_MODELS.values():
+        names.update(config.aliases)
+    return tuple(sorted(names))
+
+
+@lru_cache(maxsize=1)
+def canonical_model_choices() -> tuple[str, ...]:
+    # The canonical key of each registry entry, in registry (priority) order — the short
+    # list worth printing in --help, where every alias would be noise.
+    from mflux.models.common.config.model_config import AVAILABLE_MODELS
+
+    return tuple(AVAILABLE_MODELS)
 
 
 def model_inference_steps(model_name: str | None) -> int:

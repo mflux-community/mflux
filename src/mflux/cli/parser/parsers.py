@@ -9,6 +9,7 @@ import warnings
 from pathlib import Path
 
 from mflux.cli.defaults import defaults as ui_defaults
+from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
@@ -128,10 +129,14 @@ class CommandLineParser(argparse.ArgumentParser):
         # and the model_path computation below keep their "user named nothing" signal.
         self.require_model_arg = require_model_arg
         self.default_model = default_model
-        self.add_argument("--model", "-m", type=str, required=require_model_arg, action=ModelSpecAction, help=f"The model to use ({' or '.join(ui_defaults.MODEL_CHOICES)}, a HuggingFace repo org/model, or a local path).")
+        self.add_argument("--model", "-m", type=str, required=require_model_arg, action=ModelSpecAction, help=f"The model to use: a built-in model name ({', '.join(ui_defaults.canonical_model_choices())}) or any of its aliases, a HuggingFace repo org/model, or a local path.")
         if path_type == "save":
             self.add_argument("--path", type=str, required=True, help="Local path for saving a model to disk.")
-        self.add_argument("--base-model", type=str, required=False, choices=ui_defaults.MODEL_CHOICES, help="When using a third-party huggingface model, explicitly specify whether the base model is dev or schnell")
+        # No argparse choices= here: the accepted values are whatever ConfigResolution's
+        # explicit-base rule accepts, and they are validated post-parse (see parse_args) so
+        # the two can never drift apart again, and so values restored from a metadata
+        # sidecar are checked by the same rule as values typed on the command line.
+        self.add_argument("--base-model", type=str, required=False, metavar="MODEL", help="When using a third-party HuggingFace model or local path, explicitly name the built-in model it is based on (e.g. dev, schnell, qwen-image).")
         self.add_argument("--quantize",  "-q", type=int, choices=ui_defaults.QUANTIZE_CHOICES, default=None, help=f"Quantize the model ({' or '.join(map(str, ui_defaults.QUANTIZE_CHOICES))}, Default is None)")
 
     def add_lora_arguments(self) -> None:
@@ -540,10 +545,22 @@ class CommandLineParser(argparse.ArgumentParser):
                     self.error(str(e))
             namespace.lora_paths = resolved_paths
 
-        # Compute model_path: None for predefined names, otherwise use the model value
-        # Predefined names like "schnell", "dev" are handled by ModelConfig, not PathResolution
+        # Validate --base-model against the resolver's own list rather than a static
+        # choices=, and do it here so a value restored from a metadata sidecar is held to
+        # the same rule as one typed on the command line.
+        if getattr(namespace, "base_model", None) is not None:
+            if namespace.base_model not in ConfigResolution.base_model_names():
+                self.error(
+                    f"argument --base-model: invalid choice: {namespace.base_model!r} "
+                    f"(choose from {', '.join(ConfigResolution.base_model_keys())}, "
+                    f"any of their aliases, or the HuggingFace repo id of a built-in model)"
+                )
+
+        # Compute model_path: None for built-in model names, otherwise use the model value
+        # Names known to the registry (any canonical key or alias) are handled by
+        # ModelConfig; anything else is a HuggingFace repo id or a local checkpoint path.
         if hasattr(namespace, "model") and namespace.model is not None:
-            namespace.model_path = None if namespace.model in ui_defaults.MODEL_CHOICES else namespace.model
+            namespace.model_path = None if namespace.model in ui_defaults.model_choices() else namespace.model
         else:
             namespace.model_path = None
 
