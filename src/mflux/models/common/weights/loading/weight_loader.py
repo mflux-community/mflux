@@ -172,6 +172,33 @@ class WeightLoader:
         return mapped_weights, None, None
 
     @staticmethod
+    def _indexed_shard_names(path: Path) -> list[str] | None:
+        # Returns None when there is no usable index, and the caller then falls back to
+        # reading the directory. A damaged index is no evidence that the weights are gone:
+        # ModelSaver writes every shard and the index last, so an interrupted save can
+        # leave correct weights beside a truncated json, and those have to keep loading.
+        index_path = path / "model.safetensors.index.json"
+        if not index_path.is_file():
+            return None
+        try:
+            with index_path.open(encoding="utf-8") as index_file:
+                index = json.load(index_file)
+        except (OSError, ValueError) as exc:
+            logger.warning(f"Ignoring unreadable weight index at {index_path}: {exc}")
+            return None
+
+        weight_map = index.get("weight_map") if isinstance(index, dict) else None
+        if not isinstance(weight_map, dict) or not weight_map:
+            logger.warning(f"Ignoring weight index at {index_path}: it names no shards")
+            return None
+
+        names = set(weight_map.values())
+        if not all(isinstance(name, str) and Path(name).name == name for name in names):
+            logger.warning(f"Ignoring weight index at {index_path}: it names something other than a local file")
+            return None
+        return sorted(names)
+
+    @staticmethod
     def _try_load_mflux_format(path: Path) -> tuple[dict | None, int | None, str | None]:
         if not path.exists():
             return None, None, None
@@ -197,6 +224,22 @@ class WeightLoader:
             quantization_level = None
         else:
             quantization_level = int(quantization_level_str)
+
+        # ModelSaver writes model.safetensors.index.json naming every shard, so when it is
+        # there it decides what this checkpoint is made of. Reading the directory instead
+        # gets both failures: a half-copied checkpoint loads whatever survived and comes up
+        # missing weights, and a q4 save over an older q8 one in the same directory picks up
+        # the q8 tail that mkdir(exist_ok=True) never cleared, whose tensors then overwrite
+        # the ones that were just written.
+        indexed = WeightLoader._indexed_shard_names(path)
+        if indexed is not None:
+            missing = [name for name in indexed if not (path / name).is_file()]
+            if missing:
+                raise FileNotFoundError(
+                    f"Incomplete saved model at {path}: the weight index names {len(indexed)} shard(s), "
+                    f"and {missing} are not on disk. Copy or save the model again."
+                )
+            shard_files = [path / name for name in indexed]
 
         # Load all shards
         all_weights: dict[str, mx.array] = {}
