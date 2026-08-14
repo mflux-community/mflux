@@ -11,3 +11,20 @@ def test_pack_latents_accepts_tiled_vae_latents() -> None:
     packed = ErnieLatentCreator.pack_latents(latents, height=1024, width=1024)
 
     assert packed.shape == (1, 128, 32, 32)
+
+
+@pytest.mark.fast
+def test_pack_latents_accepts_untiled_latents() -> None:
+    latents = mx.zeros((1, 32, 64, 64))
+
+    packed = ErnieLatentCreator.pack_latents(latents, height=1024, width=1024)
+
+    assert packed.shape == (1, 128, 32, 32)
+
+
+@pytest.mark.fast
+def test_pack_latents_rejects_multi_frame_latents() -> None:
+    latents = mx.zeros((1, 32, 3, 64, 64))
+
+    with pytest.raises(ValueError):
+        ErnieLatentCreator.pack_latents(latents, height=1024, width=1024)

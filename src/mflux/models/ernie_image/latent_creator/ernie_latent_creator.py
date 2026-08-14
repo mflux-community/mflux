@@ -19,7 +19,9 @@ class ErnieLatentCreator:
     @staticmethod
     def pack_latents(latents: mx.array, height: int, width: int) -> mx.array:  # noqa: ARG004
         if latents.ndim == 5:
-            latents = latents[:, :, 0, :, :]
+            # The VAE keeps a temporal axis; a still image carries exactly one frame, so squeeze
+            # rather than index - anything else would be silently thrown away.
+            latents = latents.squeeze(2)
         B, C, H, W = latents.shape
         h, w = H // 2, W // 2
         latents = latents.reshape(B, C, h, 2, w, 2)
