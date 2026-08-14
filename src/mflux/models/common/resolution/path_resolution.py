@@ -140,29 +140,26 @@ class PathResolution:
         if not required_subdirs:
             # No specific subdirs required - check that all patterns are satisfied
             if patterns:
-                for pattern in patterns:
-                    # Check if this specific pattern has any matches
-                    matches = list(snapshot_path.glob(pattern))
-                    if not matches:
-                        return False
-                    # Verify at least one match actually exists (handles broken symlinks)
-                    has_valid_match = False
-                    for match in matches:
-                        if match.is_symlink():
-                            if os.path.exists(match):
-                                has_valid_match = True
-                                break
-                        else:
-                            has_valid_match = True
-                            break
-                    if not has_valid_match:
-                        return False
+                if not PathResolution._patterns_satisfied(snapshot_path, patterns):
+                    return False
                 return PathResolution._indexed_shards_present(snapshot_path)
             else:
                 # Fallback: just check for any safetensors
                 if not any(snapshot_path.glob("**/*.safetensors")):
                     return False
                 return PathResolution._indexed_shards_present(snapshot_path)
+
+        # required_subdirs only collects patterns naming safetensors inside a fixed
+        # subdirectory, so a weight file at the snapshot root is never checked below.
+        # Krea 2 Turbo is that case: its transformer is the root-level turbo.safetensors.
+        # Only safetensors count here. Download patterns are permissive filters, not a
+        # manifest: FLUX.2 lists added_tokens.json and chat_template.jinja at the root
+        # and ships both under tokenizer/.
+        root_weight_patterns = [
+            pattern for pattern in patterns or [] if "/" not in pattern and pattern.endswith(".safetensors")
+        ]
+        if root_weight_patterns and not PathResolution._patterns_satisfied(snapshot_path, root_weight_patterns):
+            return False
 
         for subdir in required_subdirs:
             subdir_path = snapshot_path / subdir
@@ -185,6 +182,28 @@ class PathResolution:
             if not PathResolution._indexed_shards_present(subdir_path):
                 return False
 
+        return True
+
+    @staticmethod
+    def _patterns_satisfied(snapshot_path: Path, patterns: list[str]) -> bool:
+        """Whether every pattern matches at least one file that is really on disk."""
+        for pattern in patterns:
+            # Check if this specific pattern has any matches
+            matches = list(snapshot_path.glob(pattern))
+            if not matches:
+                return False
+            # Verify at least one match actually exists (handles broken symlinks)
+            has_valid_match = False
+            for match in matches:
+                if match.is_symlink():
+                    if os.path.exists(match):
+                        has_valid_match = True
+                        break
+                else:
+                    has_valid_match = True
+                    break
+            if not has_valid_match:
+                return False
         return True
 
     @staticmethod
