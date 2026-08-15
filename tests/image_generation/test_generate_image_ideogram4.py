@@ -248,7 +248,7 @@ def test_ideogram4_save_cli_treats_alias_as_builtin(monkeypatch, tmp_path: Path)
         def save_model(self, path: str) -> None:
             captured["save_path"] = path
 
-    monkeypatch.setattr(save, "Ideogram4", FakeIdeogram4)
+    monkeypatch.setitem(save.MODEL_CLASSES, "ideogram-4-fp8", FakeIdeogram4)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -282,7 +282,7 @@ def test_ideogram4_save_cli_uses_local_path_with_base_model(monkeypatch, tmp_pat
         def save_model(self, path: str) -> None:
             captured["save_path"] = path
 
-    monkeypatch.setattr(save, "Ideogram4", FakeIdeogram4)
+    monkeypatch.setitem(save.MODEL_CLASSES, "ideogram-4-fp8", FakeIdeogram4)
     monkeypatch.setattr(
         sys,
         "argv",
