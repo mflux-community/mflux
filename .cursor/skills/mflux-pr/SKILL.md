@@ -11,7 +11,7 @@ description: Make a clean PR in mflux (inspect diff, quick verification, commit,
 ## Instructions
 
 - If you run tests as part of PR hygiene, prefer fast tests first:
-  - `make test-fast`
+  - `just test-fast`
 - Keep commits focused and messages consistent with repo history.
 - If the PR changes CLI defaults, public APIs, or model behavior, check for README/example drift before opening the PR.
 - **Always ask for permission** before pushing to the remote repository.
@@ -23,7 +23,7 @@ Use after the core port lands and you are polishing for merge. For the full **in
 
 ### Correctness
 
-1. `make lint` and `make test-fast`
+1. `just lint` and `just test-fast`
 2. Slow golden tests for the new model:
    ```sh
    MFLUX_PRESERVE_TEST_OUTPUT=1 uv run pytest tests/image_generation/test_generate_image_<model>.py -m slow -v

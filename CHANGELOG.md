@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Improvements
 
+- **Type checking migrated from mypy to astral's ty** (pinned `ty==0.0.72` in dev deps, pre-commit and CI): full-project checks in ~0.4s vs mypy's 2–9s. Pre-existing violations are baselined as ignored rules in `[tool.ty.rules]` (with counts) to be re-enabled and fixed piecemeal; new code must pass all non-baselined rules. Adds `just typecheck`. (#597)
 - **Silently dropped CLI options now warn**: a command that accepts an option it cannot honour says so at parse time instead of ignoring it, for example `--guidance` on a guidance-distilled model. Adds `mflux-capabilities`, a machine-readable dump of every image-generating command with its options, defaults, types and the status of each option (honored, ignored, conditional or rejected), in JSON, YAML or Markdown. (#499)
 
 ### ✨ Improvements
@@ -33,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 📝 Documentation
 
 - **Ideogram 4 gated weights**: Document the `HF_TOKEN` / `hf auth login` step alongside the existing note that access must be approved on the model card — authenticating is the half people miss, and without it an approved account still fails with a bare `401`/`403`. Adds a quantization section covering `mflux-save -q` and loading a saved checkpoint with `--model-path`. (#559)
+
+### 🧰 DX & Maintenance
+
+- **Dev workflow: Makefile replaced by justfile**: `make <target>` is gone; use `just <target>` instead (`just install`, `just lint`, `just format`, `just check`, `just test-fast`, …). Running bare `just` (or `just --list`) shows all recipes with descriptions. Semantics follow the post-#576 Makefile: `uv sync` installs and ruff is pinned from the `pyproject.toml` dev dependency. The CI lint job also lints the justfile itself via `just --fmt --check`, using the pinned `just-setup` composite action. Requires [`just`](https://github.com/casey/just) ≥ 1.50 locally. (#590)
 
 ## [0.18.1] - 2026-08-07
 

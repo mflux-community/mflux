@@ -35,6 +35,12 @@ jobs:
           uvx ruff@0.16.3 check src tests
           uvx ruff@0.16.3 format --check src tests
 
+      - name: Install just
+        uses: ./.github/actions/just-setup
+
+      - name: Lint justfile
+        run: just lint-justfile
+
   tests:
     runs-on: macos-14  # Apple Silicon runner (M1)
 
@@ -54,7 +60,7 @@ jobs:
           activate-environment: true
 
       # Lockfile-pinned install (runtime + dev extras incl. pytest): dev/CI parity
-      # with `make test`, and --locked fails the job if uv.lock drifts from pyproject.
+      # with `just test`, and --locked fails the job if uv.lock drifts from pyproject.
       # Fresh-PyPI-resolution coverage lives in the py310-smoke leg's dry-run instead.
       - name: Install dependencies
         run: |
@@ -63,6 +69,14 @@ jobs:
       - name: Run tests (everything except slow/high_memory_requirement)
         run: |
           python -m pytest -m "not slow and not high_memory_requirement" -v
+
+      # ty version comes from the pinned dev dependency in pyproject.toml (ty==0.0.72)
+      # via uv.lock. Runs in this job (not lint) because ty needs the synced venv to
+      # resolve imports (mlx, torch, ...) the ubuntu lint job doesn't install, and
+      # after pytest so a typing regression can't mask test signal.
+      - name: Run ty type checker
+        run: |
+          uv run --no-sync ty check
 
   py310-smoke:
     # Cheap floor guard: ruff target-version catches 3.11+ syntax, but not

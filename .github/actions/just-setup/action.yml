@@ -1,0 +1,30 @@
+name: 'Setup just'
+description: 'Install the just command runner (SHA256-verified download on every run)'
+inputs:
+  version:
+    description: 'just version (pinned for stability; update after testing new releases)'
+    required: false
+    default: '1.58.0'
+  sha256:
+    description: 'SHA256 of just-<ver>-x86_64-unknown-linux-musl.tar.gz (must match the pinned version; from the release SHA256SUMS)'
+    required: false
+    default: '4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d'
+
+runs:
+  using: 'composite'
+  steps:
+    # No cache: the tarball is ~2.4MB (restore was as slow as the download),
+    # and caching skipped the checksum verification on hits.
+    - name: Install just
+      shell: bash
+      run: |
+        curl -fsSL "https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-x86_64-unknown-linux-musl.tar.gz" -o just.tar.gz
+        echo "${{ inputs.sha256 }}  just.tar.gz" | sha256sum --check
+        tar xzf just.tar.gz just
+        chmod +x just
+        sudo mv just /usr/local/bin/just
+        rm just.tar.gz
+
+    - name: Verify just
+      shell: bash
+      run: just --version

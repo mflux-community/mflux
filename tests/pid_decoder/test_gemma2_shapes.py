@@ -30,7 +30,7 @@ def test_gemma2_model_gqa_batched_with_padding_mask_does_not_crash():
     # deliberately != n_kv_heads (2) and != 1: a stale 4D mask right-aligned
     # against 5D scores aliases its batch axis with n_kv_heads and is only
     # broadcastable when B in {1, n_kv_heads} — B=3 makes the pre-fix code
-    # raise a broadcast error instead of silently mis-applying the mask.
+    # raise a broadcast error instead of silently misapplying the mask.
     config = Gemma2Config(
         vocab_size=32,
         hidden_size=16,

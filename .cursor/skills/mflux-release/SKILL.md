@@ -34,7 +34,7 @@ Releases are prepared in-repo; tagging/publishing is handled by GitHub Actions.
     - Map included changes to merged PR authors from those pages
   - Do not invent handles, and do not treat local-only commits as contributors unless the user explicitly wants that
   - Update lockfile: `uv lock`
-  - Sanity checks (optional unless requested): `make test-fast`, `make build`
+  - Sanity checks (optional unless requested): `just test-fast`, `just build`
   - Manual checks (optional): if the release includes CLI/callback/image-path changes, consider running the `mflux-manual-testing` skill to exercise the touched commands and visually review outputs.
 - Do not tag releases locally unless explicitly requested (normally handled by CI).
 

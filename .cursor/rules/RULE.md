@@ -4,6 +4,7 @@ These rules exist to make agent work in this repo **predictable, verifiable, and
 
 ## Commands / environment
 
+- **Install `just` ≥ 1.50** (`brew install just`): all repo workflows run through the justfile — bare `just` (or `just --list`) shows every recipe. The version floor is set by `just --fmt` (stabilized in 1.50), which CI enforces via `just lint-justfile`; fix formatting with `just fmt-justfile`.
 - **Always use uv** for dependency management and running code.
   - Run scripts/binaries with `uv run <command>`.
   - Prefer `uv run python -m ...` for local modules.
@@ -11,25 +12,25 @@ These rules exist to make agent work in this repo **predictable, verifiable, and
 - **Tool installs (CLI executables)**:
   - When you need to (re)install the local checkout as a `uv tool` (e.g. after changing CLI code), prefer an **editable install**:
     - `uv tool install --force --editable --reinstall .`
-- **Prefer Makefile targets** when they exist (they encode project-specific setup):
-  - `make install`, `make lint`, `make format`, `make test-fast`, `make test`, `make build`.
+- **Prefer justfile recipes** when they exist (they encode project-specific setup):
+  - `just install`, `just lint`, `just format`, `just test-fast`, `just test`, `just build`.
 
 ## Tests (goldens / image output)
 
-- **Always preserve test outputs** (for visual inspection): run tests with `MFLUX_PRESERVE_TEST_OUTPUT=1` (the Makefile test targets already do this).
+- **Always preserve test outputs** (for visual inspection): run tests with `MFLUX_PRESERVE_TEST_OUTPUT=1` (the justfile test recipes already do this).
 - **Do not update reference (“golden”) images** unless explicitly asked.
-- Prefer faster scopes first (`make test-fast` → `make test-slow` → `make test`).
+- Prefer faster scopes first (`just test-fast` → `just test-slow` → `just test`).
 - For the full playbook (how to handle failures and golden diffs), use the `mflux-testing` skill.
 
 ## Lint / format
 
-- Use the Makefile targets for repo workflows: `make lint`, `make format`, `make check`.
+- Use the justfile recipes for repo workflows: `just lint`, `just format`, `just check`.
 
 ## CI / GitHub Actions
 
 - **Pin every `uses:` to a full commit SHA** with the release version as an inline comment, e.g. `uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0`. Never reference moving tags/branches (`@v4`, `@release/v1`) — tag repointing is a supply-chain attack vector, especially in the trusted-publishing release job.
 - When adding or updating an action, pin the SHA of the **latest release tag within the currently-used major** (resolve annotated tags down to the commit). Bump majors deliberately in their own PR. **Exception:** when the current major's node runtime is deprecated (e.g. the `setup-python` v4/node16 → v7/node24 and `setup-uv` v4/node20 → v10/node24 jumps), go straight to the latest major — freezing on an EOL runtime is the bigger risk.
-- Pinned tool versions have a **canonical home with pointing mirrors**: `ruff` is declared in `pyproject.toml` dev deps; `.pre-commit-config.yaml` and the CI lint job mirror it with pointer comments (pre-commit must pin its own rev, so perfect single-sourcing is impossible), and the Makefile derives its ruff version from `pyproject.toml` at runtime. `uv` itself is pinned in CI/release via `setup-uv`'s `version` input so `uv.lock` rendering is reproducible across machines.
+- Pinned tool versions have a **canonical home with pointing mirrors**: `ruff` is declared in `pyproject.toml` dev deps; `.pre-commit-config.yaml` and the CI lint job mirror it with pointer comments (pre-commit must pin its own rev, so perfect single-sourcing is impossible), and the justfile derives its ruff version from `pyproject.toml` at runtime. `uv` itself is pinned in CI/release via `setup-uv`'s `version` input so `uv.lock` rendering is reproducible across machines.
 
 ## Code style
 
@@ -85,7 +86,7 @@ Fix: Validate preview image at config load.
 
 - For image generation requests, **always use** `mflux-cli` to find the right command and flags.
 - Use `mflux-cli` for CLI capability discovery and usage help.
-- Use `mflux-dev-env` for setup, uv usage, and Makefile targets.
+- Use `mflux-dev-env` for setup, uv usage, and justfile recipes.
 - Use `mflux-testing` for running tests and handling golden images.
 - Use `mflux-manual-testing` for validating CLI outputs manually.
 - Use `mflux-debugging` for MLX vs PyTorch/diffusers comparisons.

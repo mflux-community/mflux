@@ -3,3 +3,15 @@
 
 [default]
 extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs"]
+
+# False positives typos would otherwise "fix" (destructively, incl. file renames):
+# hed = Holistically-nested Edge Detection model; thre1/thre2 = upstream openpose
+# threshold names; caf = intentional latin-1 "café" bytes in a utf-8 test;
+# mis/unparseable = legitimate English.
+[default.extend-words]
+hed = "hed"
+HED = "HED"
+thre = "thre"
+caf = "caf"
+mis = "mis"
+unparseable = "unparseable"

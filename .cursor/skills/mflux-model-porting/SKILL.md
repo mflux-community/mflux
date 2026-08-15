@@ -63,7 +63,7 @@ Provide a repeatable, MLX-focused workflow for porting ML models (typically from
    - **Cross-model touch points**: list every file outside `models/<your_model>/`; justify shared changes (`memory_saver` tiling guard, shared VAE `tiling_config`, training `runner` wiring). Drop unrelated edits (e.g. personal `.gitignore` entries).
    - **README**: follow an existing model README structure (e.g. Flux2): hero image, turbo + base examples, feature section (img2img), disk-size warning, Notes, Training. Measure on-disk sizes with `du` on HF cache and/or `mflux-save` + `du -sh` for quantized sizes.
    - **Training**: example JSON under `models/common/training/_example/`, un-ignore in `.gitignore`, fast unit tests for training-adapter preview defaults.
-   - Re-run `make lint`, `make test-fast`, then slow golden tests before merge.
+   - Re-run `just lint`, `just test-fast`, then slow golden tests before merge.
 7. **Finalize**
    - Re-run tests and basic perf checks after polish.
    - Add CLI/pipeline defaults and completions later, once core output is stable.
@@ -176,7 +176,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 |---|---|
 | Slow golden test | `tests/image_generation/test_generate_image_<model>.py` + `reference_*.png` on CI hardware |
 | Fast tests | LoRA mapping, training-adapter preview defaults, argparser if new CLI flags |
-| `make lint` / `make test-fast` | Before slow tests |
+| `just lint` / `just test-fast` | Before slow tests |
 
 When fixing a gap for model *N*, ask whether the same gap exists for other recent models and whether a **shared** fix belongs in `models/common/` (preferred over copy-paste per model).
 

@@ -11,11 +11,16 @@ repos:
       - id: ruff-format
         types_or: [python, pyi]
   - repo: https://github.com/crate-ci/typos
-    rev: v1.33.1
+    rev: v1.49.0
     hooks:
       - id: typos
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    # ty version. Keep in sync with the pinned dev dependency in pyproject.toml (ty==0.0.72).
+    rev: v0.0.72
     hooks:
-      - id: mypy
-        files: ^src/
+      - id: ty
+        # The hook runs `uv check`, which locks + syncs by default; isolated mode
+        # keeps it from rewriting uv.lock / .venv with the hook's bundled uv.
+        # --all-extras: pytest etc. live in the dev extra, which isolated mode
+        # would otherwise omit (making tests/ imports unresolvable).
+        args: [--isolated, --no-python-downloads, --all-extras]

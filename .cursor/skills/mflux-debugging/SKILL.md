@@ -19,7 +19,7 @@ This skill defaults to **export-then-compare**:
 ## Ground Rules (repo norms)
 
 - Use `uv` to run Python: `uv run python -m ...`
-- If you run pytest, preserve outputs: `MFLUX_PRESERVE_TEST_OUTPUT=1` (see `mflux-testing` and the Makefile test targets).
+- If you run pytest, preserve outputs: `MFLUX_PRESERVE_TEST_OUTPUT=1` (see `mflux-testing` and the justfile test recipes).
 - Do **not** update or replace reference (“golden”) images unless explicitly asked.
 - Debug artifacts (tensor dumps) should live in a local folder and **must not be committed** unless explicitly asked.
 - If you need the broader porting workflow (milestones, ordering, when to refactor), follow `mflux-model-porting`.

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.7.19,<0.8.0"]
+requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -67,16 +67,25 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
-[project.optional-dependencies]
+# Dev tooling may require a newer Python than the published package;
+# the dist itself still supports every version in requires-python.
+[dependency-groups]
 dev = [
-    "matplotlib>3.10,<4.0",
-    "pytest>=8.3.0,<9.0",
+    "matplotlib>=3.11,<4.0",
+    "pytest>=9.1,<10.0",
     "pytest-timer>=1.0,<2.0",
     # Pinned exactly; keep in sync with .pre-commit-config.yaml and the CI lint job.
     "ruff==0.16.3",
+    # Pinned exactly; keep in sync with .pre-commit-config.yaml (astral-sh/ty-pre-commit rev)
+    # and the CI ty step. ty 0.0.72 (62ebbecc7 2026-08-14).
+    "ty==0.0.72",
     "mlx==0.32.0; sys_platform=='darwin'",
     "mlx[cuda13]==0.30.3; sys_platform=='linux'",
 ]
+
+[tool.uv.dependency-groups]
+# Matches the repo's dev baseline (justfile python_version, CI dev jobs).
+dev = { requires-python = ">=3.13" }
 
 [project.urls]
 homepage = "https://github.com/filipstrand/mflux"
@@ -173,20 +182,25 @@ section-order = [
     "local-folder",
 ]
 
-[tool.mypy]
-disable_error_code = [
-    "annotation-unchecked",
-    "arg-type",
-    "assignment",
-    "attr-defined",
-    "import-untyped",
-    "index",
-    "union-attr",
-    "return",
-    "return-value",
-    "var-annotated",
-]
-error_summary = true
-ignore_missing_imports = true
-implicit_optional = true
-python_version = "3.13"
+[tool.ty.environment]
+# typings/ holds an escape-hatch stub for mlx.core (compiled .so, no .pyi upstream).
+extra-paths = ["typings"]
+
+[tool.ty.rules]
+# One-time migration baseline (mypy -> ty, ty 0.0.72): every rule below had
+# pre-existing violations when ty was adopted (counts as of 2026-08-14).
+# Plan: re-enable (delete the ignore line) and fix piecemeal, one rule at a time.
+invalid-argument-type = "ignore"         # 174
+unresolved-attribute = "ignore"          # 39
+invalid-assignment = "ignore"            # 36
+not-subscriptable = "ignore"             # 33
+invalid-parameter-default = "ignore"     # 10
+invalid-type-form = "ignore"             # 9
+invalid-return-type = "ignore"           # 8
+too-many-positional-arguments = "ignore" # 7
+missing-argument = "ignore"              # 7
+call-non-callable = "ignore"             # 4
+not-iterable = "ignore"                  # 3
+no-matching-overload = "ignore"          # 3
+unsupported-operator = "ignore"          # 2
+unused-type-ignore-comment = "ignore"    # 2
