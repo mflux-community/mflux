@@ -15,7 +15,9 @@ def build_parser() -> CommandLineParser:
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
     parser.set_defaults(model="fibo")
-    parser.add_lora_arguments()
+    # No add_lora_arguments(): mflux has no LoRA mapping for FIBO, and accepting the
+    # flags meant resolving and downloading the adapter before dropping it silently.
+    # Same shape as mflux-generate-lens, which has never taken them.
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
     parser.add_output_arguments()

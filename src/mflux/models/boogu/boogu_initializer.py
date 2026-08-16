@@ -13,14 +13,15 @@ from mflux.models.flux.model.flux_vae.vae import VAE
 class BooguInitializer:
     """Assemble a Boogu-Image-Turbo model: FLUX VAE + transformer + Qwen3-VL encoder."""
 
+    # No lora_paths/lora_scales parameters: mflux has no LoRA mapping for this
+    # architecture, and a signature that accepts an adapter it cannot apply is how
+    # `mflux-generate-boogu --lora` came to download a file and then ignore it.
     @staticmethod
     def init(
         model,
         model_config: ModelConfig,
         quantize: int | None,
         model_path: str | None = None,
-        lora_paths: list[str] | None = None,
-        lora_scales: list[float] | None = None,
     ) -> None:
         path = model_path if model_path else model_config.model_name
         BooguInitializer._init_config(model, model_config)
@@ -35,6 +36,8 @@ class BooguInitializer:
         model.model_config = model_config
         model.callbacks = CallbackRegistry()
         model.tiling_config = None
+        # Empty, and accurate: nothing here applies LoRA weights, so the metadata this
+        # feeds records none.
         model.lora_paths = []
         model.lora_scales = []
 

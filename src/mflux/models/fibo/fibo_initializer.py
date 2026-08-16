@@ -11,14 +11,15 @@ from mflux.models.fibo.weights.fibo_weight_definition import FIBOWeightDefinitio
 
 
 class FIBOInitializer:
+    # No lora_paths/lora_scales parameters: mflux has no LoRA mapping for FIBO, and a
+    # signature that accepts an adapter it cannot apply is how `mflux-generate-fibo-edit
+    # --lora` came to download a file and then ignore it.
     @staticmethod
     def init(
         model,
         model_config: ModelConfig,
         quantize: int | None = None,
         model_path: str | None = None,
-        lora_paths: list[str] | None = None,
-        lora_scales: list[float] | None = None,
     ) -> None:
         path = model_path if model_path else model_config.model_name
         FIBOInitializer._init_config(model, model_config)

@@ -24,7 +24,9 @@ def build_parser() -> CommandLineParser:
     )
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
-    parser.add_lora_arguments()
+    # No add_lora_arguments(): mflux has no LoRA mapping for Boogu, and accepting the
+    # flags meant resolving and downloading the adapter before dropping it silently.
+    # Same shape as mflux-generate-lens, which has never taken them.
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_output_arguments()
     return parser
@@ -42,8 +44,6 @@ def main():
         model_config=model_config,
         quantize=args.quantize,
         model_path=args.model_path,
-        lora_paths=args.lora_paths,
-        lora_scales=args.lora_scales,
     )
 
     # Boogu builds its own noise latents (no LatentCreator); stepwise output is unsupported.

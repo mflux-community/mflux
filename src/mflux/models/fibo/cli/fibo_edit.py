@@ -2,7 +2,7 @@ from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.defaults import defaults as ui_defaults
-from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.cli.parser.parsers import CommandLineParser
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.fibo.latent_creator.fibo_latent_creator import FiboLatentCreator
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
@@ -81,7 +81,9 @@ def build_parser() -> CommandLineParser:
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
     parser.set_defaults(model="fibo-edit")
-    parser.add_lora_arguments()
+    # No add_lora_arguments(): mflux has no LoRA mapping for FIBO, and accepting the
+    # flags meant resolving and downloading the adapter before dropping it silently.
+    # Same shape as mflux-generate-lens, which has never taken them.
     parser.add_image_generator_arguments(
         supports_metadata_config=True,
         require_prompt=False,
@@ -109,7 +111,6 @@ def main():
     fibo_edit = FIBOEdit(
         quantize=args.quantize,
         model_path=args.model_path,
-        **lora_init_kwargs_from_args(args),
         model_config=model_config,
     )
 

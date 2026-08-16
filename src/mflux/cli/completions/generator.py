@@ -160,7 +160,6 @@ class CompletionGenerator:
         elif command == "mflux-generate-fibo":
             parser.add_general_arguments()
             parser.add_model_arguments(require_model_arg=False)
-            parser.add_lora_arguments()
             parser.add_image_generator_arguments(supports_metadata_config=True)
             parser.add_image_to_image_arguments()
             parser.add_output_arguments()
@@ -169,7 +168,6 @@ class CompletionGenerator:
             parser.add_general_arguments()
             parser.add_model_arguments(require_model_arg=False)
             parser.set_defaults(model="fibo-edit")
-            parser.add_lora_arguments()
             parser.add_image_generator_arguments(
                 supports_metadata_config=True,
                 require_prompt=False,

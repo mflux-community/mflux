@@ -30,9 +30,6 @@ class FIBOEdit(nn.Module):
         self,
         quantize: int | None = None,
         model_path: str | None = None,
-        lora_paths: list[str] | None = None,
-        lora_scales: list[float] | None = None,
-        bake_lora: bool = True,
         model_config: ModelConfig = ModelConfig.fibo_edit(),
     ):
         super().__init__()
@@ -40,8 +37,6 @@ class FIBOEdit(nn.Module):
             model=self,
             quantize=quantize,
             model_path=model_path,
-            lora_paths=lora_paths,
-            lora_scales=lora_scales,
             model_config=model_config,
         )
 

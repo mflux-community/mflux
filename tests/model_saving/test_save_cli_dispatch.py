@@ -25,7 +25,7 @@ from mflux.models.z_image import ZImageTurboControlnet
 ALL_NAMES = sorted({*AVAILABLE_MODELS, *(alias for c in AVAILABLE_MODELS.values() for alias in c.aliases)})
 
 
-def run_save(argv_model: str, base_model: str | None = None) -> dict:
+def run_save(argv_model: str, base_model: str | None = None, lora_paths: list[str] | None = None) -> dict:
     # Runs the CLI with every save-capable constructor stubbed out, so the dispatch is
     # observed without loading a single weight.
     built = {}
@@ -43,6 +43,8 @@ def run_save(argv_model: str, base_model: str | None = None) -> dict:
     argv = ["mflux-save", "--model", argv_model, "--path", "/tmp/mflux-save-test"]
     if base_model:
         argv += ["--base-model", base_model]
+    if lora_paths:
+        argv += ["--lora-paths", *lora_paths]
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch.object(sys, "argv", argv))
@@ -162,9 +164,24 @@ def test_every_rejection_names_the_saveable_models(name, capsys):
 
 @pytest.mark.fast
 def test_lora_kwargs_match_the_constructor():
-    # Boogu and the Z-Image ControlNet take LoRA paths but no bake_lora flag: passing it
+    # The Z-Image ControlNet takes LoRA paths but no bake_lora flag: passing it
     # unconditionally is a TypeError before any weight is read.
-    assert "bake_lora" not in run_save("boogu")["kwargs"]
     assert "bake_lora" not in run_save("z-image-controlnet")["kwargs"]
+    assert "lora_paths" in run_save("z-image-controlnet")["kwargs"]
     assert "bake_lora" in run_save("dev")["kwargs"]
-    assert run_save("boogu")["kwargs"]["lora_paths"] is None
+    # Boogu and FIBO apply no LoRA at all, so they take no LoRA kwargs to filter.
+    assert "lora_paths" not in run_save("boogu")["kwargs"]
+    assert "lora_paths" not in run_save("fibo")["kwargs"]
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("name", ["boogu", "fibo", "fibo-edit"])
+def test_lora_is_refused_for_models_that_cannot_apply_it(name, tmp_path, capsys):
+    # The signature filter silently dropped --lora for these, so mflux-save wrote an
+    # unmodified checkpoint while the user believed the adapter had been merged in.
+    lora_file = tmp_path / "adapter.safetensors"
+    lora_file.touch()
+    with pytest.raises(SystemExit) as exit_info:
+        run_save(name, lora_paths=[str(lora_file)])
+    assert exit_info.value.code == 2
+    assert "cannot apply LoRA weights" in capsys.readouterr().err

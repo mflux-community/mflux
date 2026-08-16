@@ -42,8 +42,6 @@ class BooguImage(nn.Module):
         self,
         quantize: int | None = None,
         model_path: str | None = None,
-        lora_paths: list[str] | None = None,
-        lora_scales: list[float] | None = None,
         model_config: ModelConfig | None = None,
     ) -> None:
         super().__init__()
@@ -51,8 +49,6 @@ class BooguImage(nn.Module):
             model=self,
             quantize=quantize,
             model_path=model_path,
-            lora_paths=lora_paths,
-            lora_scales=lora_scales,
             model_config=model_config or ModelConfig.boogu_image_turbo(),
         )
 

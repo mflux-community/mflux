@@ -136,9 +136,14 @@ def main():
         model_path = args.model_path
 
     # 2. Load, quantize and save the model
-    # Boogu and the Z-Image ControlNet take LoRA paths but no bake_lora flag; passing every
-    # LoRA kwarg unconditionally is a TypeError before a single weight is read.
+    # The Z-Image ControlNet takes LoRA paths but no bake_lora flag; passing every LoRA
+    # kwarg unconditionally is a TypeError before a single weight is read. Filtering is
+    # only safe for the flags a LoRA-capable class merely lacks: a class that takes no
+    # adapter at all must say so rather than have the request quietly filtered away,
+    # which is what baked an unmodified checkpoint for `--model boogu --lora ...`.
     accepted = inspect.signature(model_class).parameters
+    if args.lora_paths and "lora_paths" not in accepted:
+        parser.error(f"argument --lora: mflux-save cannot apply LoRA weights to {key}; mflux has no LoRA support for that model.")  # fmt: skip
     lora_kwargs = {name: value for name, value in lora_init_kwargs_from_args(args).items() if name in accepted}
     model = model_class(
         quantize=args.quantize,
