@@ -6,6 +6,7 @@ import pytest
 
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
 from mflux.models.common.weights.saving.model_saver import ModelSaver
+from tests.model_saving.tiny_checkpoint_helper import TinyCheckpointRoundtrip
 
 
 class _TinyModule(nn.Module):
@@ -16,19 +17,15 @@ class _TinyModule(nn.Module):
 
 
 @pytest.fixture
-def save(monkeypatch):
-    # Writes checkpoints the way mflux-save writes them, one tensor per shard. _split_weights
-    # packs by size and test-sized tensors all land in 0.safetensors, which hides every
-    # multi-shard case. Splitting per key keeps the real _save_weights, so the shard naming,
-    # the per-shard metadata and the index all come from the saver itself.
-    monkeypatch.setattr(
-        ModelSaver,
-        "_split_weights",
-        staticmethod(lambda weights, max_file_size_gb=2: [{key: value} for key, value in weights.items()]),
-    )
-
+def save():
+    # Reuses the sharding knob from #599's helper. ModelSaver._split_weights packs by
+    # size, so test-sized tensors all land in 0.safetensors and every multi-shard path
+    # goes unexercised; one tensor per shard makes them reachable. Everything else here
+    # is the real _save_weights, so the shard naming, per-shard metadata and the index
+    # come from the saver itself.
     def _save(tmp_path, keys: list[str], bits: int = 8, subdir: str = "transformer"):
-        ModelSaver._save_weights(str(tmp_path), bits, _TinyModule(keys), subdir)
+        with TinyCheckpointRoundtrip._forced_sharding(1):
+            ModelSaver._save_weights(str(tmp_path), bits, _TinyModule(keys), subdir)
         return tmp_path / subdir
 
     return _save
@@ -121,3 +118,29 @@ def test_a_directory_that_is_not_an_mflux_checkpoint_is_still_declined(tmp_path)
     (tmp_path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "missing.safetensors"}}))
 
     assert WeightLoader._try_load_mflux_format(tmp_path) == (None, None, None)
+
+
+@pytest.mark.fast
+def test_an_index_value_that_is_not_a_filename_falls_back_instead_of_raising(tmp_path, save):
+    # weight_map values are whatever the json holds. An unhashable one used to reach
+    # set() and raise TypeError out of a function whose contract is to decline quietly.
+    path = save(tmp_path, ["a"])
+    (path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": []}}))
+
+    weights, _, _ = WeightLoader._try_load_mflux_format(path)
+
+    assert set(weights) == {"a"}
+
+
+@pytest.mark.fast
+def test_the_metadata_comes_off_an_indexed_shard_not_whatever_sorts_first(tmp_path, save):
+    # Nothing says the alphabetically first safetensors in the directory is one of ours.
+    # Reading metadata from it made a foreign neighbour decide whether the checkpoint
+    # loads at all. The name here is contrived; the ordering dependency was not.
+    path = save(tmp_path, ["a"])
+    mx.save_safetensors(str(path / "!foreign.safetensors"), {"z": mx.zeros((2, 2))})
+
+    weights, quantization_level, _ = WeightLoader._try_load_mflux_format(path)
+
+    assert set(weights) == {"a"}
+    assert quantization_level == 8
