@@ -10,7 +10,7 @@ Developers use command runners like make and just as CLI macros... named shortcu
 
 ## Installing
 
-<sub>as MFlux is targetting - we presume you are running on M-Series Mac - ie `aarch64`</sub>
+<sub>as MFlux is targeting - we presume you are running on M-Series Mac - ie `aarch64`</sub>
 
 ```
 brew install just
