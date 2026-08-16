@@ -1,10 +1,6 @@
-"""Boogu and FIBO have no LoRA mapping in mflux.
-
-They used to accept every LoRA flag anyway: the parser resolved the adapter — downloading
-it from HuggingFace when the name was a repo id — and then the initializers dropped it on
-the floor, with `mflux-capabilities` reporting `"lora": true` throughout. The user paid for
-the download and got a base-model image with no warning of any kind.
-"""
+# Boogu and FIBO have no LoRA mapping in mflux, but used to accept every LoRA flag anyway:
+# the parser resolved the adapter — downloading it from HuggingFace when the name was a repo
+# id — and the initializers then dropped it, with mflux-capabilities reporting "lora": true.
 
 import json
 import sys
