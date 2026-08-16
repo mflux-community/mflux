@@ -25,7 +25,12 @@ from mflux.models.z_image import ZImageTurboControlnet
 ALL_NAMES = sorted({*AVAILABLE_MODELS, *(alias for c in AVAILABLE_MODELS.values() for alias in c.aliases)})
 
 
-def run_save(argv_model: str, base_model: str | None = None, lora_paths: list[str] | None = None) -> dict:
+def run_save(
+    argv_model: str,
+    base_model: str | None = None,
+    lora_paths: list[str] | None = None,
+    lora_flag: str = "--lora",
+) -> dict:
     # Runs the CLI with every save-capable constructor stubbed out, so the dispatch is
     # observed without loading a single weight.
     built = {}
@@ -44,7 +49,7 @@ def run_save(argv_model: str, base_model: str | None = None, lora_paths: list[st
     if base_model:
         argv += ["--base-model", base_model]
     if lora_paths:
-        argv += ["--lora-paths", *lora_paths]
+        argv += [lora_flag, *lora_paths]
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch.object(sys, "argv", argv))
@@ -176,12 +181,16 @@ def test_lora_kwargs_match_the_constructor():
 
 @pytest.mark.fast
 @pytest.mark.parametrize("name", ["boogu", "fibo", "fibo-edit"])
-def test_lora_is_refused_for_models_that_cannot_apply_it(name, tmp_path, capsys):
+# Both spellings, because they reach the check by different routes: --lora-paths lands on
+# the namespace directly, while --lora only becomes lora_paths via the atomic-flag
+# normalization, so a check reading lora_paths too early would refuse one and not the other.
+@pytest.mark.parametrize("lora_flag", ["--lora", "--lora-paths"])
+def test_lora_is_refused_for_models_that_cannot_apply_it(name, lora_flag, tmp_path, capsys):
     # The signature filter silently dropped --lora for these, so mflux-save wrote an
     # unmodified checkpoint while the user believed the adapter had been merged in.
     lora_file = tmp_path / "adapter.safetensors"
     lora_file.touch()
     with pytest.raises(SystemExit) as exit_info:
-        run_save(name, lora_paths=[str(lora_file)])
+        run_save(name, lora_paths=[str(lora_file)], lora_flag=lora_flag)
     assert exit_info.value.code == 2
     assert "cannot apply LoRA weights" in capsys.readouterr().err
