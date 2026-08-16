@@ -107,7 +107,10 @@ def main():
                 )
 
                 # 6. Save result
-                result.save(args.output.format(seed=seed, image_name=image_path.stem))
+                result.save(
+                    args.output.format(seed=seed, image_name=image_path.stem),
+                    export_json_metadata=args.metadata,
+                )
     except StopImageGenerationException as exc:
         print(exc)
     finally:
