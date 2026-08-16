@@ -472,7 +472,7 @@ def test_lora_args(mflux_generate_parser, mflux_generate_minimal_argv, base_meta
             assert args.lora_paths == test_paths
             assert args.lora_scales == [pytest.approx(0.3), pytest.approx(0.7)]
 
-        # test CLI override that merges CLI loras and config file loras
+        # test CLI override: the given loras replace the config file's, they do not stack
         new_loras = [
             "--lora-paths",
             "/some/lora/3.safetensors",
@@ -483,10 +483,8 @@ def test_lora_args(mflux_generate_parser, mflux_generate_minimal_argv, base_meta
         ]
         with patch('sys.argv', mflux_generate_minimal_argv + new_loras + ['--config-from-metadata', metadata_file.as_posix()]):  # fmt: off
             args = mflux_generate_parser.parse_args()
-            assert len(args.lora_paths) == 4
-            assert args.lora_paths == test_paths + new_loras[1:3]
-            assert len(args.lora_scales) == 4
-            assert args.lora_scales == [pytest.approx(v) for v in [0.3, 0.7, 0.1, 0.9]]
+            assert args.lora_paths == new_loras[1:3]
+            assert args.lora_scales == [pytest.approx(0.1), pytest.approx(0.9)]
 
 
 @pytest.mark.fast
@@ -540,7 +538,7 @@ def test_atomic_lora_arg(mflux_generate_parser, mflux_generate_minimal_model_arg
 
 
 @pytest.mark.fast
-def test_atomic_lora_merges_with_metadata(mflux_generate_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+def test_atomic_lora_replaces_metadata(mflux_generate_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
     metadata_file = temp_dir / "atomic_lora.json"
     with metadata_file.open("wt") as m:
         base_metadata_dict["lora_paths"] = ["/meta/lora.safetensors"]
@@ -556,9 +554,9 @@ def test_atomic_lora_merges_with_metadata(mflux_generate_parser, mflux_generate_
     with patch("mflux.cli.parser.parsers.LoraResolution.resolve", side_effect=lambda x: x):
         with patch("sys.argv", argv):
             args = mflux_generate_parser.parse_args()
-    # metadata loras are prepended to the CLI-provided ones, scales stay aligned
-    assert args.lora_paths == ["/meta/lora.safetensors", "/cli/lora.safetensors"]
-    assert args.lora_scales == [pytest.approx(0.3), pytest.approx(0.9)]
+    # the metadata loras are dropped in favour of the CLI's, scales along with them
+    assert args.lora_paths == ["/cli/lora.safetensors"]
+    assert args.lora_scales == [pytest.approx(0.9)]
 
 
 @pytest.mark.fast

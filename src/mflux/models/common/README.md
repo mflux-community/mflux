@@ -483,6 +483,10 @@ image.save("image_warmer_light.png")
 ```
 </details>
 
+Anything given on the command line wins over the sidecar, adapters included: `--lora` (or `--lora-paths`) replaces the LoRAs the sidecar recorded rather than adding to them, and `--lora-paths` with no values re-runs without any. `--lora-scales` on its own is the exception — it keeps the sidecar's adapters and applies the new strengths, for a re-run of the same LoRA at a different weight.
+
+A sidecar records each adapter's resolved absolute path, so one copied from another machine can name a file that is not there. That is an error rather than a silent no-op, since the run cannot reproduce the image without the adapter: pass `--lora` to point at your own copy, or `--lora-paths` with no values to run without it.
+
 ---
 
 ## Metadata inspection

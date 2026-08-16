@@ -144,7 +144,7 @@ class CommandLineParser(argparse.ArgumentParser):
         lora_group = self.add_argument_group("LoRA configuration")
         lora_group.add_argument("--lora-style", type=str, choices=sorted(LORA_NAME_MAP.keys()), help="Style of the LoRA to use (e.g., 'storyboard' for film storyboard style)")
         lora_group.add_argument("--lora", dest="lora", action="append", nargs="+", default=None, metavar=("PATH", "SCALE"), help="Add a LoRA as an atomic PATH with optional SCALE (default 1.0). Repeatable: --lora A.safetensors 0.7 --lora B.safetensors. PATH accepts local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Preferred over --lora-paths/--lora-scales.")
-        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors)")
+        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Pass it with no values to run without the LoRAs a --config-from-metadata sidecar would otherwise restore.")
         self.add_argument("--lora-scales", type=float, nargs="*", default=None, help="[DEPRECATED: use --lora] Scaling factor to adjust the impact of LoRA weights on the model. A value of 1.0 applies the LoRA weights as they are.")
         lora_group.add_argument(
             "--bake-lora",
@@ -394,6 +394,8 @@ class CommandLineParser(argparse.ArgumentParser):
         if hasattr(namespace, "path") and namespace.path is not None and namespace.model is None and not has_training_args:
             self.error("--model must be specified when using --path")
 
+        lora_paths_from_metadata = False
+
         if getattr(namespace, "config_from_metadata", False):
             prior_gen_metadata = json.load(namespace.config_from_metadata.open("rt"))
 
@@ -427,17 +429,19 @@ class CommandLineParser(argparse.ArgumentParser):
                 namespace.steps = prior_gen_metadata.get("steps", None)
 
             if self.supports_lora:
-                if namespace.lora_paths is None:
+                # LoRA defers to the command line like every other key here. It used to
+                # concatenate instead, so no spelling could replace the sidecar's adapters —
+                # and since only one of the two lists usually came from the CLI, the counts
+                # disagreed and resolve_scales padded or truncated: `--lora-scales 0.8` on a
+                # one-adapter sidecar generated at the sidecar's scale, not at 0.8.
+                # --lora-paths with no values parses to [] and is the way to clear them.
+                if not self._option_was_provided("--lora", "--lora-paths"):
                     namespace.lora_paths = prior_gen_metadata.get("lora_paths", None)
-                elif namespace.lora_paths:
-                    # merge the loras from cli and config file
-                    namespace.lora_paths = prior_gen_metadata.get("lora_paths", []) + namespace.lora_paths
-
-                if namespace.lora_scales is None:
-                    namespace.lora_scales = prior_gen_metadata.get("lora_scales", None)
-                elif namespace.lora_scales:
-                    # merge the loras from cli and config file
-                    namespace.lora_scales = prior_gen_metadata.get("lora_scales", []) + namespace.lora_scales
+                    lora_paths_from_metadata = bool(namespace.lora_paths)
+                    # Scales are their own axis: alone they re-run the sidecar's adapters at a
+                    # different strength, but they never outlive a CLI-supplied path list.
+                    if not self._option_was_provided("--lora-scales"):
+                        namespace.lora_scales = prior_gen_metadata.get("lora_scales", None)
 
             if hasattr(namespace, "image_path") and namespace.image_path is None:
                 namespace.image_path = prior_gen_metadata.get("image_path", None)
@@ -542,7 +546,11 @@ class CommandLineParser(argparse.ArgumentParser):
                     resolved_path = LoraResolution.resolve(lora_path)
                     resolved_paths.append(resolved_path)
                 except (FileNotFoundError, ValueError) as e:  # noqa: PERF203
-                    self.error(str(e))
+                    # A sidecar records the adapter's resolved absolute path, so one carried
+                    # between machines fails on an argument the user never typed. Say where it
+                    # came from, or the message reads as a typo in a flag that is not there.
+                    tip = f"\nTip: that path came from {namespace.config_from_metadata}. Pass --lora PATH [SCALE] to use your own copy, or --lora-paths with no values to run without it." if lora_paths_from_metadata else ""  # fmt: off
+                    self.error(f"{e}{tip}")
             namespace.lora_paths = resolved_paths
 
         # Validate --base-model against the resolver's own list rather than a static
