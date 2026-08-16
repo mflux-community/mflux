@@ -165,5 +165,6 @@ def test_lora_kwargs_match_the_constructor():
     # Boogu and the Z-Image ControlNet take LoRA paths but no bake_lora flag: passing it
     # unconditionally is a TypeError before any weight is read.
     assert "bake_lora" not in run_save("boogu")["kwargs"]
+    assert "bake_lora" not in run_save("z-image-controlnet")["kwargs"]
     assert "bake_lora" in run_save("dev")["kwargs"]
     assert run_save("boogu")["kwargs"]["lora_paths"] is None
