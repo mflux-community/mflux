@@ -97,6 +97,7 @@ class CommandLineParser(argparse.ArgumentParser):
         self.supports_lora = False
         self.require_model_arg = True
         self.require_init_image = False
+        self.require_image_paths = False
         self.default_model = None
 
     def add_general_arguments(self) -> None:
@@ -187,6 +188,13 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--image", dest="image", nargs="+", default=None, metavar=("PATH", "STRENGTH"), help=f"Init image as an atomic PATH with optional STRENGTH (default {ui_defaults.IMAGE_STRENGTH}): --image photo.jpg 0.6. Preferred over --image-path/--image-strength.")
         self.add_argument("--image-path", type=Path, required=False, default=None, help="[DEPRECATED: use --image] Local path to init image")
         self.add_argument("--image-strength", type=float, required=False, default=ui_defaults.IMAGE_STRENGTH, help=f"[DEPRECATED: use --image] Controls how strongly the init image influences the output image. A value of 0.0 means no influence. (Default is {ui_defaults.IMAGE_STRENGTH})")
+
+    def add_image_paths_arguments(self, required: bool = True) -> None:
+        # The requirement is enforced after parsing (see parse_args) rather than by argparse:
+        # argparse checks required= before parse_args reaches the metadata block, so an edit
+        # CLI exited 2 on images a --config-from-metadata sidecar was carrying.
+        self.require_image_paths = required
+        self.add_argument("--image-paths", type=Path, nargs="+", default=None, help="Local paths to one or more init images. For single image editing, provide one path. For multiple image editing, provide multiple paths.")
 
     def add_batch_image_generator_arguments(self) -> None:
         self.add_argument("--batch-prompts-file", type=Path, required=True, default=argparse.SUPPRESS, help="Local path for a file that holds a batch of prompts.")
@@ -395,6 +403,7 @@ class CommandLineParser(argparse.ArgumentParser):
             self.error("--model must be specified when using --path")
 
         lora_paths_from_metadata = False
+        image_paths_from_metadata = False
 
         if getattr(namespace, "config_from_metadata", False):
             prior_gen_metadata = json.load(namespace.config_from_metadata.open("rt"))
@@ -409,6 +418,17 @@ class CommandLineParser(argparse.ArgumentParser):
 
             if namespace.prompt is None:
                 namespace.prompt = prior_gen_metadata.get("prompt", None)
+
+            # Every run records the size it generated at and the negative prompt it used, but
+            # neither was ever read back: a sidecar-only rerun regenerated at the 1024x1024
+            # default (or at the init image's own size on the scale-factor CLIs) and with the
+            # negative prompt dropped, which on a CFG model is a different image entirely.
+            if hasattr(namespace, "negative_prompt") and not self._option_was_provided("--negative-prompt"):
+                namespace.negative_prompt = prior_gen_metadata.get("negative_prompt") or namespace.negative_prompt
+            if hasattr(namespace, "height") and not self._option_was_provided("--height"):
+                namespace.height = prior_gen_metadata.get("height") or namespace.height
+            if hasattr(namespace, "width") and not self._option_was_provided("--width"):
+                namespace.width = prior_gen_metadata.get("width") or namespace.width
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")
@@ -445,6 +465,10 @@ class CommandLineParser(argparse.ArgumentParser):
 
             if hasattr(namespace, "image_path") and namespace.image_path is None:
                 namespace.image_path = prior_gen_metadata.get("image_path", None)
+
+            if hasattr(namespace, "image_paths") and namespace.image_paths is None:
+                namespace.image_paths = [Path(p) for p in prior_gen_metadata.get("image_paths") or []] or None
+                image_paths_from_metadata = namespace.image_paths is not None
 
             if hasattr(namespace, "mask_path") and namespace.mask_path is None:
                 namespace.mask_path = (
@@ -486,6 +510,15 @@ class CommandLineParser(argparse.ArgumentParser):
 
         if self.require_init_image and getattr(namespace, "image_path", None) is None:
             self.error("An init image is required. Provide one with --image PATH [STRENGTH] (e.g. --image photo.jpg 0.8).")
+
+        if self.require_image_paths and not getattr(namespace, "image_paths", None):
+            self.error("At least one init image is required. Provide one with --image-paths PATH [PATH ...] (e.g. --image-paths photo.jpg).")
+
+        if image_paths_from_metadata and (missing := [path for path in namespace.image_paths if not path.exists()]):
+            # A sidecar records the resolved absolute path, so one carried between machines
+            # fails on an argument the user never typed — and, without this, only after the
+            # model has loaded, since nothing opens the file until dimension resolution.
+            self.error(f"Init image not found: {', '.join(str(path) for path in missing)}\nTip: that path came from {namespace.config_from_metadata}. Pass --image-paths PATH [PATH ...] to use your own copy.")  # fmt: off
 
         if self.supports_image_generation and namespace.seed is None and namespace.auto_seeds > 0:
             # choose N unique int seeds in the range of  0 < value < 1 billion

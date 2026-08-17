@@ -39,7 +39,10 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    if getattr(args, "negative_prompt", ""):
+    # Keyed on the option, not on the value: a --config-from-metadata sidecar written by a
+    # CFG model restores a negative prompt the user never typed, and rejecting the rerun for
+    # it would blame them for an argument that is not on the command line.
+    if CommandLineParser._option_was_provided("--negative-prompt"):
         parser.error("--negative-prompt is not supported for FLUX.2. Focus on describing what you want.")
 
     model_name = args.model or DEFAULT_MODEL

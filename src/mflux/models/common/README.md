@@ -459,6 +459,8 @@ mflux-generate-z-image-turbo \
   --prompt "Same composition, warmer light"
 ```
 
+Anything the sidecar recorded is restored — model, prompt and negative prompt, seed, steps, guidance, quantization, dimensions, LoRAs, and the init images of the edit CLIs — and anything named on the command line wins over it, option by option. Since the sidecar can supply the init images, `mflux-generate-qwen-edit` and `mflux-generate-flux2-edit` accept `--config-from-metadata` on its own, without `--image-paths`.
+
 <details>
 <summary>Python API</summary>
 

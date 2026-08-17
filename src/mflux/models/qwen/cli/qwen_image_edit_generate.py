@@ -20,7 +20,7 @@ def build_parser() -> CommandLineParser:
     parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
-    parser.add_argument("--image-paths", type=Path, nargs="+", required=True, help="Local paths to one or more init images. For single image editing, provide one path. For multiple image editing, provide multiple paths.")  # fmt: off
+    parser.add_image_paths_arguments()
     parser.add_output_arguments()
     return parser
 

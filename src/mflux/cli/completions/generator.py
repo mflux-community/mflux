@@ -65,13 +65,7 @@ class CompletionGenerator:
             parser.add_general_arguments()
             parser.add_model_arguments(require_model_arg=False)
             parser.add_lora_arguments()
-            parser.add_argument(
-                "--image-paths",
-                type=Path,
-                nargs="+",
-                required=True,
-                help="Local paths to one or more init images. For single image editing, provide one path. For multiple image editing, provide multiple paths.",
-            )
+            parser.add_image_paths_arguments()
             parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
             parser.add_output_arguments()
 
@@ -154,7 +148,7 @@ class CompletionGenerator:
             parser.add_model_arguments(require_model_arg=False)
             parser.add_lora_arguments()
             parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
-            parser.add_argument("--image-paths", type=Path, nargs="+", required=True, help="Local paths to init images")
+            parser.add_image_paths_arguments()
             parser.add_output_arguments()
 
         elif command == "mflux-generate-fibo":
