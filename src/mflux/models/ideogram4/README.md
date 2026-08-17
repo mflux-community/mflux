@@ -325,10 +325,10 @@ mflux-save --model ideogram-4-fp8 -q 8 --path ideogram-4-mflux-q8
 mflux-save --model ideogram-4-fp8 -q 4 --path ideogram-4-mflux-q4
 ```
 
-Generate from a saved checkpoint with `--model-path`, which needs no Hugging Face access once the conversion is done:
+Generate from a saved checkpoint with `--model`, which needs no Hugging Face access once the conversion is done:
 
 ```sh
-mflux-generate-ideogram4 --model-path ideogram-4-mflux-q4 --prompt-file caption.json
+mflux-generate-ideogram4 --model ideogram-4-mflux-q4 --prompt-file caption.json
 ```
 
 | Checkpoint | On disk |
