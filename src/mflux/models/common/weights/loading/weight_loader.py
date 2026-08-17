@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import mlx.core as mx
 import torch
-from huggingface_hub import snapshot_download
 from mlx.utils import tree_unflatten
 from safetensors.torch import load_file as torch_load_file
 
@@ -31,7 +30,21 @@ class WeightLoader:
         repo_id: str,
         file_pattern: str = "*.safetensors",
     ) -> LoadedWeights:
-        root_path = Path(snapshot_download(repo_id=repo_id, allow_patterns=[file_pattern, "config.json"]))
+        # Every other weight load goes through PathResolution: a complete cached snapshot is
+        # used without a hub round-trip, a local directory is taken as-is, and a miss gives one
+        # uniform error. Calling snapshot_download straight from here skipped all three, so the
+        # three components loaded this way — the FLUX and Z-Image controlnets and the Lens VAE —
+        # were the only weights in mflux that still needed the hub with everything already cached.
+        #
+        # Only the weight pattern is passed. PathResolution judges a cached snapshot by its
+        # patterns, and two of the three repos have no config.json at the root (the Lens VAE's
+        # FLUX.2-klein-4B keeps its at vae/config.json), so asking for one would mark every
+        # cached copy incomplete and leave those two exactly where they started. Nothing reads
+        # config.json out of this snapshot either: ZImageControlNetConfig.from_pretrained
+        # fetches its own copy and already falls back when the repo has none.
+        root_path = PathResolution.resolve(path=repo_id, patterns=[file_pattern])
+        if root_path is None:
+            raise ValueError(f"No weights location for component '{component.name}': resolved nothing from {repo_id!r}.")  # fmt: off
         return WeightLoader.load_single_local(component=component, root_path=root_path)
 
     @staticmethod
