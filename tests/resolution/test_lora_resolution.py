@@ -193,14 +193,23 @@ class TestLoraResolutionPaths:
         assert result == []
 
     @pytest.mark.fast
-    def test_resolve_paths_filters_invalid(self, tmp_path):
+    def test_resolve_paths_resolves_every_path(self, tmp_path):
         valid_lora = tmp_path / "valid.safetensors"
         valid_lora.touch()
 
-        result = LoraResolution.resolve_paths(paths=[str(valid_lora), "invalid-path"])
+        result = LoraResolution.resolve_paths(paths=[str(valid_lora)])
 
-        assert len(result) == 1
-        assert result[0] == str(valid_lora)
+        assert result == [str(valid_lora)]
+
+    @pytest.mark.fast
+    def test_resolve_paths_raises_on_invalid(self, tmp_path):
+        # Dropping the unresolvable path would generate without that adapter and slide
+        # the remaining scales onto the wrong ones.
+        valid_lora = tmp_path / "valid.safetensors"
+        valid_lora.touch()
+
+        with pytest.raises(FileNotFoundError, match="LoRA file not found"):
+            LoraResolution.resolve_paths(paths=[str(valid_lora), "invalid-path"])
 
 
 class TestLoraResolutionScales:

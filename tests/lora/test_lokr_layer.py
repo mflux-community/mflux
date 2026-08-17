@@ -308,13 +308,14 @@ def test_flux2_double_block_qkv_lokr_splits_w2():
         ),
     }
 
-    applied_count, matched_keys = LoRALoader._apply_lora_with_mapping(
+    applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
         transformer, weights, scale=1.0, pattern_mappings=mappings, role=None
     )
 
     x = mx.ones((1, 2))
     assert applied_count == 3
     assert matched_keys == set(weights)
+    assert failed_targets == []
     assert mx.allclose(transformer.transformer_blocks[0].attn.to_q(x), mx.array([[1.0, 1.0]]))
     assert mx.allclose(transformer.transformer_blocks[0].attn.to_k(x), mx.array([[2.0, 2.0]]))
     assert mx.allclose(transformer.transformer_blocks[0].attn.to_v(x), mx.array([[3.0, 3.0]]))

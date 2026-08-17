@@ -20,72 +20,83 @@ class LoRASaver:
             elif attr_name is not None:
                 setattr(parent, attr_name, new_child)
 
-        def _bake_single(lora_layer: LoRALinear) -> nn.Module:
-            return LoRASaver._bake_lora_into_linear(lora_layer.linear, lora_layer)
+        def _child_path(path: str, part: str) -> str:
+            return f"{path}.{part}" if path else part
 
-        def _bake_lokr(lokr_layer: LoKrLinear) -> nn.Module:
-            return LoRASaver._bake_lokr_into_linear(lokr_layer.linear, lokr_layer)
+        def _bake_single(lora_layer: LoRALinear, path: str) -> nn.Module:
+            return LoRASaver._bake_lora_into_linear(lora_layer.linear, lora_layer, path=path)
 
-        def _bake_fused(fused_layer: FusedLoRALinear) -> nn.Module:
+        def _bake_lokr(lokr_layer: LoKrLinear, path: str) -> nn.Module:
+            return LoRASaver._bake_lokr_into_linear(lokr_layer.linear, lokr_layer, path=path)
+
+        def _bake_fused(fused_layer: FusedLoRALinear, path: str) -> nn.Module:
             # Adapters are folded one at a time rather than summed: a LoKr carrying a
             # dora_scale is a non-linear function of the CURRENT base weight, so each
             # delta must see the result of the previous fold.
             current = fused_layer.base_linear
             for lora in fused_layer.loras:
                 if isinstance(lora, LoRALinear):
-                    current = LoRASaver._bake_lora_into_linear(current, lora)
+                    current = LoRASaver._bake_lora_into_linear(current, lora, path=path)
                 elif isinstance(lora, LoKrLinear):
-                    current = LoRASaver._bake_lokr_into_linear(current, lora)
+                    current = LoRASaver._bake_lokr_into_linear(current, lora, path=path)
             return current
 
-        def _walk(obj, parent=None, attr_name=None, idx=None):
+        def _walk(obj, parent=None, attr_name=None, idx=None, path=""):
             # Replace wrappers first
             if isinstance(obj, FusedLoRALinear):
-                new_child = _bake_fused(obj)
+                new_child = _bake_fused(obj, path)
                 _assign(parent, attr_name, idx, new_child)
                 obj = new_child
             elif isinstance(obj, LoKrLinear):
-                new_child = _bake_lokr(obj)
+                new_child = _bake_lokr(obj, path)
                 _assign(parent, attr_name, idx, new_child)
                 obj = new_child
             elif isinstance(obj, LoRALinear):
-                new_child = _bake_single(obj)
+                new_child = _bake_single(obj, path)
                 _assign(parent, attr_name, idx, new_child)
                 obj = new_child
 
             # Recurse into containers/modules
             if isinstance(obj, list):
                 for i, child in enumerate(list(obj)):
-                    _walk(child, obj, None, i)
+                    _walk(child, obj, None, i, _child_path(path, str(i)))
             elif isinstance(obj, tuple):
                 temp_list = list(obj)
                 for i, child in enumerate(temp_list):
-                    _walk(child, temp_list, None, i)
+                    _walk(child, temp_list, None, i, _child_path(path, str(i)))
                 if parent is not None:
                     _assign(parent, attr_name, idx, type(obj)(temp_list))
             elif isinstance(obj, dict):
                 for key, child in list(obj.items()):
-                    _walk(child, obj, key, None)
+                    _walk(child, obj, key, None, _child_path(path, str(key)))
             elif isinstance(obj, nn.Module):
                 for name, child in vars(obj).items():
                     if isinstance(child, (nn.Module, list, tuple, dict)):
-                        _walk(child, obj, name, None)
+                        _walk(child, obj, name, None, _child_path(path, name))
 
         _walk(module, None, None, None)
         return module
 
     @staticmethod
-    def _bake_lora_into_linear(base_linear: nn.Linear | nn.QuantizedLinear, lora_layer: LoRALinear) -> nn.Module:
+    def _bake_lora_into_linear(
+        base_linear: nn.Linear | nn.QuantizedLinear,
+        lora_layer: LoRALinear,
+        path: str = "",
+    ) -> nn.Module:
         delta = mx.matmul(lora_layer.lora_A, lora_layer.lora_B)
         delta = mx.transpose(delta)
         delta = lora_layer.scale * delta
-        return LoRASaver._bake_delta_into_linear(base_linear, delta)
+        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path)
 
     @staticmethod
-    def _bake_lokr_into_linear(base_linear: nn.Linear | nn.QuantizedLinear, lokr_layer: LoKrLinear) -> nn.Module:
+    def _bake_lokr_into_linear(
+        base_linear: nn.Linear | nn.QuantizedLinear,
+        lokr_layer: LoKrLinear,
+        path: str = "",
+    ) -> nn.Module:
         base_weight = dense_weight(base_linear)
         delta = lokr_layer.scale * lokr_layer.delta_weight(base_weight=base_weight)
-        return LoRASaver._bake_delta_into_linear(base_linear, delta)
+        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path)
 
     @staticmethod
     def _quantize_dense(
@@ -110,14 +121,22 @@ class LoRASaver:
     def _bake_delta_into_linear(
         base_linear: nn.Linear | nn.QuantizedLinear,
         delta: mx.array,
+        path: str = "",
     ) -> nn.Module:
+        # Every exit from here is either a merged layer or an exception: returning the
+        # untouched base instead would hand back a model that silently generates without
+        # the adapter, and mflux-save would write that as a "merged" checkpoint.
+        at = f" at {path}" if path else ""
+
         if not hasattr(base_linear, "weight"):
-            return base_linear
+            raise ValueError(f"Cannot bake a LoRA into {type(base_linear).__name__}{at}: the layer has no weight.")
 
         base_weight = dense_weight(base_linear)
         if base_weight.shape != delta.shape:
-            print(f"⚠️  Skipping LoRA bake due to shape mismatch: weight {base_weight.shape} vs delta {delta.shape}")
-            return base_linear
+            raise ValueError(
+                f"LoRA shape mismatch{at}: base weight {base_weight.shape} vs adapter delta {delta.shape}. "
+                f"The adapter does not fit this model."
+            )
 
         merged = base_weight + delta.astype(base_weight.dtype)
         bias = getattr(base_linear, "bias", None)
@@ -144,6 +163,5 @@ class LoRASaver:
 
             base_linear.weight = merged.astype(base_linear.weight.dtype)
             return base_linear
-        except Exception as e:  # noqa: BLE001
-            print(f"⚠️  Failed to bake LoRA into base layer: {e}")
-            return base_linear
+        except Exception as e:
+            raise RuntimeError(f"Failed to bake a LoRA into {type(base_linear).__name__}{at}: {e}") from e

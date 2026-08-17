@@ -40,15 +40,10 @@ class LoraResolution:
     def resolve_paths(paths: list[str] | None) -> list[str]:
         if not paths:
             return []
-        return [r for path in paths if (r := LoraResolution._try_resolve(path)) is not None]
-
-    @staticmethod
-    def _try_resolve(path: str) -> str | None:
-        try:
-            return LoraResolution.resolve(path)
-        except FileNotFoundError as e:
-            print(f"⚠️  {e}")
-            return None
+        # An unresolvable adapter is fatal rather than dropped with a warning: the
+        # generation would otherwise run without it, and with several adapters every
+        # later scale would slide onto the wrong one as the lists lost an entry.
+        return [LoraResolution.resolve(path) for path in paths]
 
     @staticmethod
     def resolve_scales(scales: list[float] | None, num_paths: int) -> list[float]:

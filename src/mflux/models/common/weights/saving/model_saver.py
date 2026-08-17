@@ -23,6 +23,17 @@ class ModelSaver:
         base_path: str,
         weight_definition: "WeightDefinitionType",
     ) -> None:
+        # Bake and strip any LoRA wrappers (to avoid duplicating shared weights) across
+        # every component before writing a single file: baking raises when an adapter does
+        # not fit, and that must abort before part of a checkpoint is on disk.
+        components = []
+        for component_def in weight_definition.get_components():
+            attr_name = component_def.model_attr or component_def.name
+            component = getattr(model, attr_name, None)
+            if component is not None:
+                LoRASaver.bake_and_strip_lora(component)
+                components.append((component, component_def.hf_subdir))
+
         # Save tokenizers from model.tokenizers dict
         tokenizer_defs = weight_definition.get_tokenizers()
         for t in tokenizer_defs:
@@ -32,13 +43,8 @@ class ModelSaver:
                     ModelSaver._save_tokenizer(base_path, tokenizer_wrapper.tokenizer, t.hf_subdir)
 
         # Save model components with progress bar
-        components = [(c.model_attr or c.name, c.hf_subdir) for c in weight_definition.get_components()]
-        for attr_name, subdir in tqdm(components, desc="Saving components", unit="component"):
-            component = getattr(model, attr_name, None)
-            if component is not None:
-                # Bake and strip any LoRA wrappers to avoid duplicating shared weights
-                LoRASaver.bake_and_strip_lora(component)
-                ModelSaver._save_weights(base_path, bits, component, subdir)
+        for component, subdir in tqdm(components, desc="Saving components", unit="component"):
+            ModelSaver._save_weights(base_path, bits, component, subdir)
 
     @staticmethod
     def _save_tokenizer(base_path: str, tokenizer: PreTrainedTokenizer, subdir: str) -> None:

@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from mflux.models.common.lora.mapping.lokr_factors import is_lokr_adapter, rebui
 from mflux.models.common.lora.mapping.lora_mapping import LoRATarget
 from mflux.models.common.lora.mapping.lora_saver import LoRASaver
 from mflux.models.common.resolution.lora_resolution import LoraResolution
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -68,26 +71,38 @@ class LoRALoader:
         *,
         role: str | None,
     ) -> None:
-        # Load the LoRA weights
+        # Load the LoRA weights. A file that cannot be read is fatal: the caller has no
+        # way to tell a skipped adapter from an applied one, and the run would otherwise
+        # report success and generate from the untouched base model.
         if not Path(lora_file).exists():
-            print(f"❌ LoRA file not found: {lora_file}")
-            return
+            raise FileNotFoundError(f"LoRA file not found: {lora_file}")
 
         print(f"🔧 Applying LoRA: {Path(lora_file).name} (scale={scale})")
 
         try:
             weights = dict(mx.load(lora_file, return_metadata=True)[0].items())
         except (FileNotFoundError, ValueError, RuntimeError) as e:
-            print(f"❌ Failed to load LoRA file: {e}")
-            return
+            raise ValueError(f"Failed to load LoRA file {lora_file}: {e}") from e
 
         # Build pattern mappings from LoRATargets
         pattern_mappings = LoRALoader._build_pattern_mappings(lora_mapping)
 
         # Apply LoRA using the mappings (allows multiple targets per source)
-        applied_count, matched_keys = LoRALoader._apply_lora_with_mapping(
+        applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
             transformer, weights, scale, pattern_mappings, role=role
         )
+
+        if failed_targets:
+            # Some of the file's layers landed and some did not: the result is neither the
+            # base model nor the adapter, so it can be neither generated from nor saved.
+            # Raised before the summary below, which would otherwise print a green check.
+            shown = ", ".join(failed_targets[:5])
+            more = f" and {len(failed_targets) - 5} more" if len(failed_targets) > 5 else ""
+            raise ValueError(
+                f"{len(failed_targets)} of the {len(failed_targets) + applied_count} layers named by "
+                f"{Path(lora_file).name} could not be applied ({shown}{more}); each reason is printed "
+                f"above. The adapter and this model do not match."
+            )
 
         # Report results
         total_keys = len(weights)
@@ -251,10 +266,11 @@ class LoRALoader:
         pattern_mappings: list[PatternMatch],
         *,
         role: str | None,
-    ) -> tuple[int, set]:
+    ) -> tuple[int, set, list[str]]:
         applied_count = 0
         lora_data_by_target: dict[str, dict] = {}
         matched_keys: set[str] = set()
+        failed_targets: list[str] = []
 
         # For each weight key, find ALL matching patterns (not just first)
         # This allows multiple targets to use the same source (e.g., QKV split)
@@ -291,8 +307,10 @@ class LoRALoader:
         for target_path, lora_data in lora_data_by_target.items():
             if LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
                 applied_count += 1
+            else:
+                failed_targets.append(target_path)
 
-        return applied_count, matched_keys
+        return applied_count, matched_keys, failed_targets
 
     @staticmethod
     def _apply_adapter_to_target(
@@ -370,7 +388,7 @@ class LoRALoader:
         if is_linear or is_lora_linear or is_lokr_linear or is_fused_linear:
             # Handle fusion: if the current module is already a LoRA layer, fuse them
             if is_lora_linear or is_lokr_linear:
-                print(f"   🔀 Fusing with existing LoRA at {target_path}")
+                logger.debug(f"Fusing with existing LoRA at {target_path}")
                 lora_layer = LoRALinear.from_linear(current_module.linear, r=lora_A.shape[1], scale=effective_scale)
                 lora_layer._mflux_lora_role = role
                 lora_layer.lora_A = lora_A
@@ -380,7 +398,7 @@ class LoRALoader:
                 fused_layer = FusedLoRALinear(base_linear=current_module.linear, loras=[current_module, lora_layer])
                 replacement_layer = fused_layer
             elif is_fused_linear:
-                print(f"   🔀 Adding to existing fusion at {target_path}")
+                logger.debug(f"Adding to existing fusion at {target_path}")
                 lora_layer = LoRALinear.from_linear(
                     current_module.base_linear, r=lora_A.shape[1], scale=effective_scale
                 )
@@ -456,7 +474,7 @@ class LoRALoader:
 
         replacement_layer._mflux_lora_role = role
         if existing_loras:
-            print(f"   🔀 Adding LoKr to existing fusion at {target_path}")
+            logger.debug(f"Adding LoKr to existing fusion at {target_path}")
             replacement_layer = FusedLoRALinear(base_linear=base_linear, loras=existing_loras + [replacement_layer])
 
         LoRALoader._replace_target_module(transformer, target_path, replacement_layer)
