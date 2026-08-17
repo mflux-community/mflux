@@ -13,6 +13,16 @@ reviews:
     drafts: false
     base_branches:
       - main
+  # This repo's code style forbids docstrings (.cursor/rules/RULE.md, "Code style"), so
+  # both docstring mechanisms are off: the finishing touch that opens a follow-up PR adding
+  # them, and the coverage check that warns for falling below a threshold we never want to
+  # meet. Quoted "off" on purpose — bare off is a YAML boolean, and this field is a string.
+  finishing_touches:
+    docstrings:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
   path_filters:
     # Skip binaries, generated images, and golden reference outputs.
     - "!**/*.png"
