@@ -64,7 +64,9 @@ class LensImage:
         mx.eval(self.transformer.parameters())
 
         vae_component = [c for c in Flux2KleinWeightDefinition.get_components() if c.name == "vae"][0]
-        vae_weights = WeightLoader.load_single(vae_component, VAE_REPO, file_pattern="vae/*")
+        # Names the safetensors, not the whole vae/ directory: the pattern is also what
+        # judges a cached snapshot complete, and "vae/*" is satisfied by a stray config.json.
+        vae_weights = WeightLoader.load_single(vae_component, VAE_REPO, file_pattern="vae/*.safetensors")
         self.vae = Flux2VAE()
         WeightApplier.apply_and_quantize_single(vae_weights, self.vae, vae_component, None)
         mx.eval(self.vae.parameters())

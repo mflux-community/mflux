@@ -30,18 +30,11 @@ class WeightLoader:
         repo_id: str,
         file_pattern: str = "*.safetensors",
     ) -> LoadedWeights:
-        # Every other weight load goes through PathResolution: a complete cached snapshot is
-        # used without a hub round-trip, a local directory is taken as-is, and a miss gives one
-        # uniform error. Calling snapshot_download straight from here skipped all three, so the
-        # three components loaded this way — the FLUX and Z-Image controlnets and the Lens VAE —
-        # were the only weights in mflux that still needed the hub with everything already cached.
-        #
-        # Only the weight pattern is passed. PathResolution judges a cached snapshot by its
-        # patterns, and two of the three repos have no config.json at the root (the Lens VAE's
-        # FLUX.2-klein-4B keeps its at vae/config.json), so asking for one would mark every
-        # cached copy incomplete and leave those two exactly where they started. Nothing reads
-        # config.json out of this snapshot either: ZImageControlNetConfig.from_pretrained
-        # fetches its own copy and already falls back when the repo has none.
+        # file_pattern is both the download filter and the test PathResolution applies to a
+        # cached snapshot, so it must name safetensors and nothing else. Adding "config.json"
+        # would mark every cached copy of a repo that keeps none at its root incomplete
+        # (FLUX.2-klein-4B, the Lens VAE, keeps its under vae/), and a pattern loose enough to
+        # match a config file would pass a half-downloaded snapshot as complete.
         root_path = PathResolution.resolve(path=repo_id, patterns=[file_pattern])
         if root_path is None:
             raise ValueError(f"No weights location for component '{component.name}': resolved nothing from {repo_id!r}.")  # fmt: off

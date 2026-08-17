@@ -1,7 +1,5 @@
-# WeightLoader.load_single called snapshot_download directly instead of going through
-# PathResolution, so the three components loaded that way — the FLUX and Z-Image controlnets
-# and the Lens VAE — were the only weights in mflux that still needed the hub when everything
-# was already cached, and the only ones a local directory could not stand in for.
+# load_single resolves through PathResolution rather than calling the hub directly, so a
+# cached snapshot and a local directory both work without a network round-trip.
 
 from pathlib import Path
 from unittest.mock import patch
@@ -61,7 +59,7 @@ def test_an_uncached_repo_still_downloads(component, loaded, tmp_path):
     with patch("mflux.models.common.resolution.path_resolution.HF_HUB_CACHE", str(tmp_path / "empty")):
         with patch("mflux.models.common.resolution.path_resolution.snapshot_download") as download:
             download.return_value = str(tmp_path / "fetched")
-            WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*")
+            WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*.safetensors")
 
     assert download.call_args[1]["repo_id"] == "org/model"
     assert loaded["root_path"] == tmp_path / "fetched"
@@ -69,10 +67,8 @@ def test_an_uncached_repo_still_downloads(component, loaded, tmp_path):
 
 @pytest.mark.fast
 def test_only_the_weight_pattern_decides_completeness(component, loaded, tmp_path):
-    # The repos behind two of the three components have no config.json at the root — the
-    # Lens VAE's FLUX.2-klein-4B keeps its under vae/ — so carrying the old allow_patterns
-    # over would have marked every cached copy of them incomplete, which is the one case
-    # this change exists to fix.
+    # A root config.json is deliberately absent: two of the three repos ship none, so
+    # requiring one would judge every cached copy of them incomplete.
     snapshot = tmp_path / "models--org--model" / "snapshots" / "abc123"
     (snapshot / "vae").mkdir(parents=True)
     (snapshot / "vae" / "diffusion_pytorch_model.safetensors").touch()
@@ -80,10 +76,27 @@ def test_only_the_weight_pattern_decides_completeness(component, loaded, tmp_pat
 
     with patch("mflux.models.common.resolution.path_resolution.HF_HUB_CACHE", str(tmp_path)):
         with patch("mflux.models.common.resolution.path_resolution.snapshot_download") as download:
-            WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*")
+            WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*.safetensors")
 
     download.assert_not_called()
     assert loaded["root_path"] == snapshot
+
+
+@pytest.mark.fast
+def test_a_half_downloaded_subdir_is_not_mistaken_for_a_complete_one(component, loaded, tmp_path):
+    # The pattern doubles as the completeness test, so it has to name the weights: "vae/*"
+    # is satisfied by a stray vae/config.json, and the repair download would never run.
+    snapshot = tmp_path / "models--org--model" / "snapshots" / "abc123"
+    (snapshot / "vae").mkdir(parents=True)
+    (snapshot / "vae" / "config.json").write_text("{}")
+
+    with patch("mflux.models.common.resolution.path_resolution.HF_HUB_CACHE", str(tmp_path)):
+        with patch("mflux.models.common.resolution.path_resolution.snapshot_download") as download:
+            download.return_value = str(tmp_path / "repaired")
+            WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*.safetensors")
+
+    download.assert_called_once()
+    assert loaded["root_path"] == tmp_path / "repaired"
 
 
 @pytest.mark.fast
@@ -95,8 +108,8 @@ def test_the_patterns_reach_path_resolution(component, loaded, tmp_path, monkeyp
         return tmp_path
 
     monkeypatch.setattr(PathResolution, "resolve", record)
-    WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*")
-    assert seen == {"path": "org/model", "patterns": ["vae/*"]}
+    WeightLoader.load_single(component=component, repo_id="org/model", file_pattern="vae/*.safetensors")
+    assert seen == {"path": "org/model", "patterns": ["vae/*.safetensors"]}
 
 
 @pytest.mark.fast
