@@ -129,6 +129,38 @@ def test_controlnet_guidance_is_conditional_on_the_resolved_model(caps):
 
 
 @pytest.mark.fast
+def test_the_upscale_commands_are_in_the_dump(caps):
+    # They produce images like any other command, but COMMAND_PREFIXES left both out —
+    # which is how mflux-upscale-seedvr2 dropped --metadata (#577) with the dump silent.
+    commands = {c["command"]: c for c in caps["commands"]}
+    for command_name in ("mflux-upscale-controlnet", "mflux-upscale-seedvr2"):
+        assert command_name in commands, sorted(commands)
+        assert commands[command_name]["coverage"] == "full"
+    seedvr2 = commands["mflux-upscale-seedvr2"]
+    assert next(o for o in seedvr2["options"] if o["flag"] == "--metadata")["status"] == "honored"
+
+
+@pytest.mark.fast
+def test_the_upscale_commands_declare_what_they_cannot_honour(caps):
+    # Undeclared reads as honored, so publishing these two required saying which flags
+    # their hardcoded configs ignore — otherwise widening the prefixes just prints more
+    # of the false contract the dump exists to catch.
+    def status_of(command_name: str, flag: str) -> dict:
+        command = next(c for c in caps["commands"] if c["command"] == command_name)
+        return next(o for o in command["options"] if o["flag"] == flag)
+
+    assert status_of("mflux-upscale-controlnet", "--negative-prompt")["status"] == "ignored"
+    assert status_of("mflux-upscale-controlnet", "--base-model")["status"] == "ignored"
+    assert status_of("mflux-upscale-seedvr2", "--base-model")["status"] == "ignored"
+    # --model is the half-honored one: a path loads weights, a built-in name does nothing.
+    model = status_of("mflux-upscale-controlnet", "--model")
+    assert model["status"] == "conditional"
+    assert model["condition"] and model["reason"]
+    # SeedVR2 resolves --model itself, so it stays honored there.
+    assert status_of("mflux-upscale-seedvr2", "--model")["status"] == "honored"
+
+
+@pytest.mark.fast
 def test_capabilities_lambda_converter_publishes_default_type():
     caps = capabilities.build_capabilities()
     for command in caps["commands"]:

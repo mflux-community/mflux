@@ -29,8 +29,10 @@ from typing import Any
 SCHEMA_VERSION = 1
 
 # Console-script prefixes that produce images and belong in the dump. Save/train/depth
-# tooling can join in a later schema revision.
-COMMAND_PREFIXES = ("mflux-generate", "mflux-concept")
+# tooling can join in a later schema revision. The upscale commands are here because they
+# produce images like any other: leaving them out is what let mflux-upscale-seedvr2 drop
+# --metadata (#577) without the dump ever showing it.
+COMMAND_PREFIXES = ("mflux-generate", "mflux-concept", "mflux-upscale")
 
 
 def discover_commands() -> list[tuple[str, str]]:

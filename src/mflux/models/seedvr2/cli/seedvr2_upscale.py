@@ -7,6 +7,13 @@ from mflux.models.seedvr2.latent_creator.seedvr2_latent_creator import SeedVR2La
 from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 from mflux.utils.exceptions import StopImageGenerationException
 
+# Single source of truth for options this CLI accepts but cannot honour: the runtime
+# warning and the mflux-capabilities dump both read it. --model is honored here (see
+# _resolve_seedvr2_model), which is why only --base-model is listed.
+IGNORED_OPTIONS = {
+    "--base-model": "SeedVR2 is not derived from a base model; the variant comes from --model.",
+}
+
 SUPPORTED_IMAGE_SUFFIXES = {
     ".bmp",
     ".gif",
@@ -65,14 +72,20 @@ def _expand_image_paths(image_paths: list[Path]) -> list[Path]:
     return expanded
 
 
-def main():
-    # 1. Parse command line arguments
+def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Upscale an image using SeedVR2 diffusion-based super-resolution.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False)
     parser.add_seedvr2_upscale_arguments()
     parser.add_output_arguments()
+    return parser
+
+
+def main():
+    # 1. Parse command line arguments
+    parser = build_parser()
     args = parser.parse_args()
+    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
     image_paths = _expand_image_paths(args.image_path)
     if not image_paths:
