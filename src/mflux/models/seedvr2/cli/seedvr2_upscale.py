@@ -81,7 +81,7 @@ def build_parser() -> CommandLineParser:
     return parser
 
 
-def main():
+def main() -> None:
     # 1. Parse command line arguments
     parser = build_parser()
     args = parser.parse_args()
