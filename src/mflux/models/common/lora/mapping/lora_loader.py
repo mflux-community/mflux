@@ -71,9 +71,8 @@ class LoRALoader:
         *,
         role: str | None,
     ) -> None:
-        # Load the LoRA weights. A file that cannot be read is fatal: the caller has no
-        # way to tell a skipped adapter from an applied one, and the run would otherwise
-        # report success and generate from the untouched base model.
+        # An unreadable file is fatal rather than skipped: the run would otherwise report
+        # success and generate from the untouched base model.
         if not Path(lora_file).exists():
             raise FileNotFoundError(f"LoRA file not found: {lora_file}")
 
@@ -93,9 +92,8 @@ class LoRALoader:
         )
 
         if failed_targets:
-            # Some of the file's layers landed and some did not: the result is neither the
-            # base model nor the adapter, so it can be neither generated from nor saved.
-            # Raised before the summary below, which would otherwise print a green check.
+            # Half applied is neither the base model nor the adapter. Raised before the
+            # summary below, which would otherwise print a green check first.
             shown = ", ".join(failed_targets[:5])
             more = f" and {len(failed_targets) - 5} more" if len(failed_targets) > 5 else ""
             raise ValueError(

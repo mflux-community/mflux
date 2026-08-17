@@ -12,15 +12,32 @@ from mflux.models.common.weights.loading.weight_definition import ComponentDefin
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 
 
-def _projection_mapping(*names: str) -> list[LoRATarget]:
-    return [
-        LoRATarget(
-            model_path=name,
-            possible_up_patterns=[f"{name}.lora_B.weight"],
-            possible_down_patterns=[f"{name}.lora_A.weight"],
+class _Fixtures:
+    @staticmethod
+    def projection_mapping(*names: str) -> list[LoRATarget]:
+        return [
+            LoRATarget(
+                model_path=name,
+                possible_up_patterns=[f"{name}.lora_B.weight"],
+                possible_down_patterns=[f"{name}.lora_A.weight"],
+            )
+            for name in names
+        ]
+
+    @staticmethod
+    def adapter(path, *names: str) -> str:
+        mx.save_safetensors(
+            str(path),
+            {
+                key: value
+                for name in names
+                for key, value in {
+                    f"{name}.lora_A.weight": mx.ones((1, 4)),
+                    f"{name}.lora_B.weight": mx.ones((2, 1)),
+                }.items()
+            },
         )
-        for name in names
-    ]
+        return str(path)
 
 
 class _Transformer(nn.Module):
@@ -33,17 +50,13 @@ class _Transformer(nn.Module):
 def test_loader_raises_on_missing_lora_file(tmp_path, capsys):
     # Resolution used to drop the path with a warning, which both generated from the base
     # model and shifted the remaining scales onto the wrong adapters.
-    present = tmp_path / "present.safetensors"
-    mx.save_safetensors(
-        str(present),
-        {"proj.lora_A.weight": mx.ones((1, 4)), "proj.lora_B.weight": mx.ones((2, 1))},
-    )
+    present = _Fixtures.adapter(tmp_path / "present.safetensors", "proj")
 
     with pytest.raises(FileNotFoundError, match="LoRA file not found"):
         LoRALoader.load_and_apply_lora(
-            lora_mapping=_projection_mapping("proj"),
+            lora_mapping=_Fixtures.projection_mapping("proj"),
             transformer=_Transformer(),
-            lora_paths=[str(tmp_path / "gone.safetensors"), str(present)],
+            lora_paths=[str(tmp_path / "gone.safetensors"), present],
             lora_scales=[0.8, 0.5],
             bake_lora=False,
         )
@@ -57,7 +70,7 @@ def test_apply_single_lora_raises_on_missing_lora_file(tmp_path):
             _Transformer(),
             str(tmp_path / "gone.safetensors"),
             scale=1.0,
-            lora_mapping=_projection_mapping("proj"),
+            lora_mapping=_Fixtures.projection_mapping("proj"),
             role=None,
         )
 
@@ -68,7 +81,7 @@ def test_loader_raises_on_unreadable_lora_file(tmp_path):
 
     with pytest.raises(ValueError, match="Failed to load LoRA file"):
         LoRALoader.load_and_apply_lora(
-            lora_mapping=_projection_mapping("proj"),
+            lora_mapping=_Fixtures.projection_mapping("proj"),
             transformer=_Transformer(),
             lora_paths=[str(lora_path)],
             lora_scales=[1.0],
@@ -79,22 +92,13 @@ def test_loader_raises_on_unreadable_lora_file(tmp_path):
 def test_loader_raises_when_only_some_targets_apply(tmp_path, capsys):
     # The file names a layer this model does not have: applying the rest would leave a
     # model that is neither the base nor the adapter.
-    lora_path = tmp_path / "half.safetensors"
-    mx.save_safetensors(
-        str(lora_path),
-        {
-            "proj.lora_A.weight": mx.ones((1, 4)),
-            "proj.lora_B.weight": mx.ones((2, 1)),
-            "absent.lora_A.weight": mx.ones((1, 4)),
-            "absent.lora_B.weight": mx.ones((2, 1)),
-        },
-    )
+    lora_path = _Fixtures.adapter(tmp_path / "half.safetensors", "proj", "absent")
 
     with pytest.raises(ValueError, match=r"1 of the 2 layers named by half.safetensors .* \(absent\)"):
         LoRALoader.load_and_apply_lora(
-            lora_mapping=_projection_mapping("proj", "absent"),
+            lora_mapping=_Fixtures.projection_mapping("proj", "absent"),
             transformer=_Transformer(),
-            lora_paths=[str(lora_path)],
+            lora_paths=[lora_path],
             lora_scales=[1.0],
             bake_lora=False,
         )
