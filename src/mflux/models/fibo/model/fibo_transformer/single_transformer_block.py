@@ -17,7 +17,7 @@ class FiboSingleTransformerBlock(nn.Module):
         super().__init__()
         self.layer = layer
         self.mlp_hidden_dim = int(dim * mlp_ratio)
-        self.norm = AdaLayerNormZeroSingle()
+        self.norm = AdaLayerNormZeroSingle(dim=dim)
         self.proj_mlp = nn.Linear(dim, self.mlp_hidden_dim)
         self.act_mlp = nn.gelu_approx
         self.proj_out = nn.Linear(dim + self.mlp_hidden_dim, dim)
