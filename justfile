@@ -88,10 +88,26 @@ build:
 
 # Trigger the PyPI release workflow on GitHub (publishes via trusted publishing / OIDC)
 release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `gh workflow run` doesn't return the run ID (cli/cli#4468), so correlate by
+    # comparing the newest run before and after dispatch instead of trusting a
+    # fixed sleep. --exit-status makes a failed release fail this recipe.
+    latest_run() { gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0'; }
+    before=$(latest_run)
     gh workflow run release.yml -f confirm=publish
-    @echo "⏳ Waiting for the run to register..."
-    sleep 5
-    gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+    echo "⏳ Waiting for the dispatched run to register..."
+    run_id=$before
+    for _ in $(seq 1 12); do
+        sleep 5
+        run_id=$(latest_run)
+        if [ "$run_id" != "$before" ]; then break; fi
+    done
+    if [ "$run_id" = "$before" ]; then
+        echo "❌ Dispatched run did not appear within 60s; check: gh run list --workflow=release.yml"
+        exit 1
+    fi
+    gh run watch "$run_id" --exit-status
 
 # Remove the virtual environment
 clean:
