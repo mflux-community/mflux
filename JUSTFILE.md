@@ -46,6 +46,7 @@ a uv tool.
 | `just test-slow` | Run tests marked `slow`; these generate images. |
 | `just test-all` | Run all tests except those marked `high_memory_requirement`. This can download model weights. |
 | `just build` | Build sdist/wheel into `dist/`, then report artifact sizes and flag any oversized files in the sdist (a check that image assets weren't accidentally bundled). |
+| `just release` | Trigger the `release.yml` GitHub Actions workflow via `gh`, then watch the run. Publishing happens on GitHub via PyPI trusted publishing (OIDC); no local credentials are used. |
 | `just clean` | Remove `.venv`. Run `just install` to recreate it. |
 
 Test recipes first synchronize the locked environment with all extras, then
@@ -56,6 +57,17 @@ available for inspection. They do not update golden images.
 wheel packages with `uv build`, then reports their sizes (expected under 1MB)
 and lists the five largest files inside the sdist — a quick sanity check that
 no image outputs got swept into the package by mistake.
+
+## Releasing to PyPI
+
+Releases publish from GitHub Actions using PyPI trusted publishing (OIDC) —
+there are no PyPI credentials to configure locally. Either run `just release`,
+or trigger the workflow from the GitHub UI:
+
+1. Go to <https://github.com/mflux-community/mflux/actions/workflows/release.yml>
+2. Click the **Run workflow** dropdown (top right of the runs list)
+3. Leave the branch as `main`, type `publish` in the
+   *Type "publish" to confirm release* field, and click **Run workflow**
 
 ## Internal Recipes
 `expect-arm64`, `expect-uv`, `ensure-pre-commit`, and `_test-run` are private

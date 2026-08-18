@@ -86,6 +86,13 @@ build:
     tar -xzf dist/mflux-*.tar.gz -C "$TEMP_DIR/this-build" && \
     find "$TEMP_DIR/this-build" -type f -exec du -h {} \; | sort -rh | sed -n '1,5p' # sed reads the full stream; head would SIGPIPE sort under pipefail
 
+# Trigger the PyPI release workflow on GitHub (publishes via trusted publishing / OIDC)
+release:
+    gh workflow run release.yml -f confirm=publish
+    @echo "⏳ Waiting for the run to register..."
+    sleep 5
+    gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+
 # Remove the virtual environment
 clean:
     @echo "🧼 Cleaning up venv."
