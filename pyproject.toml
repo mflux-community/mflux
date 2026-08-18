@@ -14,7 +14,7 @@ source-exclude = [
 
 [project]
 name = "mflux"
-version = "0.18.1"
+version = "0.19.0"
 description = "MLX native implementations of state-of-the-art generative image models."
 readme = "README.md"
 keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-silicon", "diffusers", "qwen", "qwen-image", "seedvr2", "z-image"]
