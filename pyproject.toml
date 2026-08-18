@@ -48,7 +48,6 @@ dependencies = [
     "torch>=2.8.0,<3.0; python_version>='3.13'",
     "tqdm>=4.66.5,<5.0",
     "transformers>=5.0.0,<6.0",
-    "twine>=6.1.0,<7.0",
     "urllib3>=2.6.0",
     "protobuf>=4.25.0,<8.0",
     # Already present through huggingface-hub; declared so mflux-capabilities --format yaml

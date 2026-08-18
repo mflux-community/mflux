@@ -1,12 +1,10 @@
+import os
 import shutil
-import sys
+import subprocess
 import time
 from pathlib import Path
 
 import requests
-from twine.commands import upload
-from twine.exceptions import TwineException
-from twine.settings import Settings
 
 from .git_operations import GitOperations
 
@@ -22,14 +20,18 @@ class PyPIPublisher:
             shutil.rmtree(dist_dir)
             print("🧹 Cleaned dist/ directory")
 
-        # Build the package
-        GitOperations.run_command([sys.executable, "-m", "uv", "--version"], "Verify 'uv build' version")
-        GitOperations.run_command([sys.executable, "-m", "uv", "build"], "Building package with 'uv build'")
+        # Build the package. Invoke the `uv` binary from PATH (guaranteed by
+        # astral-sh/setup-uv in CI); `python -m uv` requires the uv PyPI package,
+        # which is not installed in the release environment.
+        GitOperations.run_command(["uv", "--version"], "Verify 'uv build' version")
+        GitOperations.run_command(["uv", "build"], "Building package with 'uv build'")
 
-        # Verify the package
+        # Verify the package. twine is no longer a project dependency; run it in an
+        # ephemeral environment via `uv tool run` for its metadata/README checks.
         print("🔍 Verifying package...")
         GitOperations.run_command(
-            [sys.executable, "-m", "twine", "check", "dist/*"], "Verifying distribution with Twine"
+            ["uv", "tool", "run", "twine", "check", "dist/*"],
+            "Verifying distribution with Twine",
         )
 
     @staticmethod
@@ -80,86 +82,67 @@ class PyPIPublisher:
     def publish_to_pypi(pypi_token: str, package_name: str, version: str) -> None:
         PyPIPublisher._upload_to_pypi(
             token=pypi_token,
-            repository="pypi",
             display_name="PyPI",
             package_name=package_name,
             version=version,
-            optional=False,
         )
 
     @staticmethod
     def _upload_to_pypi(
         token: str,
-        repository: str,
         display_name: str,
         package_name: str,
         version: str,
-        optional: bool = False,
     ) -> None:
         print(f"📦 Publishing to {display_name}...")
-        try:
-            print(f"🔄 Using programmatic twine upload for {display_name}...")
 
-            settings = Settings(
-                username="__token__",
-                password=token,
-                repository=repository,
-                verbose=True,
-                skip_existing=True,
-                disable_progress_bar=False,
-                comment="Automated release via mflux-release-script",
-            )
+        # Only select valid distribution files (.whl and .tar.gz)
+        dist_dir = Path("dist")
+        dist_files = [*dist_dir.glob("*.whl"), *dist_dir.glob("*.tar.gz")]
+        if not dist_files:
+            raise ValueError("No distribution files found in dist/")
 
-            # Only select valid distribution files (.whl and .tar.gz)
-            dist_files = []
-            dist_dir = Path("dist")
-            dist_files.extend(dist_dir.glob("*.whl"))
-            dist_files.extend(dist_dir.glob("*.tar.gz"))
+        print(f"📦 Uploading {len(dist_files)} files to {display_name}...")
+        for file_path in dist_files:
+            print(f"   • {file_path.name}")
 
-            if not dist_files:
-                raise ValueError("No distribution files found in dist/")
+        # --check-url lets uv skip files already uploaded (equivalent to twine's skip_existing)
+        cmd = [
+            "uv",
+            "publish",
+            "--check-url",
+            f"https://pypi.org/simple/{package_name}/",
+            *[str(f) for f in dist_files],
+        ]
+        # Token passed via environment so it never appears in logged commands
+        env = {**os.environ, "UV_PUBLISH_TOKEN": token}
 
-            print(f"📦 Uploading {len(dist_files)} files to {display_name}...")
-            for file_path in dist_files:
-                print(f"   • {file_path.name}")
+        # Retry transient failures (e.g. 5xx replies / connection resets)
+        for attempt in range(3):
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+            if result.returncode == 0:
+                print(f"✅ {display_name} upload completed successfully (attempt {attempt + 1})")
+                return
 
-            # Retry transient failures (e.g. 5xx replies / connection resets)
-            for attempt in range(3):
-                try:
-                    upload.upload(settings, [str(f) for f in dist_files])
-                    print(f"✅ Programmatic {display_name} upload completed successfully (attempt {attempt + 1})")
-                    break  # success → leave retry loop
-                except TwineException as te:
-                    transient = any(x in str(te).lower() for x in ["500", "502", "503", "504", "timeout"])
-                    if transient and attempt < 2:
-                        wait = 2**attempt
-                        print(
-                            f"⚠️  Transient {display_name} upload error (attempt {attempt + 1}/3): {te}. Retrying in {wait}s"
-                        )
-                        time.sleep(wait)
-                        continue
-                    raise  # re-raise to outer handler for consistent processing
-        except TwineException as e:
-            error_msg = str(e).lower()
+            error_msg = f"{result.stdout}\n{result.stderr}".lower()
+            transient = any(x in error_msg for x in ["500", "502", "503", "504", "timeout"])
+            if transient and attempt < 2:
+                wait = 2**attempt
+                print(f"⚠️  Transient {display_name} upload error (attempt {attempt + 1}/3). Retrying in {wait}s")
+                time.sleep(wait)
+                continue
+
+            # Non-transient failure (or retries exhausted): report and continue the release,
+            # matching the previous twine-based behavior of treating uploads as non-critical.
+            print(f"⚠️  {display_name} upload failed (exit code {result.returncode})")
+            print(f"   stdout: {result.stdout.strip()}")
+            print(f"   stderr: {result.stderr.strip()}")
             if "already exists" in error_msg:
                 print(f"⚠️  Version {version} already exists on {display_name}")
-                return
+            elif "authentication" in error_msg or "403" in error_msg:
+                print(f"   This appears to be an authentication issue - check your {display_name} token.")
             else:
-                # Handle all other TwineException errors consistently
-                print(f"⚠️  {display_name} upload failed: {e}")
-                if "authentication" in error_msg or "403" in error_msg:
-                    print(f"   This appears to be an authentication issue - check your {display_name} token.")
-                elif "400" in error_msg or "bad request" in error_msg:
-                    print("   This might be a partial upload where some files (like wheels) succeeded.")
-                    print("   If only wheel uploaded, this is a known issue with source distribution validation.")
-                else:
-                    print("   This might be a partial upload where some files succeeded.")
-                print(f"   Check {display_name} manually to verify which files were uploaded.")
-                print(f"   {display_name} failures are non-critical, continuing with release process")
-                return
-        except (OSError, ValueError, RuntimeError) as e:
-            print(f"⚠️  Unexpected error during {display_name} upload: {e}")
-            print("   This might be a partial upload where some files succeeded.")
+                print("   This might be a partial upload where some files succeeded.")
             print(f"   Check {display_name} manually to verify which files were uploaded.")
             print(f"   {display_name} failures are non-critical, continuing with release process")
             return

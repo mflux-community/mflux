@@ -42,7 +42,7 @@ jobs:
           # ^ the last uv pip call in the repo: uv sync cannot express
           #   "project only, no deps", and the release runner avoids the
           #   multi-GB torch/mlx chain the script never imports
-          uv pip install twine toml requests
+          uv pip install toml requests
 
       - name: Configure Git
         run: |
