@@ -16,6 +16,13 @@ all: install test
 
 # Create the virtual environment, install dependencies and pre-commit hooks
 install: venv-init ensure-pre-commit
+    @echo "🏗️ Checking current direcctory is a git repo..."    
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      @echo "✅ Directory is a Git repository"
+    else
+      git init
+      @echo "✅ ran git init"
+    fi    
     @echo "🏗️ Installing dependencies and pre-commit hooks..."
     uv sync --python {{ python_version }}
     @echo "✅ Dependencies installed."
