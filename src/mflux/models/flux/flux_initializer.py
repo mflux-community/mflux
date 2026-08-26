@@ -75,20 +75,25 @@ class FluxInitializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
     ) -> None:
+        # The dev-redux config names the Redux adapter repo, which ships only the siglip
+        # image encoder and the embedder — no vae/transformer/text encoders. It can never
+        # be the base-weights location, so default and `--model dev-redux` invocations
+        # fall back to FLUX.1-dev, the base Redux is defined on. An explicit model_path
+        # (a saved checkpoint or a repo id) always wins.
+        resolved_model_path = model_path or (
+            ModelConfig.dev().model_name if model_config is ModelConfig.dev_redux() else model_config.model_name
+        )
         FluxInitializer.init(
             model=model,
             quantize=quantize,
-            model_path=model_path,
+            model_path=resolved_model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
             model_config=model_config,
         )
 
-        redux_weights = WeightLoader.load(
-            weight_definition=FluxReduxWeightDefinition,
-            model_path=ModelConfig.dev_redux().model_name,
-        )
+        redux_weights = FluxInitializer._load_redux_weights(model_path)
         model.image_embedder = ReduxEncoder()
         model.image_encoder = SiglipVisionTransformer()
         WeightApplier.apply_and_quantize(
@@ -231,6 +236,25 @@ class FluxInitializer:
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+        )
+
+    @staticmethod
+    def _load_redux_weights(model_path: str | None) -> LoadedWeights:
+        # A checkpoint written by mflux-save carries the redux encoders under
+        # image_encoder/ and image_embedder/; honor them so offline reloads work and
+        # saved weights (a -q quantization) are not silently swapped for the remote
+        # ones. A base-only checkpoint keeps the hub path for its missing encoders;
+        # a half-saved redux checkpoint loads locally and fails loudly on the missing
+        # half instead of silently mixing sources.
+        local_root = Path(model_path) if model_path is not None else None
+        if local_root is not None and (
+            any((local_root / "image_encoder").glob("*.safetensors"))
+            or any((local_root / "image_embedder").glob("*.safetensors"))
+        ):
+            return WeightLoader.load(weight_definition=FluxReduxWeightDefinition, model_path=str(local_root))
+        return WeightLoader.load(
+            weight_definition=FluxReduxWeightDefinition,
+            model_path=ModelConfig.dev_redux().model_name,
         )
 
     @staticmethod

@@ -151,7 +151,7 @@ class TrainingTrainer:
             TrainingTrainer._generate_previews_with_optimizer_offload(adapter, training_spec, training_state)
             validation_batch = training_state.iterator.get_validation_batch()
             validation_loss = TrainingTrainer.compute_loss(adapter, training_spec, base_config, validation_batch)
-            training_state.statistics.append_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
+            training_state.statistics.append_batch_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
             Plotter.update_loss_plot(training_spec=training_spec, training_state=training_state)
             del validation_loss
             training_state.save(adapter, training_spec)
@@ -179,6 +179,8 @@ class TrainingTrainer:
                 if training_spec.low_ram:
                     mx.clear_cache()
                 continue
+            # The step already computed this; recording it costs nothing (#671).
+            train_loss = float(loss)
             del loss
 
             # Gradient accumulation: average grads across accum_steps micro-batches and only step
@@ -201,12 +203,18 @@ class TrainingTrainer:
                 mx.eval(accumulated_grads)
             del grads
 
-            if training_state.should_plot_loss(training_spec):
-                validation_batch = training_state.iterator.get_validation_batch()
-                validation_loss = TrainingTrainer.compute_loss(adapter, training_spec, base_config, validation_batch)
-                training_state.statistics.append_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
+            if training_spec.monitoring is not None:
+                training_state.statistics.append_values(step=training_state.iterator.num_iterations, loss=train_loss)
+                if training_state.should_plot_loss(training_spec):
+                    # The batch metric pays an extra forward over up to 10 samples of the
+                    # training set: smoother than the per-step series, not held-out signal.
+                    validation_batch = training_state.iterator.get_validation_batch()
+                    validation_loss = TrainingTrainer.compute_loss(
+                        adapter, training_spec, base_config, validation_batch
+                    )
+                    training_state.statistics.append_batch_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
+                    del validation_loss
                 Plotter.update_loss_plot(training_spec=training_spec, training_state=training_state)
-                del validation_loss
 
             if training_state.should_generate_image(training_spec):
                 TrainingTrainer._generate_previews_with_optimizer_offload(adapter, training_spec, training_state)

@@ -17,6 +17,12 @@ from mflux.models.common.cli import save
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
+from mflux.models.flux.variants.depth.flux_depth import Flux1Depth
+from mflux.models.flux.variants.fill.flux_fill import Flux1Fill
+from mflux.models.flux.variants.in_context.flux_in_context_dev import Flux1InContextDev
+from mflux.models.flux.variants.in_context.flux_in_context_fill import Flux1InContextFill
+from mflux.models.flux.variants.kontext.flux_kontext import Flux1Kontext
+from mflux.models.flux.variants.redux.flux_redux import Flux1Redux
 from mflux.models.flux.variants.txt2img.flux import Flux1
 from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
@@ -76,6 +82,18 @@ def test_every_save_class_can_save(model_class):
 
 
 @pytest.mark.fast
+@pytest.mark.parametrize(
+    "variant_class",
+    [Flux1Depth, Flux1Fill, Flux1Kontext, Flux1InContextFill, Flux1InContextDev, Flux1Redux],
+    ids=lambda c: c.__name__,
+)
+def test_every_flux_variant_class_can_save(variant_class):
+    # Conversion tooling (and the Python API generally) drives the generation classes
+    # directly; a variant without save_model is the AttributeError of issue #667.
+    assert hasattr(variant_class, "save_model")
+
+
+@pytest.mark.fast
 @pytest.mark.parametrize("name", ALL_NAMES)
 def test_every_name_dispatches_by_registry_entry(name):
     # Canonical keys and aliases alike go through ConfigResolution, so `klein-4b` and
@@ -98,6 +116,9 @@ def test_every_name_dispatches_by_registry_entry(name):
         ("fibo-edit", FIBOEdit),
         ("fiboedit-rmbg", FIBOEdit),
         ("z-image-controlnet", ZImageTurboControlnet),
+        # dev-redux must not be saved as plain Flux1: the Redux repo ships no base
+        # weights, so the save class is the one that also owns the encoders.
+        ("dev-redux", Flux1Redux),
         ("krea-dev", Flux1),  # still Flux.1, and not confused with krea-2
         ("Qwen/Qwen-Image-2512", QwenImage),  # repo ids resolve too, not just aliases
         ("/models/my-qwen-image-finetune", QwenImage),  # inferred from the path name

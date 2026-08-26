@@ -252,6 +252,19 @@ def test_required_prompt_group_is_published_as_a_required_choice():
 
 
 @pytest.mark.fast
+def test_in_context_edit_instruction_shares_the_prompt_choice_group():
+    caps = capabilities.build_capabilities()
+    # --instruction is mutually exclusive with --prompt/--prompt-file; a contract that
+    # publishes it as an independent flag builds invocations that exit 2.
+    command = next(c for c in caps["commands"] if c["command"] == "mflux-generate-in-context-edit")
+    by_flag = {o["flag"]: o for o in command["options"]}
+    prompt, instruction = by_flag["--prompt"], by_flag["--instruction"]
+    assert instruction.get("choice_group") == prompt["choice_group"]
+    # One of the three is still required, just not at parse time (metadata restore).
+    assert instruction.get("choice_required") is not True
+
+
+@pytest.mark.fast
 def test_flux2_negative_prompt_is_rejected_not_honored():
     caps = capabilities.build_capabilities()
     for name in ("mflux-generate-flux2", "mflux-generate-flux2-edit"):

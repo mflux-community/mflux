@@ -205,7 +205,9 @@ class MonitoringSpec:
         if preview_width <= 0 or preview_height <= 0:
             raise ValueError("Monitoring preview_width/preview_height must be > 0")
 
-        plot_frequency = int(param["plot_frequency"])
+        # Optional since #671: 20 keeps the batch metric's extra forwards at ~10-15% of
+        # wall time, against ~3x at 1. The free per-step series records regardless.
+        plot_frequency = int(param.get("plot_frequency", 20))
         generate_image_frequency = int(param["generate_image_frequency"])
         if plot_frequency <= 0:
             raise ValueError("Monitoring plot_frequency must be > 0")

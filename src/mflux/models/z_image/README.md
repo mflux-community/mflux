@@ -107,7 +107,7 @@ Example:
   "optimizer": { "name": "AdamW", "learning_rate": 1e-4 },
   "checkpoint": { "output_path": "training", "save_frequency": 30 },
   "monitoring": {
-    "plot_frequency": 1,
+    "plot_frequency": 20,
     "generate_image_frequency": 30
   },
   "lora_layers": {

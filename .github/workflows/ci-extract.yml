@@ -68,6 +68,9 @@ jobs:
         if: steps.dest.outputs.sync == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_CI_BUCKET_TOKEN }}
+          # Routed through env rather than expanded into the script; the value is
+          # built from repo/owner names today, the hygiene keeps it that way.
+          DEST: ${{ steps.dest.outputs.path }}
         run: >
           uvx --from 'huggingface_hub>=1.13,<2'
-          hf sync .ci_cache "${{ steps.dest.outputs.path }}"
+          hf sync .ci_cache "$DEST"

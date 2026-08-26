@@ -10,6 +10,8 @@ from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 class LoRASaver:
     @staticmethod
     def bake_and_strip_lora(module: nn.Module) -> nn.Module:
+        upgraded: list[str] = []
+
         def _assign(parent, attr_name, idx, new_child):
             if parent is None:
                 return
@@ -24,10 +26,10 @@ class LoRASaver:
             return f"{path}.{part}" if path else part
 
         def _bake_single(lora_layer: LoRALinear, path: str) -> nn.Module:
-            return LoRASaver._bake_lora_into_linear(lora_layer.linear, lora_layer, path=path)
+            return LoRASaver._bake_lora_into_linear(lora_layer.linear, lora_layer, path=path, upgraded=upgraded)
 
         def _bake_lokr(lokr_layer: LoKrLinear, path: str) -> nn.Module:
-            return LoRASaver._bake_lokr_into_linear(lokr_layer.linear, lokr_layer, path=path)
+            return LoRASaver._bake_lokr_into_linear(lokr_layer.linear, lokr_layer, path=path, upgraded=upgraded)
 
         def _bake_fused(fused_layer: FusedLoRALinear, path: str) -> nn.Module:
             # Adapters are folded one at a time rather than summed: a LoKr carrying a
@@ -36,9 +38,9 @@ class LoRASaver:
             current = fused_layer.base_linear
             for lora in fused_layer.loras:
                 if isinstance(lora, LoRALinear):
-                    current = LoRASaver._bake_lora_into_linear(current, lora, path=path)
+                    current = LoRASaver._bake_lora_into_linear(current, lora, path=path, upgraded=upgraded)
                 elif isinstance(lora, LoKrLinear):
-                    current = LoRASaver._bake_lokr_into_linear(current, lora, path=path)
+                    current = LoRASaver._bake_lokr_into_linear(current, lora, path=path, upgraded=upgraded)
             return current
 
         def _walk(obj, parent=None, attr_name=None, idx=None, path=""):
@@ -75,6 +77,10 @@ class LoRASaver:
                         _walk(child, obj, name, None, _child_path(path, name))
 
         _walk(module, None, None, None)
+        if upgraded:
+            print(
+                f"🔧 Re-quantized {len(upgraded)} sub-8-bit layers at q8: the folded LoRA delta is below their quantization step"
+            )
         return module
 
     @staticmethod
@@ -82,21 +88,23 @@ class LoRASaver:
         base_linear: nn.Linear | nn.QuantizedLinear,
         lora_layer: LoRALinear,
         path: str = "",
+        upgraded: list[str] | None = None,
     ) -> nn.Module:
         delta = mx.matmul(lora_layer.lora_A, lora_layer.lora_B)
         delta = mx.transpose(delta)
         delta = lora_layer.scale * delta
-        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path)
+        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path, upgraded=upgraded)
 
     @staticmethod
     def _bake_lokr_into_linear(
         base_linear: nn.Linear | nn.QuantizedLinear,
         lokr_layer: LoKrLinear,
         path: str = "",
+        upgraded: list[str] | None = None,
     ) -> nn.Module:
         base_weight = dense_weight(base_linear)
         delta = lokr_layer.scale * lokr_layer.delta_weight(base_weight=base_weight)
-        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path)
+        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path, upgraded=upgraded)
 
     @staticmethod
     def _quantize_dense(
@@ -122,6 +130,7 @@ class LoRASaver:
         base_linear: nn.Linear | nn.QuantizedLinear,
         delta: mx.array,
         path: str = "",
+        upgraded: list[str] | None = None,
     ) -> nn.Module:
         # Every exit from here is either a merged layer or an exception: returning the
         # untouched base instead would hand back a model that silently generates without
@@ -153,6 +162,16 @@ class LoRASaver:
                 return LoRASaver._quantize_dense(merged.astype(compute_dtype), bias, group_size=64, bits=8)
 
             if isinstance(base_linear, nn.QuantizedLinear):
+                if base_linear.bits < 8:
+                    # A rank-r LoRA delta sits far below a sub-8-bit quantization step (a
+                    # q4 group step measures ~10x a typical rank-32 delta), so requantizing
+                    # at the base precision rounds most of it away and hands back a model
+                    # that generates as if the adapter were never applied. Fold at q8
+                    # instead, the same escape the fp8 branch takes; the per-layer loader
+                    # reconstructs mixed saves from the stored shapes.
+                    if upgraded is not None:
+                        upgraded.append(path or "?")
+                    return LoRASaver._quantize_dense(merged, bias, group_size=64, bits=8)
                 return LoRASaver._quantize_dense(
                     merged,
                     bias,

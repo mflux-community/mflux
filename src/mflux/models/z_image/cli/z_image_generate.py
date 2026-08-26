@@ -3,7 +3,7 @@ import warnings
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
-from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.z_image.latent_creator import ZImageLatentCreator
 from mflux.models.z_image.variants.z_image import ZImage
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -13,6 +13,10 @@ from mflux.utils.prompt_util import PromptUtil
 # The model this CLI runs when --model is omitted. The parser needs it too, to key the
 # --steps default off the right model instead of falling back to FLUX.1-dev's 25.
 DEFAULT_MODEL = "z-image"
+
+# This CLI also runs the distilled sibling (CONDITIONAL_OPTIONS is written for exactly
+# that split); the ControlNet variant has its own command and needs a control image.
+FAMILY_MODELS = ("z-image-turbo",)
 
 # Single source of truth for CFG-dependent options: main() warns from these and the
 # mflux-capabilities dump reads them. Both flags depend on what --model resolves to,
@@ -48,8 +52,9 @@ def main():
     if "--scheduler" not in sys.argv:
         args.scheduler = "flow_match_euler_discrete"
 
-    model_name = args.model or DEFAULT_MODEL
-    model_config = ModelConfig.from_name(model_name=model_name)
+    model_config = ConfigResolution.resolve_restricted(
+        args.model, DEFAULT_MODEL, model_path=args.model_path, extra_keys=FAMILY_MODELS
+    )
 
     # Warn on the EFFECTIVE behavior, not the flag value: --model may resolve to a
     # guidance-distilled variant (guidance forced to 0.0 regardless of the flag), and on

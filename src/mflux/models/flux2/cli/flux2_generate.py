@@ -1,6 +1,7 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
-from mflux.models.common.config import ModelConfig
+from mflux.models.common.config.model_config import AVAILABLE_MODELS
+from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.variants import Flux2Klein
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -10,6 +11,10 @@ from mflux.utils.prompt_util import PromptUtil
 # The model this CLI runs when --model is omitted. The parser needs it too, to key the
 # --steps default off the right model instead of falling back to FLUX.1-dev's 25.
 DEFAULT_MODEL = "flux2-klein-4b"
+
+# The other klein entries this one command equally serves, read off the registry so a
+# new flux2- entry is accepted without touching this file.
+FAMILY_MODELS = tuple(key for key in AVAILABLE_MODELS if key.startswith("flux2-") and key != DEFAULT_MODEL)
 
 REJECTED_OPTIONS = {
     "--negative-prompt": "FLUX.2 has no negative branch; the CLI exits with an error when this is set.",
@@ -45,12 +50,21 @@ def main():
     if CommandLineParser._option_was_provided("--negative-prompt"):
         parser.error("--negative-prompt is not supported for FLUX.2. Focus on describing what you want.")
 
-    model_name = args.model or DEFAULT_MODEL
-    model_config = ModelConfig.from_name(model_name=model_name)
+    # One command serves the whole klein family; anything outside it (a FLUX.1 name, a
+    # qwen alias) errors instead of silently loading a foreign config into this pipeline.
+    model_config = ConfigResolution.resolve_restricted(
+        args.model,
+        DEFAULT_MODEL,
+        model_path=args.model_path,
+        extra_keys=FAMILY_MODELS,
+    )
 
     if args.guidance is None:
         args.guidance = 1.0
-    is_distilled = "base" not in model_config.model_name.lower()
+    # Judged only for builtin names: a custom checkpoint (model_path set) keeps the
+    # default entry's config, whose name says nothing about the weights actually loaded,
+    # and a klein-base fine-tune must not have its guidance rejected for it.
+    is_distilled = args.model_path is None and "base" not in model_config.model_name.lower()
     if args.guidance != 1.0 and is_distilled:
         parser.error("--guidance is only supported for FLUX.2 base models. Use --guidance 1.0.")
 

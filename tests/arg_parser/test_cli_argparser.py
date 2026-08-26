@@ -1078,6 +1078,22 @@ def test_in_context_edit_args(mflux_in_context_edit_parser, mflux_in_context_edi
     with patch("sys.argv", ["mflux-generate-in-context-edit", "--reference-image", "reference.png"]):
         pytest.raises(SystemExit, mflux_in_context_edit_parser.parse_args)
 
+    # The pair the hand-rolled check never caught: --prompt-file with --instruction.
+    # The argparse group rejects it at parse time now.
+    with patch(
+        "sys.argv",
+        [
+            "mflux-generate-in-context-edit",
+            "--reference-image",
+            "reference.png",
+            "--instruction",
+            "make the hair black",
+            "--prompt-file",
+            "prompt.txt",
+        ],
+    ):
+        pytest.raises(SystemExit, mflux_in_context_edit_parser.parse_args)
+
     # Test both prompt and instruction provided (should error)
     with patch(
         "sys.argv",

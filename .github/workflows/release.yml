@@ -25,15 +25,21 @@ jobs:
         # Defense in depth: the pypi environment's deployment branch policy is
         # the primary gate; this fails fast with a clear message if dispatched
         # from any ref other than main.
+        # $GITHUB_REF is the runner-provided env var: unlike a ${{ }} template
+        # expansion, its value never becomes shell source (#646 review, #648).
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "❌ Releases may only be published from main (got ${{ github.ref }})"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "❌ Releases may only be published from main (got $GITHUB_REF)"
             exit 1
           fi
 
       - name: Validate confirmation
+        # The dispatch input is free text; passing it through env keeps it data
+        # instead of expanding it into the script (same class as the ref guard).
+        env:
+          CONFIRM: ${{ github.event.inputs.confirm }}
         run: |
-          if [ "${{ github.event.inputs.confirm }}" != "publish" ]; then
+          if [ "$CONFIRM" != "publish" ]; then
             echo "❌ Must type 'publish' to confirm release"
             exit 1
           fi

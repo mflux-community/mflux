@@ -161,3 +161,20 @@ class FluxReduxWeightDefinition:
             if module.weight.shape[-1] % 64 != 0:
                 return False
         return hasattr(module, "to_quantized")
+
+
+class FluxReduxSaveDefinition:
+    """The complete checkpoint mflux-save writes for dev-redux: the base FLUX.1
+    components plus the redux encoders, mirroring how FluxControlnetWeightDefinition's
+    save list extends the base definition. Kept separate from FluxReduxWeightDefinition,
+    whose two components are only the encoders, loaded on top of an already-initialized
+    base. The same components serve both directions: ModelSaver writes each under its
+    hf_subdir, and WeightLoader reads the saved layout back from those same subdirs."""
+
+    @staticmethod
+    def get_components() -> List[ComponentDefinition]:
+        return FluxWeightDefinition.get_components() + FluxReduxWeightDefinition.get_components()
+
+    @staticmethod
+    def get_tokenizers() -> List[TokenizerDefinition]:
+        return FluxWeightDefinition.get_tokenizers()

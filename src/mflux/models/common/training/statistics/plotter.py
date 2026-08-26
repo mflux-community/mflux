@@ -13,7 +13,7 @@ class Plotter:
     @staticmethod
     def update_loss_plot(training_spec: TrainingSpec, training_state: TrainingState, target_loss: float = 0.3) -> None:
         stats = training_state.statistics
-        if not stats.steps or not stats.losses:
+        if not stats.steps and not stats.batch_steps:
             return
 
         total_step = int(training_state.iterator.total_number_of_steps())
@@ -28,7 +28,9 @@ class Plotter:
 
         steps = [int(step) for step in stats.steps]
         losses = [float(loss) for loss in stats.losses]
-        max_x = max(steps)
+        batch_steps = [int(step) for step in stats.batch_steps]
+        batch_losses = [float(loss) for loss in stats.batch_losses]
+        max_x = max(steps + batch_steps)
         initial_padding = 0.4
         final_padding = 0.01
         padding_limit = initial_padding - (initial_padding - final_padding) * (max_x / total_step)
@@ -56,6 +58,8 @@ class Plotter:
         data = {
             "steps": steps,
             "losses": losses,
+            "batchSteps": batch_steps,
+            "batchLosses": batch_losses,
             "smoothed": smoothed,
             "smoothEnabled": smooth_loss,
             "previewMap": preview_step_to_src,
@@ -300,6 +304,13 @@ class Plotter:
               <span class="toggle-slider"></span>
             </label>
           </div>
+          <div class="control-row" id="batch-control">
+            <span>Batch</span>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-batch" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
         <div class="chart-wrap" id="chart-wrap">
           <canvas id="chart"></canvas>
@@ -318,6 +329,8 @@ class Plotter:
       const previewToggle = document.getElementById('toggle-previews');
       const smoothToggle = document.getElementById('toggle-smooth');
       const smoothControl = document.getElementById('smooth-control');
+      const batchToggle = document.getElementById('toggle-batch');
+      const batchControl = document.getElementById('batch-control');
       const popover = document.getElementById('popover');
       function buildPopoverHTML(step, loss, src) {{
         const img = src ? '<img src="' + src + '" alt="" />' : '';
@@ -331,10 +344,13 @@ class Plotter:
       const dpr = window.devicePixelRatio || 1;
       const steps = data.steps;
       const losses = data.losses;
+      const batchSteps = data.batchSteps || [];
+      const batchLosses = data.batchLosses || [];
       const smoothed = data.smoothed || [];
       const smoothEnabled = data.smoothEnabled || false;
       let showSmoothed = smoothEnabled;
       let showLoss = true;
+      let showBatch = true;
       const previewMapAll = data.previewMap || {{}};
       const lossByStep = data.lossByStep || {{}};
       const previewSteps = data.previewSteps || [];
@@ -466,16 +482,18 @@ class Plotter:
       }}
 
       function draw() {{
-        if (!steps.length) return;
+        if (!steps.length && !batchSteps.length) return;
         const width = canvas.width / dpr - margin.left - margin.right;
         const height = canvas.height / dpr - margin.top - margin.bottom;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim();
         ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
-        const minStep = Math.min(...steps);
-        const maxStep = Math.max(...steps) + data.padding;
-        const allY = smoothed.length ? losses.concat(smoothed) : losses;
+        const allSteps = steps.concat(batchSteps);
+        const minStep = Math.min(...allSteps);
+        const maxStep = Math.max(...allSteps) + data.padding;
+        let allY = smoothed.length ? losses.concat(smoothed) : losses.slice();
+        allY = allY.concat(batchLosses);
         let minY = Math.min(...allY);
         let maxY = Math.max(...allY);
         if (minY === maxY) {{
@@ -520,6 +538,24 @@ class Plotter:
           ctx.lineWidth = 2;
           linePath(smoothPoints);
           ctx.setLineDash([]);
+        }}
+
+        if (showBatch && batchSteps.length) {{
+          const batchPoints = batchSteps.map((step, i) => {{
+            return {{
+              x: scaleX(step, minStep, maxStep, width),
+              y: scaleY(batchLosses[i], minY, maxY, height),
+            }};
+          }});
+          ctx.strokeStyle = '#C08A2D';
+          ctx.lineWidth = 2;
+          linePath(batchPoints);
+          batchPoints.forEach((p) => {{
+            ctx.beginPath();
+            ctx.fillStyle = '#C08A2D';
+            ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          }});
         }}
 
         if (showLoss) {{
@@ -697,6 +733,16 @@ class Plotter:
       if (smoothToggle) {{
         smoothToggle.checked = showSmoothed;
         smoothToggle.addEventListener('change', updateSmoothVisibility);
+      }}
+      if (batchControl) {{
+        batchControl.style.display = batchSteps.length ? 'flex' : 'none';
+      }}
+      if (batchToggle) {{
+        batchToggle.checked = showBatch;
+        batchToggle.addEventListener('change', () => {{
+          showBatch = batchToggle.checked;
+          draw();
+        }});
       }}
       window.addEventListener('resize', resize);
       resize();

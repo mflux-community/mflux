@@ -24,3 +24,17 @@ repos:
         # --all-extras: pytest etc. live in the dev extra, which isolated mode
         # would otherwise omit (making tests/ imports unresolvable).
         args: [--isolated, --no-python-downloads, --all-extras]
+  - repo: local
+    hooks:
+      # A pyproject.toml (or uv.lock) change must leave the lockfile consistent:
+      # `uv sync --locked` fails if uv.lock is out of date with pyproject.toml,
+      # and syncs .venv to the lock so the working environment matches the commit.
+      # Note: invoke pre-commit directly (as the installed git hook does), not via
+      # `uv run pre-commit` — `uv run` re-locks and rewrites uv.lock before the
+      # hook executes, which masks exactly the drift this hook exists to catch.
+      - id: uv-sync-locked
+        name: uv sync --locked
+        entry: uv sync --locked
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false

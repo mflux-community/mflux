@@ -242,6 +242,19 @@ There is a tendency for the reference image to dominate over the input prompt.
 > [!WARNING]
 > Note: Using the Redux tool requires an additional 1.1GB download from [black-forest-labs/FLUX.1-Redux-dev](https://huggingface.co/black-forest-labs/FLUX.1-Redux-dev). The download happens automatically on first use.
 
+##### Saving a quantized Redux checkpoint
+
+`mflux-save --model dev-redux` writes a self-contained checkpoint: the base FLUX.1-dev weights plus the siglip image encoder and redux embedder (the two pieces the Redux repo adds), quantized together:
+
+```bash
+mflux-save \
+  --model dev-redux \
+  --path /Users/me/models/dev-redux_8bit \
+  --quantize 8
+```
+
+Load it back with `--model /Users/me/models/dev-redux_8bit`; the redux encoders are read from the checkpoint instead of the hub.
+
 ---
 
 ### 🎭 In-Context Generation

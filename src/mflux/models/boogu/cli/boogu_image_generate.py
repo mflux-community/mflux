@@ -1,7 +1,7 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser
 from mflux.models.boogu.variants import BooguImage
-from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
 
@@ -38,7 +38,7 @@ def main():
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
-    model_config = ModelConfig.from_name(model_name=args.model or DEFAULT_MODEL)
+    model_config = ConfigResolution.resolve_restricted(args.model, DEFAULT_MODEL, model_path=args.model_path)
 
     model = BooguImage(
         model_config=model_config,

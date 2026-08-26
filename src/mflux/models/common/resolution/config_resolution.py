@@ -43,8 +43,13 @@ class ConfigResolution:
         return next((key for key, config in AVAILABLE_MODELS.items() if config is root), None)
 
     @staticmethod
-    def resolve_restricted(model_name: str | None, registry_key: str, model_path: str | None = None) -> "ModelConfig":
-        # Resolve --model for a CLI hard-wired to run exactly one registry model. Only
+    def resolve_restricted(
+        model_name: str | None, registry_key: str, model_path: str | None = None, extra_keys: tuple[str, ...] = ()
+    ) -> "ModelConfig":
+        # Resolve --model for a CLI hard-wired to run exactly one registry model, or a
+        # closed family of them: `registry_key` is the entry an omitted --model runs, and
+        # `extra_keys` lists sibling entries the CLI can equally run (the flux2 command
+        # serves every klein variant). Only
         # builtin registry spellings are judged: parse_args sets model_path exactly when
         # --model is not a builtin name (a local checkpoint or a HuggingFace repo id),
         # and those keep the CLI's own config while the weights load from the path, as
@@ -60,11 +65,14 @@ class ConfigResolution:
         expected = AVAILABLE_MODELS[registry_key]
         if model_name is None or model_path is not None:
             return expected
-        if ConfigResolution.resolve(model_name=model_name) is not expected:
+        resolved = ConfigResolution.resolve(model_name=model_name)
+        allowed = [expected] + [AVAILABLE_MODELS[key] for key in extra_keys]
+        if all(resolved is not config for config in allowed):
+            aliases = [alias for config in allowed for alias in config.aliases]
             raise ModelConfigError(
-                f"'{model_name}' is not {expected.model_name}; this CLI only accepts the aliases {expected.aliases}."
+                f"'{model_name}' is not {expected.model_name}; this CLI only accepts the aliases {aliases}."
             )
-        return expected
+        return resolved
 
     @staticmethod
     def _resolve(model_name: str | None, base_model: str | None = None) -> tuple["ModelConfig", "ModelConfig"]:

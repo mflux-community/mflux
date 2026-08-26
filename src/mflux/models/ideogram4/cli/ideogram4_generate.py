@@ -1,10 +1,9 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
-from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.ideogram4.latent_creator import Ideogram4LatentCreator
 from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
 from mflux.models.ideogram4.variants.txt2img.ideogram4 import Ideogram4
-from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
@@ -57,13 +56,12 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    model_name = args.model or DEFAULT_MODEL
-    if Ideogram4WeightDefinition.is_builtin_name(model_name):
-        model_config = ModelConfig.from_name(model_name)
-        model_path = None
-    else:
-        model_config = ModelConfig.ideogram4_fp8()
-        model_path = args.model_path
+    # "ideogram-4-fp8" is the registry key behind DEFAULT_MODEL's alias. The old
+    # is_builtin_name gate sent every foreign builtin name ("dev", "qwen-image") down
+    # the custom-checkpoint branch with model_path=None, which silently ran the default
+    # Ideogram checkpoint; now those names error.
+    model_config = ConfigResolution.resolve_restricted(args.model, "ideogram-4-fp8", model_path=args.model_path)
+    model_path = args.model_path
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
     model = Ideogram4(

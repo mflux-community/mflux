@@ -68,6 +68,8 @@ def _save_edit_result(
             export_json_metadata=args.metadata,
         )
         if args.matte_output is not None:
+            # No sidecar for the matte: it is a byproduct of the same run, and the RGBA
+            # save above already wrote the run's metadata under the primary output name.
             image.save(
                 path=args.matte_output.format(seed=seed),
                 export_json_metadata=False,

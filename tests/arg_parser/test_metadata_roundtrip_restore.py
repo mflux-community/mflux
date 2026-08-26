@@ -8,6 +8,7 @@ import sys
 
 import pytest
 
+from mflux.models.flux.cli import flux_generate_redux
 from mflux.models.flux2.cli import flux2_edit_generate
 from mflux.models.krea2.cli import krea2_generate
 from mflux.models.qwen.cli import qwen_image_edit_generate
@@ -166,3 +167,61 @@ def test_flux2_does_not_blame_the_user_for_a_sidecars_negative_prompt(monkeypatc
     with pytest.raises(RuntimeError) as exit_info:
         flux2_edit_generate.main()
     assert exit_info.value is reached_model_load
+
+
+@pytest.mark.fast
+def test_the_sidecar_supplies_redux_images(parse, sidecar, source_image):
+    # argparse required= on --redux-image-paths used to reject a -C-only restore
+    # before the metadata block ran, the same failure the edit CLIs had.
+    refs = [source_image("style-a.png"), source_image("style-b.png")]
+    path = sidecar(redux_image_paths=refs, redux_image_strengths=[0.8, 0.5])
+    args = parse(flux_generate_redux, "--config-from-metadata", str(path))
+    assert [str(image) for image in args.redux_image_paths] == refs
+    assert args.redux_image_strengths == [0.8, 0.5]
+
+
+@pytest.mark.fast
+def test_redux_images_on_the_command_line_replace_the_sidecars(parse, sidecar, source_image):
+    mine = source_image("mine.png")
+    path = sidecar(redux_image_paths=[source_image("old.png")], redux_image_strengths=[0.2])
+    args = parse(
+        flux_generate_redux,
+        "--config-from-metadata",
+        str(path),
+        "--redux-image-paths",
+        mine,
+        "--redux-image-strengths",
+        "0.9",
+    )
+    assert [str(image) for image in args.redux_image_paths] == [mine]
+    assert args.redux_image_strengths == [0.9]
+
+
+@pytest.mark.fast
+def test_redux_still_requires_images_from_somewhere(parse, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        parse(flux_generate_redux, "--prompt", "a red cube")
+    assert exit_info.value.code == 2
+    assert "--redux-image-paths" in capsys.readouterr().err
+
+
+@pytest.mark.fast
+def test_a_sidecar_redux_image_that_is_missing_here_names_the_sidecar(parse, sidecar, capsys):
+    path = sidecar(redux_image_paths=[ELSEWHERE])
+    with pytest.raises(SystemExit) as exit_info:
+        parse(flux_generate_redux, "--config-from-metadata", str(path))
+    assert exit_info.value.code == 2
+    stderr = capsys.readouterr().err
+    assert ELSEWHERE in stderr
+    assert str(path) in stderr
+
+
+@pytest.mark.fast
+def test_an_old_repr_redux_sidecar_is_not_treated_as_paths(parse, sidecar, capsys):
+    # Pre-#649 sidecars wrote str(list). Iterating that string would invent one
+    # "path" per character; reject it and ask for --redux-image-paths instead.
+    path = sidecar(redux_image_paths="[PosixPath('/tmp/a.png')]")
+    with pytest.raises(SystemExit) as exit_info:
+        parse(flux_generate_redux, "--config-from-metadata", str(path))
+    assert exit_info.value.code == 2
+    assert "--redux-image-paths" in capsys.readouterr().err

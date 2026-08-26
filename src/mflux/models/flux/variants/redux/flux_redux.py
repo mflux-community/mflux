@@ -7,6 +7,7 @@ from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.tokenizer import Tokenizer
 from mflux.models.common.vae.vae_util import VAEUtil
+from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux.flux_initializer import FluxInitializer
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux.model.flux_text_encoder.clip_encoder.clip_encoder import CLIPEncoder
@@ -17,6 +18,7 @@ from mflux.models.flux.model.flux_vae.vae import VAE
 from mflux.models.flux.model.redux_encoder.redux_encoder import ReduxEncoder
 from mflux.models.flux.model.siglip_vision_transformer.siglip_vision_transformer import SiglipVisionTransformer
 from mflux.models.flux.variants.redux.redux_util import ReduxUtil
+from mflux.models.flux.weights.flux_weight_definition import FluxReduxSaveDefinition
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
@@ -148,6 +150,14 @@ class Flux1Redux(nn.Module):
             redux_image_strengths=config.redux_image_strengths,
             image_strength=config.image_strength,
             generation_time=config.time_steps.format_dict["elapsed"],
+        )
+
+    def save_model(self, base_path: str) -> None:
+        ModelSaver.save_model(
+            model=self,
+            bits=self.bits,
+            base_path=base_path,
+            weight_definition=FluxReduxSaveDefinition,
         )
 
     @staticmethod

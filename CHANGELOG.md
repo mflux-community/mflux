@@ -7,15 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Every Flux generation variant can save, and dev-redux is saveable end-to-end**: conversion tooling driving the model classes got `AttributeError: '...' object has no attribute 'save_model'` from every Flux variant but `Flux1`/`Flux1Controlnet`, and `mflux-save --model dev-redux` was dispatched to plain `Flux1`, whose base weights can never come from the Redux adapter repo. All Flux variants now have `save_model`, and the redux save writes a self-contained checkpoint (base FLUX.1 components plus the siglip image encoder and redux embedder) that `mflux-generate-redux` reads back from disk instead of the hub. Along the way this repairs `mflux-generate-redux` on default arguments, which crashed loading base weights from the adapter repo (it has no vae/transformer/text encoders — the base now resolves from FLUX.1-dev unless a checkpoint path says otherwise). (#667, #680)
+
+### ✨ Improvements
+
+- **Training loss monitoring no longer taxes the run**: the loop computed a loss every step and discarded it, then paid up to 10 extra forward passes per plot tick for a smoothed re-read of training samples; with `plot_frequency: 1` that tripled wall time (5.4 vs 17.5 s/step on a Krea 2 Raw QLoRA, the 80 vs 232 hour run of #671). The already-computed value now feeds the loss curve every step for free, the batch metric became an optional second series at `plot_frequency` ticks, and `plot_frequency` is optional with a default of 20. Checkpoint loss statistics carry both series; a legacy checkpoint's single series loads as the batch metric it was. (#671, #672)
+
+## [0.19.1] - 2026-08-20
+
 ### 🔒 Security
 
 - **Locked dependencies updated beyond all reported vulnerable ranges**: raises the minimum supported versions of Pillow, Requests, PyTorch, Transformers, and urllib3, refreshes affected transitive dependencies, and removes the now-unused cryptography dependency from the lock. This addresses 35 Dependabot findings: 19 high, 12 medium, and 4 low. (#655)
 
 ### 🐛 Bug Fixes
 
+- **`--instruction` exclusivity is declared, and visible to `mflux-capabilities`**: in-context-edit's prompt/instruction mutual exclusion was hand-checked after parsing, so the capabilities dump published `--instruction` as an independent flag and `--prompt-file --instruction` slipped through entirely. `--instruction` now joins the `--prompt`/`--prompt-file` argparse group; the "at least one" requirement stays post-parse. Also fixes `--width`'s help interpolating the HEIGHT default, and documents why fibo-edit's matte writes no sidecar. (#578, #669)
+- **Baking a LoRA into a sub-8-bit quantized model silently dropped the adapter**: the fold requantized the merged weight at the base layer's own precision, and below 8 bits the quantization step is coarser than a typical LoRA delta (on Krea 2 at q4 the group step measures ~12x the delta rms), so `-q 4 --lora X` with baking on, which is the default, generated the base image while the logs reported success. Sub-8-bit layers now requantize at q8 when a delta is folded in, the same escape the fp8 path takes, with a console line reporting how many layers moved; the per-layer loader already reconstructs such mixed saves from stored shapes. Applies to runtime baking and to `mflux-save` of a quantized model with `--lora`. (#665, #668)
+- **Foreign `--model` values are rejected on the boogu, z-image, flux2 and ideogram4 CLIs**: all of them silently ignored a builtin name from another family and ran their own model instead (`mflux-generate-boogu --model dev` ran Boogu; `mflux-generate-ideogram4 --model qwen-image` ran Ideogram). They now resolve through the same restriction as the krea2/lens/ernie/z-image-turbo CLIs: aliases of the command's own model (or, for flux2, any registry `flux2-` entry, and for z-image, its distilled sibling) are accepted, anything else errors during CLI startup before any weights move, and paths or repo ids keep loading through `model_path` as before. flux2-edit additionally enforces the same distilled-checkpoint `--guidance 1.0` rule as flux2-generate. (#578, #650)
 - **Shell completions cover every installed command**: the generator's hand-maintained list had drifted six commands behind pyproject (`mflux-generate-boogu`, `mflux-generate-lens`, both `mflux-generate-ernie-image` commands, `mflux-generate-ideogram4`, `mflux-capabilities` never completed). Commands are now discovered from the installed console scripts and, where a CLI exposes `build_parser()`, completions are generated from the CLI's real parser instead of a hand-copied recipe of it. (#578, #651)
 - **`mflux-capabilities` publishes wire types, not Python converter names**: options validated by a named converter leaked the function name as their type (`--vae-tile-size` claimed type `vae_tile_size`, `--mlx-cache-limit-gb` claimed `positive_float`, every Path option claimed `PosixPath`). Named converters now map to what they yield: `int`, `float`, `path`, and `int-or-scale` for values that accept a pixel count, a `2x` factor or `auto`. The dump's type field is pinned to that closed vocabulary by a test. (#578, #652)
 - **The metadata sidecar of an in-context result can reproduce the run**: `get_right_half()` dropped `negative_prompt`, `image_paths` and the redux fields when cloning metadata onto the cropped half, and the `--save-full-image` composite was saved without a sidecar even under `--metadata`. `redux_image_paths` was also serialized as a Python repr (`"['a.png', 'b.png']"`) instead of a list, so `--config-from-metadata` could never read it back. The unreachable restore branches for `controlnet_save_canny` and `image_outpaint_padding`, keys no released writer has ever emitted, are removed along with a stray debug `print()` in the outpaint parse block. (#578, #649)
+- **`mflux-generate-redux --config-from-metadata` can replay a sidecar**: #649 made `redux_image_paths` a JSON list, but the redux CLI still declared the flag argparse-required and `supports_metadata_config=False`, so a sidecar-only rerun exited 2 before restore ran. `-C` now restores the paths and strengths, `--redux-image-paths` is required after restore rather than during parsing, and a missing sidecar path errors at parse time naming the sidecar. Old repr-string sidecars are not treated as path lists. (#578, #663)
+
+### 📝 Documentation
+
+- **Lens and Boogu Image documented**: both models join the README's supported-models table, each with a per-model README covering usage and options. (#659)
+
+### 🧰 DX & Maintenance
+
+- **Machine-readable model registry extract**: a new `scripts/ci_extract_models.py` (with a `ci-extract` workflow and `just` recipe) dumps the supported-model registry as JSON, needed by CI to auto-build MFlux models for Hugging Face. (#658)
+- **PyPI publish gated behind a protected `pypi` environment**: the release workflow now runs under the `pypi` deployment environment, so its reviewer-approval and branch-protection rules apply before anything reaches PyPI, and the trusted publisher is pinned to that environment name. A fast-fail step also rejects dispatches from any ref other than `main`. (#646)
+- **Lens DiT loads through the shared `WeightDefinition` seam**: replaces its bespoke weight-loading path with the mechanism the other models use. (#654)
+- **Flaky Gemma 2 causality test fixed**: the test could pick an out-of-vocab token and fail spuriously. (#653)
 
 ## [0.19.0] - 2026-08-18
 

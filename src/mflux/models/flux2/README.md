@@ -136,7 +136,7 @@ Example (base model defaults to 50 steps):
   "optimizer": { "name": "AdamW", "learning_rate": 1e-4 },
   "checkpoint": { "output_path": "train", "save_frequency": 25 },
   "monitoring": {
-    "plot_frequency": 1,
+    "plot_frequency": 20,
     "generate_image_frequency": 20
   },
   "lora_layers": {

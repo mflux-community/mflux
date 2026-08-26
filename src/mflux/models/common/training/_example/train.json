@@ -24,7 +24,7 @@
   "monitoring": {
     "preview_width": 1280,
     "preview_height": 720,
-    "plot_frequency": 1,
+    "plot_frequency": 20,
     "generate_image_frequency": 15
   },
   "lora_layers": {

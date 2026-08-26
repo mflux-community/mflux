@@ -10,6 +10,7 @@ from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
 from mflux.models.flux.variants.controlnet.flux_controlnet import Flux1Controlnet
+from mflux.models.flux.variants.redux.flux_redux import Flux1Redux
 from mflux.models.flux.variants.txt2img.flux import Flux1
 from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
 from mflux.models.ideogram4.variants.txt2img.ideogram4 import Ideogram4
@@ -37,7 +38,7 @@ MODEL_CLASSES: dict[str, type] = {
     "dev-fill": Flux1,
     "dev-fill-catvton": Flux1,
     "dev-kontext": Flux1,
-    "dev-redux": Flux1,
+    "dev-redux": Flux1Redux,
     "ernie-image": ErnieImage,
     "ernie-image-turbo": ErnieImage,
     "fibo": FIBO,
