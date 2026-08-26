@@ -8,6 +8,16 @@ venv_dir := ".venv"
 ruff_version := `sed -n 's/^    "ruff==\([0-9.]*\)",$/\1/p' pyproject.toml`
 
 # Show all recipes
+default:# justfile for mflux Python 3.10+ project, using 3.13 as recommended maintainer Python as of Jan 2026
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+python_version := "3.13"
+venv_dir := ".venv"
+# Ruff version derives from the pinned dev dependency in pyproject.toml (single source of truth)
+ruff_version := `sed -n 's/^    "ruff==\([0-9.]*\)",$/\1/p' pyproject.toml`
+
+# Show all recipes
 default:
     @just --list
 
@@ -16,6 +26,31 @@ all: install test
 
 # Create the virtual environment, install dependencies and pre-commit hooks
 install: venv-init ensure-pre-commit
+    @echo "🏗️ Checking current direcctory is a git repo..."    
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      @echo "✅ Directory is a Git repository"
+    else
+      git init
+      @echo "✅ ran git init"
+    fi    
+
+    @echo "🏗️ Installing dependencies and pre-commit hooks..."
+    uv sync --python {{ python_version }}
+    @echo "✅ Dependencies installed."
+    @just --list
+
+# Set up the project and run the default tests
+all: install test
+
+# Create the virtual environment, install dependencies and pre-commit hooks
+install: venv-init ensure-pre-commit
+    @echo "🏗️ Checking current direcctory is a git repo..."    
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "Inside a Git repository"
+    else
+      echo "Not a Git repository"
+    fi    
+
     @echo "🏗️ Installing dependencies and pre-commit hooks..."
     uv sync --python {{ python_version }}
     @echo "✅ Dependencies installed."
