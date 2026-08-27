@@ -8,6 +8,7 @@
 # always have.
 
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -238,3 +239,81 @@ class TestFlux2BaseModelPassthrough:
             base_argv=base_argv,
         )
         assert config is AVAILABLE_MODELS["flux2-klein-4b"]
+
+    # Runs main() until model construction and stops inside stubbed generate_image (SystemExit 0), so tests can
+    # assert that argument-level validation let an invocation through without loading any weights.
+    @staticmethod
+    def _run_main_until_generation(monkeypatch, module, *argv):
+        class StubModel:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def generate_image(self, **kwargs):
+                raise SystemExit(0)
+
+        monkeypatch.setattr(module, "Flux2Klein" if module is flux2_generate else "Flux2KleinEdit", StubModel)
+        monkeypatch.setattr(module, "CallbackManager", SimpleNamespace(register_callbacks=lambda **_: None))
+        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            module.main()
+        return exit_info.value.code
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_explicit_distilled_base_rejects_guidance(self, monkeypatch, module, base_argv):
+        # Once --base-model names a distilled entry the checkpoint's lineage is known, so it must get the same guidance
+        # rejection as its builtin name; before this flag existed that invocation died at model load instead of here.
+        argv = (
+            "--model",
+            "mlx-community/flux2-klein-9b-8bit",
+            "--base-model",
+            "flux2-klein-9b",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            module.main()
+        assert exit_info.value.code == 2
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_explicit_base_entry_keeps_guidance(self, monkeypatch, module, base_argv):
+        # The same guard must not reject a checkpoint declared as one of the guidance-capable base entries.
+        exit_code = self._run_main_until_generation(
+            monkeypatch,
+            module,
+            "--model",
+            "mlx-community/flux2-klein-base-9b-8bit",
+            "--base-model",
+            "flux2-klein-base-9b",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        assert exit_code == 0
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_custom_checkpoint_without_base_keeps_guidance_unjudged(self, monkeypatch, module, base_argv):
+        # No --base-model: the checkpoint's lineage is unknown (it may be a klein-base fine-tune), so guidance stays unjudged.
+        exit_code = self._run_main_until_generation(
+            monkeypatch,
+            module,
+            "--model",
+            "mlx-community/some-finetune",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        assert exit_code == 0

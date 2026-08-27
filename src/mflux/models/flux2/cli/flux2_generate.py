@@ -62,11 +62,12 @@ def main():
 
     if args.guidance is None:
         args.guidance = 1.0
-    # Judged only for builtin names: a custom checkpoint (model_path set) keeps the
-    # default entry's config, whose name says nothing about the weights actually loaded,
-    # and a klein-base fine-tune must not have its guidance rejected for it.
-    is_distilled = args.model_path is None and "base" not in model_config.model_name.lower()
-    if args.guidance != 1.0 and is_distilled:
+    # Judged whenever the resolved config reflects the loaded weights: a builtin name always does; so does a custom
+    # checkpoint (model_path set) once --base-model declared one of the family's entries, since that is what selects
+    # its geometry. Without the flag it keeps the default entry's config, whose name says nothing about the weights
+    # actually loaded — a klein-base fine-tune must not have its guidance rejected for an unknown checkpoint.
+    judged = args.model_path is None or args.base_model is not None
+    if judged and args.guidance != 1.0 and "base" not in model_config.model_name.lower():
         parser.error("--guidance is only supported for FLUX.2 base models. Use --guidance 1.0.")
 
     model = Flux2Klein(
