@@ -58,6 +58,7 @@ def main():
         DEFAULT_MODEL,
         model_path=args.model_path,
         extra_keys=FAMILY_MODELS,
+        base_model=args.base_model,
     )
 
     if args.guidance is None:

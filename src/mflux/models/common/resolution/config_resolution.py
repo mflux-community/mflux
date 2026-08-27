@@ -44,29 +44,47 @@ class ConfigResolution:
 
     @staticmethod
     def resolve_restricted(
-        model_name: str | None, registry_key: str, model_path: str | None = None, extra_keys: tuple[str, ...] = ()
+        model_name: str | None,
+        registry_key: str,
+        model_path: str | None = None,
+        extra_keys: tuple[str, ...] = (),
+        base_model: str | None = None,
     ) -> "ModelConfig":
         # Resolve --model for a CLI hard-wired to run exactly one registry model, or a
         # closed family of them: `registry_key` is the entry an omitted --model runs, and
         # `extra_keys` lists sibling entries the CLI can equally run (the flux2 command
-        # serves every klein variant). Only
-        # builtin registry spellings are judged: parse_args sets model_path exactly when
-        # --model is not a builtin name (a local checkpoint or a HuggingFace repo id),
-        # and those keep the CLI's own config while the weights load from the path, as
-        # they always have — judging a path by name-inference would reject directories
-        # like ~/models/zimage-q8 on the turbo CLI. A builtin name must be an alias of
-        # `registry_key`, so e.g. `mflux-generate-krea2 --model dev` fails loudly
-        # instead of silently running Krea-2-Turbo. Compared by identity rather than
-        # model_name because registry entries can share a repo id (z-image-turbo and its
-        # ControlNet).
+        # serves every klein variant). Only builtin registry spellings are judged:
+        # parse_args sets model_path exactly when --model is not a builtin name (a local
+        # checkpoint or a HuggingFace repo id), and those keep the CLI's own config while
+        # the weights load from the path, as they always have — judging a path by
+        # name-inference would reject directories like ~/models/zimage-q8 on the turbo
+        # CLI. An explicit base_model overrides that default geometry for custom
+        # checkpoints: naming a sibling entry runs it (a community klein-9b checkpoint
+        # must not be forced onto the 4B transformer), while naming anything outside the
+        # family errors instead of silently loading a foreign config. A builtin name must
+        # be an alias of `registry_key`, so e.g. `mflux-generate-krea2 --model dev` fails
+        # loudly instead of silently running Krea-2-Turbo. Compared by identity rather
+        # than model_name because registry entries can share a repo id (z-image-turbo and
+        # its ControlNet).
         from mflux.models.common.config.model_config import AVAILABLE_MODELS
         from mflux.utils.exceptions import ModelConfigError
 
-        expected = AVAILABLE_MODELS[registry_key]
+        allowed = [AVAILABLE_MODELS[registry_key]] + [AVAILABLE_MODELS[key] for key in extra_keys]
+        expected = allowed[0]
         if model_name is None or model_path is not None:
+            if base_model is not None:
+                root = next(
+                    (config for config in allowed if base_model == config.model_name or base_model in config.aliases),
+                    None,
+                )
+                if root is None:
+                    aliases = [alias for config in allowed for alias in config.aliases]
+                    raise ModelConfigError(
+                        f"'{base_model}' is not {expected.model_name}; this CLI only accepts the aliases {aliases}."
+                    )
+                return root
             return expected
         resolved = ConfigResolution.resolve(model_name=model_name)
-        allowed = [expected] + [AVAILABLE_MODELS[key] for key in extra_keys]
         if all(resolved is not config for config in allowed):
             aliases = [alias for config in allowed for alias in config.aliases]
             raise ModelConfigError(
