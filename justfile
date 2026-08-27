@@ -16,7 +16,7 @@ all: install test
 
 # Create the virtual environment, install dependencies and pre-commit hooks
 install: venv-init ensure-pre-commit
-    @echo "🏗️ Checking current directory is a git repo..."    
+    @echo "🏗️ Checking current direcctory is a git repo..."    
     @if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
       echo "✅ Directory is a Git repository"; \
     else \
@@ -121,71 +121,6 @@ ci-extract:
     @echo "🏗️ Extracting model registry..."
     uv run --no-sync python scripts/ci_extract_models.py
     @echo "✅ Extraction complete."
-
-# Run the per-phase generation benchmark (encode/denoise/decode + peak GB) → JSON report.
-# Output file embeds git SHA + dirty flag so A/B runs never overwrite each other.
-# Usage: just benchmark [model=z-image-turbo] [quantize=8|none] [runs=2] [size=1024]
-benchmark model="z-image-turbo" quantize="8" runs="2" size="1024":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    model="{{ model }}"
-    quantize="{{ quantize }}"
-    size="{{ size }}"
-    runs="{{ runs }}"
-    sha="$(git rev-parse --short HEAD)-$(git diff --quiet && echo clean || echo dirty)"
-    out="bench_${model}_q${quantize}_${size}px_${sha}.json"
-    args=(--model "$model" --runs "$runs" --width "$size" --height "$size" --json-out "$out")
-    if [[ "$quantize" != "none" ]]; then args+=(-q "$quantize"); fi
-    echo "🏗️ Benchmarking $model (quantize=$quantize, runs=$runs, ${size}px) → $out ..."
-    uv run --no-sync python scripts/benchmark.py "${args[@]}"
-    echo "✅ Benchmark written to $out."
-
-# Plot one or more benchmark JSON reports as a comparison PNG (+ delta table for 2+).
-# First report is the A/B baseline. For a custom output path, call
-# scripts/benchmark_plot.py directly.
-# Usage: just benchmark-plot before.json [after.json ...]
-benchmark-plot *reports:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    reports="{{ reports }}"
-    if [ -z "$reports" ]; then
-        echo "❌ benchmark-plot needs at least one benchmark JSON report to plot." >&2
-        echo "" >&2
-        echo "   1️⃣  Generate a report first:   just benchmark" >&2
-        echo "   2️⃣  Then plot it, e.g.:         just benchmark-plot bench_z-image-turbo_q8_1024px_<sha>.json" >&2
-        echo "" >&2
-        echo "   Pass two or more reports (baseline first) to get an A/B chart + delta table," >&2
-        echo "   e.g. before/after a code change: 'just benchmark-plot bench_*_abc1234-clean.json bench_*_def5678-dirty.json'" >&2
-        echo "" >&2
-        echo "   Tip: 'just benchmark' names its output so A/B runs never overwrite each other;" >&2
-        echo "   any bench_*.json in this directory can be plotted." >&2
-        if compgen -G "bench_*.json" > /dev/null; then
-            echo "" >&2
-            echo "   Reports found here:" >&2
-            ls -1t bench_*.json | sed 's/^/     • /' >&2
-        fi
-        exit 1
-    fi
-    missing=""
-    for f in $reports; do
-        [ -f "$f" ] || missing="$missing $f"
-    done
-    if [ -n "$missing" ]; then
-        echo "❌ These report files do not exist:$missing" >&2
-        echo "   Run 'just benchmark' to produce one, or check the path/spelling." >&2
-        if compgen -G "bench_*.json" > /dev/null; then
-            echo "" >&2
-            echo "   Reports found here:" >&2
-            ls -1t bench_*.json | sed 's/^/     • /' >&2
-        fi
-        exit 1
-    fi
-    echo "🏗️ Plotting benchmark report(s) → benchmark.png ..."
-    # Paths are unquoted by necessity (just bakes them into the script verbatim);
-    # quote-free repo-relative names keep this safe.
-    # shellcheck disable=SC2086
-    uv run --no-sync python scripts/benchmark_plot.py $reports --out benchmark.png
-    echo "✅ Chart written to benchmark.png."
 
 # Remove the virtual environment
 clean:

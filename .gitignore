@@ -26,10 +26,6 @@ tests/training/tmp/
 # build/ generated from 'pip install -e .' in developer mode
 build/
 
-# benchmark artifacts (`just benchmark` / `just benchmark-plot`)
-bench_*.json
-benchmark.png
-
 # regenerable cache output, e.g. `just ci-extract`
 .ci_cache/
 .gz

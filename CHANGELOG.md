@@ -13,7 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Improvements
 
-- **Per-phase generation benchmark harness with A/B plotting**: `scripts/benchmark.py` times encode/denoise/decode and peak MLX memory per run for the 8 txt2img families in scope for the `mx.compile` coverage rollout, emitting a JSON report that embeds chip, OS, MLX version, git SHA + dirty flag so before/after runs stay comparable; `scripts/benchmark_plot.py` renders reports as a comparison PNG (stacked per-phase bars, per-step denoise lines) plus a per-model delta table. `just benchmark` / `just benchmark-plot` wrap both; matplotlib (already a main dependency) is the only plotting requirement. Reports default to stable short-run statistics since sustained sessions can thermal-throttle ~1.7×. (#685)
 - **Training loss monitoring no longer taxes the run**: the loop computed a loss every step and discarded it, then paid up to 10 extra forward passes per plot tick for a smoothed re-read of training samples; with `plot_frequency: 1` that tripled wall time (5.4 vs 17.5 s/step on a Krea 2 Raw QLoRA, the 80 vs 232 hour run of #671). The already-computed value now feeds the loss curve every step for free, the batch metric became an optional second series at `plot_frequency` ticks, and `plot_frequency` is optional with a default of 20. Checkpoint loss statistics carry both series; a legacy checkpoint's single series loads as the batch metric it was. (#671, #672)
 
 ## [0.19.1] - 2026-08-20
