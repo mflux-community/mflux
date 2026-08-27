@@ -66,7 +66,8 @@ class MMAttention(nn.Module):
         q_txt, k_txt, v_txt = self.norm_q_txt(qkv_txt[:, 0]), self.norm_k_txt(qkv_txt[:, 1]), qkv_txt[:, 2]
 
         counts, txt_len = partitioner.window_counts, txt_shape[:, 0]
-        qkv_t_rep = self._repeat_text_for_windows(mx.stack([q_txt, k_txt, v_txt], axis=1), txt_len, counts)
+        win_to_batch = MMAttention._window_to_batch(counts)
+        qkv_t_rep = self._repeat_text_for_windows(mx.stack([q_txt, k_txt, v_txt], axis=1), txt_len, win_to_batch)
         q_txt_rep, k_txt_rep, v_txt_rep = qkv_t_rep[:, 0], qkv_t_rep[:, 1], qkv_t_rep[:, 2]
 
         # 3. Apply RoPE
@@ -77,7 +78,7 @@ class MMAttention(nn.Module):
                 vid_shape=partitioner.window_shapes,
                 txt_q=q_txt_rep,
                 txt_k=k_txt_rep,
-                txt_shape=mx.repeat(txt_shape, mx.array(counts), axis=0),
+                txt_shape=txt_shape[win_to_batch],
             )
         else:
             q_vid, k_vid = self.rope(
@@ -96,7 +97,7 @@ class MMAttention(nn.Module):
             counts,
         )
 
-        win_lens = vid_lens + txt_len[mx.repeat(mx.arange(len(counts)), mx.array(counts))]
+        win_lens = vid_lens + txt_len[win_to_batch]
         windows = mx.split(qkv, mx.cumsum(win_lens[:-1]).tolist())
 
         out = []
@@ -107,7 +108,7 @@ class MMAttention(nn.Module):
 
         # 5. Coalesce and Project Out
         out = mx.concatenate(out, axis=0).reshape(-1, self.heads * self.head_dim)
-        vid_out, txt_out = self._unconcat_and_coalesce(out, vid_lens, txt_len, counts)
+        vid_out, txt_out = self._unconcat_and_coalesce(out, vid_lens, txt_len, counts, win_to_batch)
 
         return (
             self.proj_out_vid(partitioner.reverse(vid_out)).reshape(B, L, -1),
@@ -115,10 +116,19 @@ class MMAttention(nn.Module):
         )
 
     @staticmethod
-    def _repeat_text_for_windows(txt, txt_len, counts):
-        B, L = len(counts), int(txt_len[0])
+    def _window_to_batch(counts: list[int]) -> mx.array:
+        # Each batch element is partitioned into its own number of windows, so expanding a
+        # per-batch value to per-window is a gather, not a repeat: mx.repeat only takes a
+        # scalar count. Passing mx.array(counts) happened to work for a single batch element
+        # on mlx <= 0.32.1, which coerced the one-element array to an int, and raised a
+        # TypeError for anything longer; mlx 0.32.2 dropped that coercion entirely.
+        return mx.concatenate([mx.full((count,), index, dtype=mx.int32) for index, count in enumerate(counts)])
+
+    @staticmethod
+    def _repeat_text_for_windows(txt, txt_len, win_to_batch):
+        B, L = txt_len.shape[0], int(txt_len[0])
         txt = txt.reshape(B, L, *txt.shape[1:])
-        return mx.repeat(txt, mx.array(counts), axis=0).reshape(-1, *txt.shape[2:])
+        return txt[win_to_batch].reshape(-1, *txt.shape[2:])
 
     @staticmethod
     def _concat_with_text(vid, txt, vid_lens, txt_len, counts):
@@ -128,8 +138,7 @@ class MMAttention(nn.Module):
         return mx.concatenate(parts, axis=0)
 
     @staticmethod
-    def _unconcat_and_coalesce(combined, vid_lens, txt_len, counts):
-        win_to_batch = mx.repeat(mx.arange(len(txt_len)), mx.array(counts))
+    def _unconcat_and_coalesce(combined, vid_lens, txt_len, counts, win_to_batch):
         lens = mx.stack([vid_lens, txt_len[win_to_batch]], axis=1).reshape(-1)
         parts = mx.split(combined, mx.cumsum(lens[:-1]).tolist())
 
