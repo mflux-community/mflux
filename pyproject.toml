@@ -28,11 +28,8 @@ dependencies = [
     "huggingface-hub>=1.1.6,<2.0",
     "hf-transfer>=0.1.9,<1.0",
     "matplotlib>=3.9.2,<4.0",
-    # mlx <0.32.0 has a quantized_matmul bug: for M>32768 rows the first
-    # M-32768 rows come back garbage (silently, no error). Quantized SeedVR2
-    # above ~8.4MP output hits it as a noise band across the top of the image.
     "mlx>=0.32.0,<0.33.0; sys_platform=='darwin'",
-    "mlx[cuda13]>=0.30.3,<0.32.0; sys_platform=='linux'",
+    "mlx[cuda13]==0.32.2; sys_platform=='linux'",
     "numpy>=2.0.1,<3.0",
     "opencv-python>=4.10.0,<5.0",
     "piexif>=1.1.3,<2.0",
@@ -78,7 +75,7 @@ dev = [
     # and the CI ty step. ty 0.0.72 (62ebbecc7 2026-08-14).
     "ty==0.0.72",
     "mlx==0.32.0; sys_platform=='darwin'",
-    "mlx[cuda13]==0.30.3; sys_platform=='linux'",
+    "mlx[cuda13]==0.32.2; sys_platform=='linux'",
 ]
 
 [tool.uv.dependency-groups]
