@@ -8,6 +8,7 @@
 # always have.
 
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,11 +51,16 @@ class TestRestrictedModelConfig:
     # build_parser().parse_args() rather than constructing argument combinations no CLI
     # can produce.
     @staticmethod
-    def _resolve_via_parser(monkeypatch, module, registry_key, extra_argv=(), extra_keys=(), base_argv=()):
-        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *base_argv, *extra_argv])
+    def _resolve_via_parser(
+        monkeypatch, module, registry_key, extra_argv=(), extra_keys=(), base_argv=(), base_model=None
+    ):
+        model_argv = list(extra_argv)
+        if base_model is not None:
+            model_argv += ["--base-model", base_model]
+        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *model_argv, *base_argv])
         args = module.build_parser().parse_args()
         return ConfigResolution.resolve_restricted(
-            args.model, registry_key, model_path=args.model_path, extra_keys=extra_keys
+            args.model, registry_key, model_path=args.model_path, extra_keys=extra_keys, base_model=args.base_model
         )
 
     @pytest.mark.parametrize(
@@ -165,3 +171,149 @@ class TestRestrictedModelConfig:
     def test_saved_checkpoint_name_keeps_cli_config(self, monkeypatch):
         config = self._resolve_via_parser(monkeypatch, krea2_generate, "krea-2", ["--model", "my-krea-2-finetune"])
         assert config is AVAILABLE_MODELS["krea-2"]
+
+
+# (flux2 CLI module, the parser argv its required --image-paths needs beyond --prompt).
+FLUX2_BASE_ARGV = [
+    (flux2_generate, ()),
+    (flux2_edit_generate, ("--image-paths", "ref.png")),
+]
+
+
+@pytest.mark.fast
+class TestFlux2BaseModelPassthrough:
+    # --base-model is parsed and validated by the general argument set, but only the flux2
+    # commands pass it to resolution. A custom checkpoint (repo id or local path) otherwise
+    # always runs on the CLI default's geometry, which corrupts any family sibling whose
+    # transformer differs — a community klein-9b checkpoint reshaped as a 4B dies at its
+    # first attention layer.
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_explicit_base_selects_family_sibling(self, monkeypatch, module, base_argv):
+        config = TestRestrictedModelConfig._resolve_via_parser(
+            monkeypatch,
+            module,
+            "flux2-klein-4b",
+            extra_argv=["--model", "mlx-community/flux2-klein-9b-8bit"],
+            extra_keys=module.FAMILY_MODELS,
+            base_model="flux2-klein-9b",
+            base_argv=base_argv,
+        )
+        assert config is AVAILABLE_MODELS["flux2-klein-9b"]
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_omitted_model_with_base_selects_family_sibling(self, monkeypatch, module, base_argv):
+        config = TestRestrictedModelConfig._resolve_via_parser(
+            monkeypatch,
+            module,
+            "flux2-klein-4b",
+            extra_keys=module.FAMILY_MODELS,
+            base_model="flux2-klein-9b",
+            base_argv=base_argv,
+        )
+        assert config is AVAILABLE_MODELS["flux2-klein-9b"]
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_foreign_base_rejected(self, monkeypatch, module, base_argv):
+        # A base naming a model outside the CLI's family must not silently load foreign
+        # geometry into this pipeline.
+        with pytest.raises(ModelConfigError, match="only accepts the aliases"):
+            TestRestrictedModelConfig._resolve_via_parser(
+                monkeypatch,
+                module,
+                "flux2-klein-4b",
+                extra_argv=["--model", "my-local-finetune"],
+                extra_keys=module.FAMILY_MODELS,
+                base_model="dev",
+                base_argv=base_argv,
+            )
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_custom_checkpoint_without_base_keeps_cli_config(self, monkeypatch, module, base_argv):
+        # No flag: unchanged behavior — the checkpoint runs on the CLI default's geometry.
+        config = TestRestrictedModelConfig._resolve_via_parser(
+            monkeypatch,
+            module,
+            "flux2-klein-4b",
+            extra_argv=["--model", "mlx-community/flux2-klein-9b-8bit"],
+            extra_keys=module.FAMILY_MODELS,
+            base_argv=base_argv,
+        )
+        assert config is AVAILABLE_MODELS["flux2-klein-4b"]
+
+    # Runs main() until model construction and stops inside stubbed generate_image (SystemExit 0), so tests can
+    # assert that argument-level validation let an invocation through without loading any weights.
+    @staticmethod
+    def _run_main_until_generation(monkeypatch, module, *argv):
+        class StubModel:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def generate_image(self, **kwargs):
+                raise SystemExit(0)
+
+        monkeypatch.setattr(module, "Flux2Klein" if module is flux2_generate else "Flux2KleinEdit", StubModel)
+        monkeypatch.setattr(module, "CallbackManager", SimpleNamespace(register_callbacks=lambda **_: None))
+        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            module.main()
+        return exit_info.value.code
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_explicit_distilled_base_rejects_guidance(self, monkeypatch, module, base_argv):
+        # Once --base-model names a distilled entry the checkpoint's lineage is known, so it must get the same guidance
+        # rejection as its builtin name; before this flag existed that invocation died at model load instead of here.
+        argv = (
+            "--model",
+            "mlx-community/flux2-klein-9b-8bit",
+            "--base-model",
+            "flux2-klein-9b",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            module.main()
+        assert exit_info.value.code == 2
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_explicit_base_entry_keeps_guidance(self, monkeypatch, module, base_argv):
+        # The same guard must not reject a checkpoint declared as one of the guidance-capable base entries.
+        exit_code = self._run_main_until_generation(
+            monkeypatch,
+            module,
+            "--model",
+            "mlx-community/flux2-klein-base-9b-8bit",
+            "--base-model",
+            "flux2-klein-base-9b",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        assert exit_code == 0
+
+    @pytest.mark.parametrize("module,base_argv", FLUX2_BASE_ARGV, ids=lambda v: getattr(v, "__name__", v))
+    def test_custom_checkpoint_without_base_keeps_guidance_unjudged(self, monkeypatch, module, base_argv):
+        # No --base-model: the checkpoint's lineage is unknown (it may be a klein-base fine-tune), so guidance stays unjudged.
+        exit_code = self._run_main_until_generation(
+            monkeypatch,
+            module,
+            "--model",
+            "mlx-community/some-finetune",
+            "--width",
+            "512",
+            "--height",
+            "512",
+            "--guidance",
+            "3.0",
+            *base_argv,
+        )
+        assert exit_code == 0
