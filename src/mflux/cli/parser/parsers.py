@@ -417,16 +417,30 @@ class CommandLineParser(argparse.ArgumentParser):
         if getattr(namespace, "config_from_metadata", False):
             prior_gen_metadata = json.load(namespace.config_from_metadata.open("rt"))
 
+            restored_weights_source = None
             if hasattr(namespace, "model") and not self._option_was_provided("--model", "-m"):
-                # When --model was not provided explicitly, metadata should win
-                # even if the parser set a command-specific default model.
-                namespace.model = prior_gen_metadata.get("model", namespace.model)
+                # When --model was not provided explicitly, metadata should win even if the
+                # parser set a command-specific default model. A run whose weights came from
+                # a path or third-party repo records that source in model_path, and the
+                # source is what the command line actually said, so it wins over the
+                # resolved registry entry in "model" (#705); older sidecars carry only the
+                # entry and restore as before.
+                restored_weights_source = prior_gen_metadata.get("model_path")
+                namespace.model = restored_weights_source or prior_gen_metadata.get("model", namespace.model)
 
             if namespace.base_model is None:
                 # Sidecars written before #695 store the literal string "None" for a builtin
                 # run; it means the same as the null they store now, and handing it to the
                 # --base-model validator below would reject the replay.
                 restored_base_model = prior_gen_metadata.get("base_model", None)
+                if restored_base_model in (None, "None") and restored_weights_source is not None:
+                    # A restored weights source alone would erase the run's family: a
+                    # restricted CLI of another family would pair the foreign weights with
+                    # its default geometry instead of rejecting them the way it rejects the
+                    # entry by name. The entry the run resolved to rides along as the
+                    # explicit base, which keeps that rejection and pins the exact entry on
+                    # the right CLI without re-inferring it from the basename.
+                    restored_base_model = prior_gen_metadata.get("model", None)
                 if restored_base_model not in (None, "None"):
                     namespace.base_model = restored_base_model
 
@@ -636,5 +650,12 @@ class CommandLineParser(argparse.ArgumentParser):
             namespace.model_path = None if namespace.model in ui_defaults.model_choices() else namespace.model
         else:
             namespace.model_path = None
+
+        # Hand the weights source to the sidecar writer (#705). GeneratedImage cannot see
+        # the namespace, so this travels the way --no-metadata reaches ImageUtil; set on
+        # every parse so one run's path cannot leak into the next.
+        from mflux.utils.generated_image import GeneratedImage
+
+        GeneratedImage.model_path = namespace.model_path
 
         return namespace
