@@ -47,6 +47,9 @@ class ZImageTrainingAdapter(TrainingAdapter):
         self._z.transformer.freeze()
         self._z.text_encoder.freeze()
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None:
+        self._z.transformer.gradient_checkpointing = enabled
+
     def encode_data(
         self,
         *,

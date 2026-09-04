@@ -20,6 +20,8 @@ class TrainingAdapter(Protocol):
 
     def freeze_base(self) -> None: ...
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None: ...
+
     def encode_data(
         self,
         *,

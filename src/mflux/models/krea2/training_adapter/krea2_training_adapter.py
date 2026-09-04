@@ -62,6 +62,10 @@ class Krea2TrainingAdapter(TrainingAdapter):
         # transformer's activation graph fits in memory. Only the LoRA matrices are trainable.
         self._krea2.transformer.gradient_checkpointing = True
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None:  # noqa: ARG002
+        # Always on for Krea 2 (see freeze_base); the config flag cannot turn it off.
+        self._krea2.transformer.gradient_checkpointing = True
+
     def encode_data(
         self,
         *,

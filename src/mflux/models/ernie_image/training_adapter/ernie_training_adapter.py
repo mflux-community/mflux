@@ -51,6 +51,9 @@ class ErnieTrainingAdapter(TrainingAdapter):
         self._ernie.transformer.freeze()
         self._ernie.text_encoder.freeze()
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None:
+        self._ernie.transformer.gradient_checkpointing = enabled
+
     def encode_data(
         self,
         *,

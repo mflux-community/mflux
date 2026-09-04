@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import gc
 import random
+import re
 import tempfile
 from pathlib import Path
 
 import mlx.core as mx
 from mlx import nn
 from mlx.optimizers import clip_grad_norm
-from mlx.utils import tree_map, tree_unflatten
+from mlx.utils import tree_flatten, tree_map, tree_unflatten
 from tqdm import tqdm
 
 from mflux.models.common.latent_creator.latent_creator import LatentCreator
@@ -24,6 +25,10 @@ from mflux.utils.exif_orientation import oriented_size
 
 
 class TrainingTrainer:
+    # Path prefix up to and including the first numeric segment, e.g.
+    # "transformer.single_transformer_blocks.7" from "...single_transformer_blocks.7.attn.to_out.lora_A".
+    _BLOCK_PREFIX = re.compile(r"^(.*?\.\d+)(?:\.|$)")
+
     @staticmethod
     def _sample_timestep_index(timestep_type: str, low: int, high: int, rng) -> int:
         # Map a [0,1) draw shaped by the distribution to a timestep index in [low, high).
@@ -141,6 +146,10 @@ class TrainingTrainer:
         # Freeze base weights and unfreeze LoRA weights
         adapter.freeze_base()
         TrainingTrainer._unfreeze_lora_layers(adapter.transformer())
+        if training_spec.gradient_checkpointing:
+            adapter.set_gradient_checkpointing(True)
+        # Krea 2 forces checkpointing on in freeze_base, so read the effective state back.
+        gradient_checkpointing = bool(getattr(adapter.transformer(), "gradient_checkpointing", False))
 
         train_step_function = nn.value_and_grad(
             model=adapter.model(),
@@ -169,6 +178,8 @@ class TrainingTrainer:
         nonfinite_skips = 0
         for batch in batches:
             loss, grads = train_step_function(batch)
+            if gradient_checkpointing:
+                TrainingTrainer._evaluate_backward_in_block_order(loss, grads)
             if not TrainingTrainer._step_is_finite(loss):
                 del loss, grads
                 nonfinite_skips += 1
@@ -228,6 +239,22 @@ class TrainingTrainer:
         if nonfinite_skips:
             print(f"Skipped {nonfinite_skips} non-finite (NaN/Inf) training step(s).")
         training_state.save(adapter, training_spec)
+
+    @staticmethod
+    def _evaluate_backward_in_block_order(loss: mx.array, grads) -> None:
+        # MLX is lazy, so the order the gradients are evaluated in decides how many recomputed
+        # block activations are alive at once. Evaluating them first-block-first (tree order)
+        # forces every later block to be recomputed and kept until its own gradient is collected,
+        # which silently undoes gradient checkpointing (peak memory ends up the same as without
+        # it). Evaluate the forward, then walk the blocks from the last one backwards so only a
+        # couple of blocks' activations exist at any time.
+        mx.eval(loss)
+        groups: dict[str, list[mx.array]] = {}
+        for path, grad in tree_flatten(grads):
+            block_prefix = TrainingTrainer._BLOCK_PREFIX.match(path)
+            groups.setdefault(block_prefix.group(1) if block_prefix else "", []).append(grad)
+        for key in reversed(list(groups)):
+            mx.eval(*groups[key])
 
     @staticmethod
     def _unfreeze_lora_layers(module: nn.Module) -> None:

@@ -131,6 +131,7 @@ Example (base model defaults to 50 steps):
   "guidance": 1.0,
   "quantize": null,
   "low_ram": false,
+  "gradient_checkpointing": false,
   "max_resolution": 1024,
   "training_loop": { "num_epochs": 100, "batch_size": 1, "timestep_low": 25, "timestep_high": 40 },
   "optimizer": { "name": "AdamW", "learning_rate": 1e-4 },
@@ -165,6 +166,9 @@ Run training:
 ```sh
 mflux-train --config /path/to/train.json
 ```
+
+> [!TIP]
+> On a 32–36 GB Mac, set `"gradient_checkpointing": true` (and `"quantize": 8`); without it the first training step of an edit run needs more memory than the machine has and the process is killed. See the common [training docs](../common/README.md#training-lora).
 
 ### Edit fine-tuning (image-conditioned)
  The config looks identical for edit-based training and only differs in how the training data is prepared and named. For edit-style training (image in + prompt → image out), use auto-discovery with paired `*_out.*` and `*_in.*` files plus `*_in.txt` prompts, see the [training docs](../common/README.md#training-lora) for examples. Edit training is supported for Flux2 Klein base models. Preview prompts come from `data/preview*.txt` and the preview images are `data/preview*.{png,jpg,jpeg,webp}`.

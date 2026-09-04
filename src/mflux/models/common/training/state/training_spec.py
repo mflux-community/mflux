@@ -260,6 +260,11 @@ class TrainingSpec:
     # to hold the largest transient allocations seen; bounding it returns freed buffers to
     # the OS at ~no speed cost (unlike low_ram's clear-every-step). None = MLX default.
     cache_limit_gb: float | None = None
+    # Recompute each transformer block's activations in the backward pass instead of keeping
+    # them, and evaluate the gradients last-block-first. Trades ~30% step time for a peak
+    # memory of roughly "weights + two blocks" instead of "weights + every block"; this is what
+    # makes edit training fit on 32-36 GB machines.
+    gradient_checkpointing: bool = False
 
     @staticmethod
     def resolve(
@@ -317,6 +322,8 @@ class TrainingSpec:
         low_ram = bool(config.get("low_ram", False))
         if low_ram and data_root_dir is None:
             raise ValueError("'low_ram' requires a valid data path.")
+
+        gradient_checkpointing = bool(config.get("gradient_checkpointing", False))
 
         cache_limit_raw = config.get("cache_limit_gb", None)
         cache_limit_gb = None if cache_limit_raw is None else float(cache_limit_raw)
@@ -462,6 +469,7 @@ class TrainingSpec:
             config_path=None if absolute_config_path is None else str(absolute_config_path),
             low_ram=low_ram,
             cache_limit_gb=cache_limit_gb,
+            gradient_checkpointing=gradient_checkpointing,
         )
 
     @staticmethod

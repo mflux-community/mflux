@@ -152,8 +152,11 @@ class ErnieTransformer(nn.Module):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = [p[:, None, :] for p in pieces]
         temb = (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp)
 
+        # Optional gradient checkpointing (see Krea2Transformer); the training adapter turns it on.
+        gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
         for layer in self.layers:
-            x = layer(x, cos, sin, temb, attn_mask)
+            run = nn.utils.checkpoint(layer) if gradient_checkpointing else layer
+            x = run(x, cos, sin, temb, attn_mask)
 
         img_tokens = x[:, :N_img, :]
         img_tokens = self.final_norm(img_tokens, c).astype(hidden_states.dtype)
