@@ -122,8 +122,11 @@ class ZImageTransformer(nn.Module):
         unified_freqs_cis = mx.concatenate([x_freqs_cis, cap_freqs_cis], axis=0)
         unified_attn_mask = mx.ones((1, unified.shape[1]), dtype=mx.bool_)
 
+        # Optional gradient checkpointing (see Krea2Transformer); the training adapter turns it on.
+        gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
         for layer_idx, layer in enumerate(self.layers):
-            unified = layer(
+            run = nn.utils.checkpoint(layer) if gradient_checkpointing else layer
+            unified = run(
                 x=unified,
                 attn_mask=unified_attn_mask,
                 freqs_cis=unified_freqs_cis,

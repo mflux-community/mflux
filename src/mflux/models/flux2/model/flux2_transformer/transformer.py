@@ -125,8 +125,13 @@ class Flux2Transformer(nn.Module):
                 for mod_params, ref_mod_params in zip(temb_mod_params_img, ref_temb_mod_params_img, strict=True)
             )
 
+        # Optional gradient checkpointing (see Krea2Transformer): recompute each block in the
+        # backward pass instead of storing its activations. Off by default so inference is
+        # unaffected; the training adapter turns it on from the training config.
+        gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
         for idx, block in enumerate(self.transformer_blocks):
-            encoder_hidden_states, hidden_states = block(
+            run = nn.utils.checkpoint(block) if gradient_checkpointing else block
+            encoder_hidden_states, hidden_states = run(
                 hidden_states=hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
                 temb_mod_params_img=temb_mod_params_img,
@@ -148,7 +153,8 @@ class Flux2Transformer(nn.Module):
                 num_ref_tokens=kv_cache.num_ref_tokens,
             )
         for idx, block in enumerate(self.single_transformer_blocks):
-            hidden_states = block(
+            run = nn.utils.checkpoint(block) if gradient_checkpointing else block
+            hidden_states = run(
                 hidden_states=hidden_states,
                 temb_mod_params=temb_mod_params_single,
                 image_rotary_emb=concat_rotary_emb,

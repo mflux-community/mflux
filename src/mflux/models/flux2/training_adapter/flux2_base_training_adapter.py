@@ -53,6 +53,9 @@ class Flux2BaseTrainingAdapter(TrainingAdapter):
         self._flux2.transformer.freeze()
         self._flux2.text_encoder.freeze()
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None:
+        self._flux2.transformer.gradient_checkpointing = enabled
+
     def _encode_output_latents(self, *, image_path: Path, width: int, height: int) -> tuple[mx.array, mx.array]:
         encoded = LatentCreator.encode_image(
             vae=self._flux2.vae,

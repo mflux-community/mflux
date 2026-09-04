@@ -308,6 +308,7 @@ FLUX.1 uses `mflux-generate` with `--model dev` (or `schnell` / `krea-dev`) and 
 - Training supports normal (txt2img) and edit modes; the mode is auto-detected from your data folder layout (see examples below).
 - Expected layout: a config file plus a data folder with images and optional prompt files.
 - **Edit mode limitation**: Edit training currently supports only FLUX.2-klein-base models (`flux2-klein-base-4b` or `flux2-klein-base-9b`).
+- **Memory**: `"gradient_checkpointing": true` recomputes each transformer block's activations during the backward pass instead of keeping all of them, and evaluates the gradients last-block-first (the evaluation order matters in MLX; in tree order the recomputed blocks all stay alive and the saving disappears). Steps get ~30% slower and peak memory drops to roughly "weights + a couple of blocks". Turn it on when a run is killed at the first training step; it is what makes FLUX.2 klein edit training fit on 32–36 GB machines. Combine with `"quantize": 8` and `"low_ram": true` on the tightest machines.
 - To train a local copy of a model, you can specify the path to that model in the training spec JSON alongside the `model` using the `model_path` key.
 - For model-specific config fields, see the [Z-Image README](../z_image/README.md) and [FLUX.2 README](../flux2/README.md).
 
