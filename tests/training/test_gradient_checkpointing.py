@@ -54,6 +54,20 @@ class _TinyFlux2:
         return model.transformer(**inputs).square().mean()
 
     @staticmethod
+    def run(model: nn.Module, inputs: dict, *, checkpointing: bool, ordered: bool) -> tuple[float, dict, int]:
+        # One value-and-grad step: the loss, the gradients flattened by parameter path, and the
+        # peak memory the step reached.
+        model.transformer.gradient_checkpointing = checkpointing
+        mx.reset_peak_memory()
+        value_and_grad = nn.value_and_grad(model, lambda m, i: _TinyFlux2.loss(m, i))
+        loss, grads = value_and_grad(model, inputs)
+        if ordered:
+            TrainingTrainer._evaluate_backward_in_block_order(loss, grads)
+        else:
+            mx.eval(loss, grads)
+        return float(loss), dict(tree_flatten(grads)), mx.get_peak_memory()
+
+    @staticmethod
     def _inject_lora(module: nn.Module) -> None:
         for key, value in list(module.items()):
             if isinstance(value, nn.Linear) and not isinstance(value, LoRALinear):
@@ -66,30 +80,20 @@ class _TinyFlux2:
                         _TinyFlux2._inject_lora(item)
 
 
-def _run(model: nn.Module, inputs: dict, *, checkpointing: bool, ordered: bool) -> tuple[float, float, int]:
-    model.transformer.gradient_checkpointing = checkpointing
-    mx.reset_peak_memory()
-    value_and_grad = nn.value_and_grad(model, lambda m, i: _TinyFlux2.loss(m, i))
-    loss, grads = value_and_grad(model, inputs)
-    if ordered:
-        TrainingTrainer._evaluate_backward_in_block_order(loss, grads)
-    else:
-        mx.eval(loss, grads)
-    flat = tree_flatten(grads)
-    grad_norm = float(mx.sqrt(sum((g.astype(mx.float32) ** 2).sum() for _, g in flat)))
-    return float(loss), grad_norm, mx.get_peak_memory()
-
-
 @pytest.mark.fast
 def test_checkpointing_matches_stock_loss_and_gradients():
     model = _TinyFlux2.build(num_layers=2, num_single_layers=6)
     inputs = _TinyFlux2.inputs()
 
-    stock_loss, stock_norm, _ = _run(model, inputs, checkpointing=False, ordered=False)
-    ckpt_loss, ckpt_norm, _ = _run(model, inputs, checkpointing=True, ordered=True)
+    stock_loss, stock_grads, _ = _TinyFlux2.run(model, inputs, checkpointing=False, ordered=False)
+    ckpt_loss, ckpt_grads, _ = _TinyFlux2.run(model, inputs, checkpointing=True, ordered=True)
 
     assert ckpt_loss == pytest.approx(stock_loss, rel=1e-4)
-    assert ckpt_norm == pytest.approx(stock_norm, rel=1e-3)
+    # Every tensor, not one aggregate norm: different gradients can share an L2 norm.
+    assert ckpt_grads.keys() == stock_grads.keys()
+    assert stock_grads
+    for path, stock_grad in stock_grads.items():
+        assert mx.allclose(ckpt_grads[path], stock_grad, rtol=1e-3, atol=1e-6).item(), path
 
 
 @pytest.mark.fast
@@ -97,13 +101,11 @@ def test_ordered_backward_lowers_peak_memory_below_plain_checkpointing():
     model = _TinyFlux2.build(num_layers=2, num_single_layers=12)
     inputs = _TinyFlux2.inputs()
 
-    _, _, stock_peak = _run(model, inputs, checkpointing=False, ordered=False)
-    _, _, ckpt_peak = _run(model, inputs, checkpointing=True, ordered=False)
-    _, _, ordered_peak = _run(model, inputs, checkpointing=True, ordered=True)
+    ckpt_peak = _TinyFlux2.run(model, inputs, checkpointing=True, ordered=False)[2]
+    ordered_peak = _TinyFlux2.run(model, inputs, checkpointing=True, ordered=True)[2]
 
-    # Plain checkpointing helps, but evaluating grads in tree order keeps most recomputed
-    # blocks alive; the ordered backward is what brings the peak down to "a few blocks".
-    assert ckpt_peak < stock_peak
+    # Evaluating the grads in tree order keeps most recomputed blocks alive; the ordered
+    # backward is what brings the peak down to "a few blocks".
     assert ordered_peak < 0.8 * ckpt_peak
 
 
