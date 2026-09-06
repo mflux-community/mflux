@@ -52,6 +52,38 @@ class ComponentDefinition:
     # single-file checkpoint vs a diffusers sharded directory with different keys).
     variant_selector: Callable[[Path], "ComponentDefinition"] | None = None
 
+    @staticmethod
+    def save_subdirs(components: "List[ComponentDefinition]") -> dict:
+        # Where ModelSaver writes each component and where the loader probes for an
+        # mflux-saved one. Normally the hf_subdir; but two independent components that share
+        # one (SeedVR2's transformer and vae both sit flat at repo root, told apart on load
+        # by weight_files) would overwrite each other's shards and index there. Give an
+        # independent component its own <hf_subdir>/<name> directory whenever anything else
+        # shares its hf_subdir.
+        #
+        # A component that carves a subset out of a shared source with weight_prefix_filters
+        # (FIBO VLM's decoder and visual read the same files and split them by prefix) is a
+        # deliberate shared-source split, so it keeps its hf_subdir; the count includes it,
+        # so an independent component next to it is still moved out of the way. Every model
+        # with unique subdirs is returned unchanged.
+        #
+        # Computed from the static definition, matching ModelSaver, which writes to that same
+        # hf_subdir and never runs variant_selector, so the loader's probe here agrees with
+        # where the checkpoint was written. Keyed on the raw hf_subdir string: no shipped
+        # model spells one directory two ways, and normalizing "" to "." would wrongly merge
+        # FIBO VLM's decoder/visual ("") with its fibo_vlm (".") component.
+        counts: dict = {}
+        for c in components:
+            counts[c.hf_subdir] = counts.get(c.hf_subdir, 0) + 1
+        return {
+            c.name: (
+                str(Path(c.hf_subdir) / c.name)
+                if counts[c.hf_subdir] > 1 and c.weight_prefix_filters is None
+                else c.hf_subdir
+            )
+            for c in components
+        }
+
 
 @dataclass
 class TokenizerDefinition:

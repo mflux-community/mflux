@@ -9,6 +9,7 @@ from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from mflux.models.common.lora.mapping.lora_saver import LoRASaver
+from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.utils.version_util import VersionUtil
 
 if TYPE_CHECKING:
@@ -26,13 +27,17 @@ class ModelSaver:
         # Bake and strip any LoRA wrappers (to avoid duplicating shared weights) across
         # every component before writing a single file: baking raises when an adapter does
         # not fit, and that must abort before part of a checkpoint is on disk.
+        # Write each component to its save subdir, not its hf_subdir: the two differ only
+        # when components share an hf_subdir (SeedVR2), where saving to the shared directory
+        # would overwrite one component's shards and index with the other's (#621).
+        save_subdirs = ComponentDefinition.save_subdirs(weight_definition.get_components())
         components = []
         for component_def in weight_definition.get_components():
             attr_name = component_def.model_attr or component_def.name
             component = getattr(model, attr_name, None)
             if component is not None:
                 LoRASaver.bake_and_strip_lora(component)
-                components.append((component, component_def.hf_subdir))
+                components.append((component, save_subdirs[component_def.name]))
 
         # Save tokenizers from model.tokenizers dict
         tokenizer_defs = weight_definition.get_tokenizers()
