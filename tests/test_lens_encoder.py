@@ -20,7 +20,36 @@ from mflux.models.lens.model.text_encoder.lens_prompt_template import (
 )
 
 _HUB = os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
-_CACHED_SNAPSHOTS = glob.glob(os.path.join(_HUB, "models--mlx-community--gpt-oss-20b-MXFP4-Q8", "snapshots", "*"))
+
+
+class _GptOssCache:
+    @staticmethod
+    def snapshots_with_tokenizer(hub: str) -> list[str]:
+        # A snapshot directory alone is not enough: an interrupted download leaves config and
+        # index files without tokenizer.json, and the guarded tests need the tokenizer.
+        pattern = os.path.join(hub, "models--mlx-community--gpt-oss-20b-MXFP4-Q8", "snapshots", "*", "tokenizer.json")
+        return sorted(os.path.dirname(path) for path in glob.glob(pattern) if os.path.isfile(path))
+
+
+_CACHED_SNAPSHOTS = _GptOssCache.snapshots_with_tokenizer(_HUB)
+
+
+@pytest.mark.fast
+class TestCachedSnapshotGuard:
+    def test_snapshot_without_tokenizer_is_not_cached(self, tmp_path):
+        # A download that stopped before tokenizer.json (config and index present) must read as
+        # absent, otherwise the guarded tests crash on Tokenizer.from_file instead of skipping.
+        snapshot = tmp_path / "models--mlx-community--gpt-oss-20b-MXFP4-Q8" / "snapshots" / "abc123"
+        snapshot.mkdir(parents=True)
+        (snapshot / "config.json").write_text("{}")
+        (snapshot / "model.safetensors.index.json").write_text("{}")
+        assert _GptOssCache.snapshots_with_tokenizer(str(tmp_path)) == []
+
+    def test_snapshot_with_tokenizer_is_cached(self, tmp_path):
+        snapshot = tmp_path / "models--mlx-community--gpt-oss-20b-MXFP4-Q8" / "snapshots" / "abc123"
+        snapshot.mkdir(parents=True)
+        (snapshot / "tokenizer.json").write_text("{}")
+        assert _GptOssCache.snapshots_with_tokenizer(str(tmp_path)) == [str(snapshot)]
 
 
 @pytest.mark.fast
