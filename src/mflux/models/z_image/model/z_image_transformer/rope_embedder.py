@@ -15,6 +15,11 @@ class RopeEmbedder:
 
         self.axes_dims = axes_dims
         self.freqs_cis = RopeEmbedder._precompute_freqs_cis(axes_dims, axes_lens, theta)
+        # Materialise the tables now: they are plain arrays outside the module's parameter tree,
+        # so nothing else evaluates them. Left lazy, they are captured as a pending graph by the
+        # first mx.compile of predict and diverge from a later eager touch, changing the output
+        # across generate_image calls in the same process (issue #714). Three small float32 arrays.
+        mx.eval(*self.freqs_cis)
 
     def __call__(self, ids: mx.array) -> mx.array:
         result = []
