@@ -30,8 +30,19 @@ class _GptOssCache:
         pattern = os.path.join(hub, "models--mlx-community--gpt-oss-20b-MXFP4-Q8", "snapshots", "*", "tokenizer.json")
         return sorted(os.path.dirname(path) for path in glob.glob(pattern) if os.path.isfile(path))
 
+    @staticmethod
+    def snapshots_with_weights(hub: str) -> list[str]:
+        # LensGptOssEncoder reads config.json and every model*.safetensors shard as well.
+        return [
+            snapshot
+            for snapshot in _GptOssCache.snapshots_with_tokenizer(hub)
+            if os.path.isfile(os.path.join(snapshot, "config.json"))
+            and glob.glob(os.path.join(snapshot, "model*.safetensors"))
+        ]
+
 
 _CACHED_SNAPSHOTS = _GptOssCache.snapshots_with_tokenizer(_HUB)
+_CACHED_WEIGHTS = _GptOssCache.snapshots_with_weights(_HUB)
 
 
 @pytest.mark.fast
@@ -50,6 +61,21 @@ class TestCachedSnapshotGuard:
         snapshot.mkdir(parents=True)
         (snapshot / "tokenizer.json").write_text("{}")
         assert _GptOssCache.snapshots_with_tokenizer(str(tmp_path)) == [str(snapshot)]
+
+    def test_snapshot_without_weights_has_no_weights(self, tmp_path):
+        # The parity test builds the whole encoder, so a tokenizer-only snapshot must not qualify.
+        snapshot = tmp_path / "models--mlx-community--gpt-oss-20b-MXFP4-Q8" / "snapshots" / "abc123"
+        snapshot.mkdir(parents=True)
+        (snapshot / "tokenizer.json").write_text("{}")
+        (snapshot / "config.json").write_text("{}")
+        assert _GptOssCache.snapshots_with_weights(str(tmp_path)) == []
+
+    def test_snapshot_with_config_and_shard_has_weights(self, tmp_path):
+        snapshot = tmp_path / "models--mlx-community--gpt-oss-20b-MXFP4-Q8" / "snapshots" / "abc123"
+        snapshot.mkdir(parents=True)
+        for name in ("tokenizer.json", "config.json", "model-00001-of-00002.safetensors"):
+            (snapshot / name).write_text("{}")
+        assert _GptOssCache.snapshots_with_weights(str(tmp_path)) == [str(snapshot)]
 
 
 @pytest.mark.fast
@@ -130,14 +156,14 @@ class TestTemplateTokenization:
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not _CACHED_SNAPSHOTS, reason="gpt-oss checkpoint not cached locally")
+@pytest.mark.skipif(not _CACHED_WEIGHTS, reason="gpt-oss checkpoint not cached locally")
 class TestLensEncoderParity:
     def test_features_match_battery_022_reference(self):
         ref_path = os.path.join(os.path.dirname(__file__), "resources", "lens", "lens_exp1_features.npz")
         if not os.path.exists(ref_path):
             pytest.skip("reference features not present")
         ref = np.load(ref_path)
-        encoder = LensGptOssEncoder(_CACHED_SNAPSHOTS[0])
+        encoder = LensGptOssEncoder(_CACHED_WEIGHTS[0])
         features = encoder.encode(ref["prompt"].item())
         ours = np.array(features.astype(mx.float32))
         theirs = ref["features"]
