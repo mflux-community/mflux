@@ -83,8 +83,14 @@ class WeightLoader:
         mflux_version = None
         raw_weights_cache: dict[tuple, dict] = {}  # Cache by (path, loading_mode, weight_files)
 
+        # An mflux-saved checkpoint lives under each component's save subdir, which differs
+        # from its hf_subdir only when components share one (SeedVR2); the HuggingFace layout
+        # is still addressed by hf_subdir below (#621).
+        save_subdirs = ComponentDefinition.save_subdirs(weight_definition.get_components())
         for component in weight_definition.get_components():
-            weights, q_level, version = WeightLoader._load_component(root_path, component, raw_weights_cache)
+            weights, q_level, version = WeightLoader._load_component(
+                root_path, component, raw_weights_cache, save_subdirs[component.name]
+            )
             components[component.name] = weights
 
             # Track metadata from first component that has it
@@ -105,6 +111,7 @@ class WeightLoader:
         root_path: Path | None,
         component: ComponentDefinition,
         raw_weights_cache: dict[tuple, dict] | None = None,
+        save_subdir: str | None = None,
     ) -> tuple[dict, int | None, str | None]:
         # Some components are distributed in more than one on-disk layout (e.g. a native
         # single-file checkpoint vs a diffusers sharded directory with different keys).
@@ -122,7 +129,11 @@ class WeightLoader:
             component_path = root_path / component.hf_subdir
 
             # Try mflux saved format first (including FP8 components reloaded after mflux-save).
-            weights, q_level, version = WeightLoader._try_load_mflux_format(component_path)
+            # ModelSaver writes to the save subdir, which is the hf_subdir for every model
+            # except the shared-subdir case (SeedVR2); the HuggingFace fallback below still
+            # reads the hf_subdir layout (#621).
+            mflux_path = root_path / save_subdir if save_subdir is not None else component_path
+            weights, q_level, version = WeightLoader._try_load_mflux_format(mflux_path)
             if weights is not None:
                 return weights, q_level, version
 
