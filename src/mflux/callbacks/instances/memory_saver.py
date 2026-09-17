@@ -23,7 +23,7 @@ class MemorySaver(BeforeLoopCallback, InLoopCallback, AfterLoopCallback):
         self.peak_memory: int = 0
         self._num_seeds = num_seeds
         if cache_limit_bytes is not None:
-            if model.tiling_config is None:
+            if getattr(model, "tiling_config", None) is None:
                 self.model.tiling_config = TilingConfig()
             mx.set_cache_limit(cache_limit_bytes)
             mx.clear_cache()

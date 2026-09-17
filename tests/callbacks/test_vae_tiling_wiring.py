@@ -19,6 +19,11 @@ class _Model:
         self.callbacks = _Callbacks()
 
 
+class _ModelWithoutTilingConfig:
+    def __init__(self) -> None:
+        self.callbacks = _Callbacks()
+
+
 def _args(**overrides) -> Namespace:
     defaults = {"vae_tiling": False, "vae_tile_size": None, "low_ram": False, "mlx_cache_limit_gb": None}
     defaults.update(overrides)
@@ -75,3 +80,15 @@ def test_explicit_tile_size_wins_over_low_ram_default():
     ):
         CallbackManager._register_memory_saver(_args(low_ram=True, vae_tile_size=256), model)
     assert model.tiling_config.vae_decode_tile_size == 256
+
+
+@pytest.mark.fast
+def test_low_ram_installs_default_tiling_on_a_model_that_never_declared_one():
+    model = _ModelWithoutTilingConfig()
+    with (
+        patch("mflux.callbacks.instances.memory_saver.mx.set_cache_limit"),
+        patch("mflux.callbacks.instances.memory_saver.mx.clear_cache"),
+        patch("mflux.callbacks.instances.memory_saver.mx.reset_peak_memory"),
+    ):
+        CallbackManager._register_memory_saver(_args(low_ram=True), model)
+    assert model.tiling_config == TilingConfig()
