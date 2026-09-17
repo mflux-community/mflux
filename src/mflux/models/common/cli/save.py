@@ -18,6 +18,7 @@ from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4
 from mflux.models.krea2.variants.txt2img.krea2 import Krea2
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.z_image import ZImage, ZImageTurbo, ZImageTurboControlnet
 from mflux.utils.exceptions import ModelConfigError
 
@@ -55,6 +56,7 @@ MODEL_CLASSES: dict[str, type] = {
     "krea-2-raw": Krea2,
     "krea-dev": Flux1,
     "qwen-image": QwenImage,
+    "qwen-image-2.1": QwenImage21,
     "qwen-image-edit": QwenImageEdit,
     "schnell": Flux1,
     "schnell-controlnet-canny": Flux1Controlnet,

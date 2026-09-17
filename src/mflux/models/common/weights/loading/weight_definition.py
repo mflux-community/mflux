@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from mflux.models.flux.weights.flux_weight_definition import FluxWeightDefinition
     from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
     from mflux.models.qwen.weights.qwen_weight_definition import QwenWeightDefinition
+    from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
     from mflux.models.seedvr2.weights.seedvr2_weight_definition import SeedVR2WeightDefinition
     from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
 
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
         | FIBOWeightDefinition
         | FIBOVLMWeightDefinition
         | QwenWeightDefinition
+        | Qwen21WeightDefinition
         | ZImageWeightDefinition
         | SeedVR2WeightDefinition
         | DepthProWeightDefinition

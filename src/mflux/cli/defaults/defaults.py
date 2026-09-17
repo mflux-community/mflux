@@ -49,6 +49,7 @@ MODEL_INFERENCE_STEPS = {
     "lens-turbo": 4,
     "qwen-image": 20,
     "qwen-image-edit": 20,
+    "qwen-image-2.1": 40,
     "schnell": 4,
     "schnell-controlnet-canny": 4,
     "z-image": 50,

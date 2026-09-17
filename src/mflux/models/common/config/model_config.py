@@ -154,6 +154,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def qwen_image_21() -> "ModelConfig":
+        return AVAILABLE_MODELS["qwen-image-2.1"]
+
+    @staticmethod
+    @lru_cache
     def boogu_image_turbo() -> "ModelConfig":
         return AVAILABLE_MODELS["boogu-image-turbo"]
 
@@ -777,5 +782,20 @@ AVAILABLE_MODELS = {
         max_sequence_length=1024,
         supports_guidance=False,
         requires_sigma_shift=False,
+    ),
+    "qwen-image-2.1": ModelConfig(
+        priority=29,
+        aliases=["qwen-image-2.1", "qwen-2.1", "qwen-image-21"],
+        model_name="Qwen/Qwen-Image-2.1",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=None,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_max_shift=0.9,
+        sigma_max_seq_len=8192,
+        sigma_shift_terminal=0.02,
     ),
 }

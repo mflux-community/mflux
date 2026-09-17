@@ -14,9 +14,12 @@ if TYPE_CHECKING:
     from mflux.models.fibo.latent_creator.fibo_latent_creator import FiboLatentCreator
     from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
     from mflux.models.qwen.latent_creator.qwen_latent_creator import QwenLatentCreator
+    from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
     from mflux.models.z_image.latent_creator.z_image_latent_creator import ZImageLatentCreator
 
-    LatentCreatorType: TypeAlias = type[FiboLatentCreator | FluxLatentCreator | QwenLatentCreator | ZImageLatentCreator]
+    LatentCreatorType: TypeAlias = type[
+        FiboLatentCreator | FluxLatentCreator | QwenLatentCreator | Qwen21LatentCreator | ZImageLatentCreator
+    ]
 
 
 class Img2Img:
