@@ -21,6 +21,8 @@ class BeforeLoopCallback(Protocol):
 
 
 class InLoopCallback(Protocol):
+    # May additionally declare `denoised: mx.array | None` to receive the model's per-step
+    # prediction when the model passes one (see GenerationContext.in_loop).
     def call_in_loop(
         self,
         t: int,

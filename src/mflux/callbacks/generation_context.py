@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 
 class GenerationContext:
+    _OPT_IN_KINDS = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+
     def __init__(
         self,
         registry: CallbackRegistry,
@@ -53,8 +55,8 @@ class GenerationContext:
     ) -> None:
         time_steps = time_steps or self._config.time_steps
         for subscriber in self._registry.in_loop_callbacks():
-            # Opt-in by signature: third-party callbacks with the fixed, pre-existing
-            # `call_in_loop` signature (no `denoised`, no **kwargs) must keep working untouched.
+            # Opt-in by declaring `denoised`; `**kwargs` alone does not opt in, so a decorator
+            # without `functools.wraps` or a bare Mock stays untouched.
             extra = {"denoised": denoised} if GenerationContext._accepts_denoised(subscriber) else {}
             subscriber.call_in_loop(
                 t=t,
@@ -89,5 +91,8 @@ class GenerationContext:
 
     @staticmethod
     def _accepts_denoised(subscriber) -> bool:
-        parameters = inspect.signature(subscriber.call_in_loop).parameters.values()
-        return any(p.name == "denoised" or p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters)
+        try:
+            parameters = inspect.signature(subscriber.call_in_loop).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(p.name == "denoised" and p.kind in GenerationContext._OPT_IN_KINDS for p in parameters)
