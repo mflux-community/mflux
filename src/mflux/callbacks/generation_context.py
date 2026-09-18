@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING
 
 import mlx.core as mx
@@ -43,9 +44,18 @@ class GenerationContext:
                 control_images=control_images,
             )
 
-    def in_loop(self, t: int, latents: mx.array, time_steps: tqdm = None) -> None:
+    def in_loop(
+        self,
+        t: int,
+        latents: mx.array,
+        time_steps: tqdm = None,
+        denoised: mx.array | None = None,
+    ) -> None:
         time_steps = time_steps or self._config.time_steps
         for subscriber in self._registry.in_loop_callbacks():
+            # Opt-in by signature: third-party callbacks with the fixed, pre-existing
+            # `call_in_loop` signature (no `denoised`, no **kwargs) must keep working untouched.
+            extra = {"denoised": denoised} if GenerationContext._accepts_denoised(subscriber) else {}
             subscriber.call_in_loop(
                 t=t,
                 seed=self._seed,
@@ -53,6 +63,7 @@ class GenerationContext:
                 latents=latents,
                 config=self._config,
                 time_steps=time_steps,
+                **extra,
             )
 
     def after_loop(self, latents: mx.array) -> None:
@@ -75,3 +86,8 @@ class GenerationContext:
                 config=self._config,
                 time_steps=time_steps,
             )
+
+    @staticmethod
+    def _accepts_denoised(subscriber) -> bool:
+        parameters = inspect.signature(subscriber.call_in_loop).parameters.values()
+        return any(p.name == "denoised" or p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters)

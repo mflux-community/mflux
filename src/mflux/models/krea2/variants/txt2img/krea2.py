@@ -97,7 +97,7 @@ class Krea2(nn.Module):
                 v = predict(latents=latents, timestep=ts)
                 denoised = latents - sigmas[t] * v
                 latents = stepper.step(t, latents, v, denoised)
-                ctx.in_loop(t, latents)
+                ctx.in_loop(t, latents, denoised=denoised)
                 mx.eval(latents)
             except KeyboardInterrupt:  # noqa: PERF203
                 ctx.interruption(t, latents)
