@@ -58,29 +58,30 @@ class _TinyFlux2:
         # One value-and-grad step: the loss, the gradients flattened by parameter path, and the
         # peak memory the step reached.
         model.transformer.gradient_checkpointing = checkpointing
-        _TinyFlux2.settle()
-        mx.reset_peak_memory()
-        value_and_grad = nn.value_and_grad(model, lambda m, i: _TinyFlux2.loss(m, i))
-        loss, grads = value_and_grad(model, inputs)
-        if ordered:
-            TrainingTrainer._evaluate_backward_in_block_order(loss, grads)
-        else:
-            mx.eval(loss, grads)
-        return float(loss), dict(tree_flatten(grads)), mx.get_peak_memory()
+        # MLX releases a buffer from its completion handler after mx.eval has returned, so the
+        # peak counter would otherwise fold in whatever earlier work is still being released,
+        # and how much of this step's own memory is alive at once would depend on GPU timing.
+        # Wait for earlier releases, then measure under a memory limit that is always
+        # exceeded: MLX then waits for queued work before continuing (and drops its buffer
+        # cache on every fresh allocation), so the peak is the memory the step keeps alive at
+        # once on top of what the process already holds, the same on every run.
+        _TinyFlux2.wait_for_releases()
+        previous_limit = mx.set_memory_limit(1)
+        try:
+            mx.reset_peak_memory()
+            value_and_grad = nn.value_and_grad(model, lambda m, i: _TinyFlux2.loss(m, i))
+            loss, grads = value_and_grad(model, inputs)
+            if ordered:
+                TrainingTrainer._evaluate_backward_in_block_order(loss, grads)
+            else:
+                mx.eval(loss, grads)
+            return float(loss), dict(tree_flatten(grads)), mx.get_peak_memory()
+        finally:
+            mx.set_memory_limit(previous_limit)
 
     @staticmethod
-    def settle() -> None:
-        # Buffers of dropped arrays stay counted as active until the GPU work that used them
-        # completes, so a peak measured right after other work inherits that memory. Wait for
-        # the queue to drain and start the measurement from an empty cache.
+    def wait_for_releases() -> None:
         mx.synchronize()
-        mx.clear_cache()
-
-    @staticmethod
-    def lowest_peak(model: nn.Module, inputs: dict, *, ordered: bool, trials: int = 3) -> int:
-        # Completion timing can only add to a measured peak, never remove from it, so the
-        # smallest of a few trials is the closest reading of what the schedule itself needs.
-        return min(_TinyFlux2.run(model, inputs, checkpointing=True, ordered=ordered)[2] for _ in range(trials))
 
     @staticmethod
     def _inject_lora(module: nn.Module) -> None:
@@ -116,8 +117,8 @@ def test_ordered_backward_lowers_peak_memory_below_plain_checkpointing():
     model = _TinyFlux2.build(num_layers=2, num_single_layers=12)
     inputs = _TinyFlux2.inputs()
 
-    ckpt_peak = _TinyFlux2.lowest_peak(model, inputs, ordered=False)
-    ordered_peak = _TinyFlux2.lowest_peak(model, inputs, ordered=True)
+    ckpt_peak = _TinyFlux2.run(model, inputs, checkpointing=True, ordered=False)[2]
+    ordered_peak = _TinyFlux2.run(model, inputs, checkpointing=True, ordered=True)[2]
 
     # Evaluating the grads in tree order keeps most recomputed blocks alive; the ordered
     # backward is what brings the peak down to "a few blocks".
@@ -125,16 +126,18 @@ def test_ordered_backward_lowers_peak_memory_below_plain_checkpointing():
 
 
 @pytest.mark.fast
-def test_settle_releases_dropped_buffers_before_a_measurement():
-    junk = [mx.zeros((256 * 2**20 // 4,), dtype=mx.float32) for _ in range(4)]
+def test_wait_for_releases_drops_buffers_still_being_released():
+    _TinyFlux2.wait_for_releases()
+    before = mx.get_active_memory()
+    junk = [mx.zeros((64 * 2**20 // 4,), dtype=mx.float32) for _ in range(4)]
     mx.eval(junk)
     del junk
 
-    _TinyFlux2.settle()
+    _TinyFlux2.wait_for_releases()
 
-    # Without waiting for the GPU queue, the dropped gigabyte is still counted as active here
-    # and would be folded into whatever peak is measured next.
-    assert mx.get_active_memory() < 64 * 2**20
+    # Right after `del` the 256 MB are still counted as active; the wait is what lets the
+    # completion handler release them before the next measurement resets its peak.
+    assert mx.get_active_memory() - before < 32 * 2**20
 
 
 @pytest.mark.fast
