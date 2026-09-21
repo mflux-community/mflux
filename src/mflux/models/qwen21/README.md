@@ -1,5 +1,7 @@
 # Qwen Image 2.1
 
+For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `mflux-generate-qwen-2.1-edit`. The existing command below retains its text-to-image and strength-based img2img behavior.
+
 MFLUX’s MLX implementation of **Qwen-Image-2.1** (`Qwen/Qwen-Image-2.1`), the second-generation
 Qwen Image text-to-image model.
 

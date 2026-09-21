@@ -22,10 +22,12 @@ class Qwen3VLVisionModel(nn.Module):
         out_hidden_size: int = 2560,
         deepstack_visual_indexes: list[int] | None = None,
         hidden_act: str = "gelu_pytorch_tanh",
+        preserve_input_dtype: bool = False,
     ):
         super().__init__()
         self.spatial_merge_size = spatial_merge_size
         self.patch_size = patch_size
+        self.preserve_input_dtype = preserve_input_dtype
         self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
 
         self.patch_embed = Qwen3VLVisionPatchEmbed(
@@ -47,6 +49,7 @@ class Qwen3VLVisionModel(nn.Module):
                 num_heads=num_heads,
                 intermediate_size=intermediate_size,
                 hidden_act=hidden_act,
+                preserve_input_dtype=preserve_input_dtype,
             )
             for _ in range(depth)
         ]
@@ -76,6 +79,8 @@ class Qwen3VLVisionModel(nn.Module):
     ) -> tuple[mx.array, list[mx.array] | None]:
         hidden_states = self.patch_embed(hidden_states)
         pos_embeds = Qwen3VLVisionModel._fast_pos_embed_interpolate(self.spatial_merge_size, self.pos_embed, self.num_grid_per_side, grid_thw)  # fmt: off
+        if self.preserve_input_dtype:
+            pos_embeds = pos_embeds.astype(hidden_states.dtype)
         hidden_states = hidden_states + pos_embeds
         rotary_pos_emb = Qwen3VLVisionModel._rot_pos_emb(self.rotary_pos_emb, self.spatial_merge_size, grid_thw)
 
