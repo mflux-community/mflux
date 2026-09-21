@@ -63,6 +63,7 @@ class ImageUtil:
         init_metadata: dict | None = None,
         pid_decode: bool = False,
         pid_degrade_sigma: float = 0.0,
+        generation_parameters: dict | None = None,
     ) -> GeneratedImage:
         image = ImageUtil.to_pil(decoded_latents)
         return GeneratedImage(
@@ -93,6 +94,7 @@ class ImageUtil:
             init_metadata=init_metadata,
             pid_decode=pid_decode,
             pid_degrade_sigma=pid_degrade_sigma,
+            generation_parameters=generation_parameters,
         )
 
     @staticmethod
