@@ -5,6 +5,7 @@ from mlx import nn
 
 from mflux.models.common.config import Config, ModelConfig
 from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
+from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.ideogram4.ideogram4_initializer import Ideogram4Initializer
@@ -191,7 +192,7 @@ class Ideogram4(nn.Module):
             return pid_decode_latents(
                 vae=self.vae, latent=latents, caption=prompt, seed=seed, degrade_sigma=degrade_sigma
             )
-        return self.vae.decode(latents)
+        return VAEUtil.decode(vae=self.vae, latent=latents, tiling_config=self.tiling_config)
 
     @staticmethod
     def _predict_conditional(transformer: Ideogram4Transformer):

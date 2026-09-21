@@ -13,6 +13,9 @@ class Flux2VAE(nn.Module):
     shift_factor: float = 0.0
     latent_channels: int = 32
     pid_variant = "flux2"  # see PID_CHECKPOINT_VARIANTS
+    # Each tile carries its own GroupNorm statistics, which offsets colour between tiles on this
+    # decoder. Tiling stays available through --vae-tiling, but low-RAM mode must not choose it.
+    supports_implicit_tiling: bool = False
 
     def __init__(self):
         super().__init__()

@@ -80,6 +80,7 @@ def _fake_ideogram4_model() -> Ideogram4:
     model.lora_scales = None
     model.prompt_cache = {}
     model.text_encoder = FakeTextEncoder()
+    model.tiling_config = None
     return model
 
 
