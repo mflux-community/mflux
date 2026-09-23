@@ -43,6 +43,7 @@ class LensImage:
         self.model_config = model_config or ModelConfig.lens_turbo()
         self.bits = quantize
         self.callbacks = CallbackRegistry()
+        self.tiling_config = None
 
         encoder_root = PathResolution.resolve(
             path=encoder_path or DEFAULT_ENCODER_REPO,
@@ -123,7 +124,7 @@ class LensImage:
         ctx.after_loop(latents)
 
         packed = latents.reshape(1, latent_height, latent_width, 128).transpose(0, 3, 1, 2)
-        decoded = self.vae.decode_packed_latents(packed.astype(mx.float32))
+        decoded = self.vae.decode_packed_latents(packed.astype(mx.float32), tiling_config=self.tiling_config)
 
         return ImageUtil.to_image(
             decoded_latents=decoded,

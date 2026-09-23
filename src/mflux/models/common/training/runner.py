@@ -42,6 +42,13 @@ class TrainingRunner:
             lora.scale = 0.0
 
     @staticmethod
+    def _apply_low_ram_tiling(model) -> None:
+        # Same rule as the generate path: low-RAM mode tiles the decode of the preview images it
+        # writes, except on decoders that opt out of being tiled without the user asking.
+        if hasattr(model, "tiling_config") and model.tiling_config is None and TilingConfig.may_tile_implicitly(model):
+            model.tiling_config = TilingConfig()
+
+    @staticmethod
     def _resolve_data_dimensions(*, training_spec: TrainingSpec, image_path) -> tuple[int, int]:
         # Infer per-image size from the image file (may vary per image).
         width, height = oriented_size(image_path.resolve())
@@ -107,9 +114,7 @@ class TrainingRunner:
             raise ValueError("Flux1 training is no longer supported.")
 
         if training_spec.low_ram:
-            model = adapter.model()
-            if hasattr(model, "tiling_config") and model.tiling_config is None:
-                model.tiling_config = TilingConfig()
+            TrainingRunner._apply_low_ram_tiling(adapter.model())
 
         # For Z-Image-Turbo we always apply the assistant training adapter (automatic, no config needed).
         if is_zimage_turbo:

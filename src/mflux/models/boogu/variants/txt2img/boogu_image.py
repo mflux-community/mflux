@@ -9,6 +9,7 @@ from mflux.models.boogu.model.boogu_transformer.boogu_transformer import BooguIm
 from mflux.models.boogu.weights.boogu_weight_definition import BooguWeightDefinition
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux.model.flux_vae.vae import VAE
 from mflux.utils.exceptions import StopImageGenerationException
@@ -101,7 +102,7 @@ class BooguImage(nn.Module):
         ctx.after_loop(latents)
 
         # 4. Decode (the FLUX VAE applies the scaling/shift internally).
-        decoded = self.vae.decode(latents)
+        decoded = VAEUtil.decode(vae=self.vae, latent=latents, tiling_config=self.tiling_config)
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,

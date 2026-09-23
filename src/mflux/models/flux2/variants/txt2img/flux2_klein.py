@@ -126,7 +126,7 @@ class Flux2Klein(nn.Module):
                 vae=self.vae, latent=lq_latent, caption=prompt, seed=seed, degrade_sigma=pid_degrade_sigma
             )
         else:
-            decoded = self.vae.decode_packed_latents(packed_latents)
+            decoded = self.vae.decode_packed_latents(packed_latents, tiling_config=self.tiling_config)
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
