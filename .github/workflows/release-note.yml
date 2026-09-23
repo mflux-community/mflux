@@ -22,14 +22,28 @@ jobs:
         # tests/release/test_release_notes.py::test_ci_check_regex_matches_the_extractor):
         # an opening fence without a closing fence, or an empty block, would pass a looser
         # check here and then land in the draft as [needs edit].
+        # When it fails, say what is wrong with THIS body rather than repeating the rule:
+        # the common miss is a fenced block whose opening line has no release-note tag, or
+        # has the note typed on the fence line itself, and "add a fenced block" reads as
+        # nonsense to someone looking at the block they just wrote.
         run: |
           python3 - <<'PY'
           import json, os, re, sys
           event = json.load(open(os.environ["GITHUB_EVENT_PATH"]))
           body = (event.get("pull_request") or {}).get("body") or ""
           match = re.search(r"^```release-note[ \t\r]*\n(.*?)^```[ \t\r]*$", body, re.DOTALL | re.IGNORECASE | re.MULTILINE)
-          if match is None or not match.group(1).strip():
-              print("::error::Add a complete ```release-note fenced block to the PR body (write none inside it for changes users never see).")
+          if match is not None and match.group(1).strip():
+              print("release-note block found")
+              sys.exit(0)
+          want = "The release note goes in a fenced block that opens with exactly ```release-note, like this:%0A%0A```release-note%0AOne or two sentences a user can read.%0A```%0A%0AWrite none inside it for changes users never see."
+          if match is not None:
+              print(f"::error::The ```release-note block in the description is empty. {want}")
               sys.exit(1)
-          print("release-note block found")
+          near = re.search(r"^```([^\n`]*)$", body, re.MULTILINE)
+          if near is not None and near.group(1).strip() and "release-note" not in near.group(1).lower():
+              typed = near.group(1).strip()
+              print(f"::error::A fenced block opens with ```{typed} and the harvester does not read that. {want}")
+              sys.exit(1)
+          print(f"::error::No ```release-note block found in the description. {want}")
+          sys.exit(1)
           PY
