@@ -61,9 +61,20 @@ class TestQwenImage21:
         with pytest.raises(ModelConfigError, match="only accepts"):
             ConfigResolution.resolve_restricted("qwen", "qwen-image-2.1")
 
-    @pytest.mark.parametrize("option,value", [("--width", "31"), ("--steps", "1"), ("--output-resolution", "17")])
+    @pytest.mark.parametrize(
+        "option,value",
+        [
+            ("--width", "31"),
+            ("--steps", "1"),
+            ("--output-resolution", "17"),
+            ("--guidance", "0"),
+            ("--guidance", "nan"),
+            ("--guidance", "inf"),
+            ("--guidance", "-inf"),
+        ],
+    )
     def test_invalid_cli_inputs_fail_before_loading(self, option, value, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["qwen21", "--prompt", "test", option, value])
+        monkeypatch.setattr(sys, "argv", ["qwen21", "--prompt", "test", f"{option}={value}"])
         monkeypatch.setattr(cli, "QwenImage21Edit", lambda **kwargs: pytest.fail("Invalid input reached model loading"))
         with pytest.raises(SystemExit) as error:
             cli.main()
@@ -94,6 +105,18 @@ class TestQwenImage21:
         )
         args = build_parser().parse_args()
         assert args.use_kv_cache and args.output_resolution == 1024
+
+    @pytest.mark.parametrize("option", ["--no-use-kv-cache", "--no-use-kv"])
+    def test_metadata_cannot_reverse_explicit_cache_disable(self, tmp_path, monkeypatch, option):
+        path = tmp_path / "meta.json"
+        path.write_text(json.dumps(dict(model="Qwen/Qwen-Image-2.1", prompt="test", seed=42, use_kv_cache=True)))
+        monkeypatch.setattr(sys, "argv", ["qwen21", "--config-from-metadata", str(path), option])
+        if option == "--no-use-kv-cache":
+            assert build_parser().parse_args().use_kv_cache is False
+        else:
+            with pytest.raises(SystemExit) as error:
+                build_parser().parse_args()
+            assert error.value.code == 2
 
     def test_latent_layout_roundtrip(self):
         x = mx.arange(64 * 2 * 4).reshape(1, 64, 1, 2, 4)

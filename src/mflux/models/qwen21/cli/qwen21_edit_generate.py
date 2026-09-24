@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
@@ -66,6 +67,9 @@ def main() -> None:
     if len(paths) > 10:
         parser.error("Qwen-Image-2.1 supports at most 10 reference images.")
     try:
+        guidance = args.guidance if args.guidance is not None else 1.0
+        if not math.isfinite(guidance) or guidance < 1:
+            raise ValueError("guidance must be finite and at least 1.")
         width, height = args.width, args.height
         if isinstance(width, ScaleFactor) or isinstance(height, ScaleFactor):
             width, height = DimensionResolver.resolve(
@@ -97,7 +101,7 @@ def main() -> None:
                 width=width,
                 height=height,
                 num_inference_steps=args.steps,
-                guidance=args.guidance if args.guidance is not None else 1.0,
+                guidance=guidance,
                 image_paths=paths,
                 output_resolution=args.output_resolution,
                 use_kv_cache=args.use_kv_cache,

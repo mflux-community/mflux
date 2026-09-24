@@ -14,6 +14,8 @@ from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import
 
 pytestmark = pytest.mark.fast
 
+# Tiny torch references run on CPU; CI's virtualized MPS cannot allocate even these models.
+
 
 class TestQwenImage21Reference:
     @staticmethod
@@ -61,17 +63,17 @@ class TestQwenImage21Reference:
             causal_condition=True,
         )
         torch.manual_seed(42)
-        reference = diffusers.QwenImage21Transformer2DModel(**config).to("mps").eval()
+        reference = diffusers.QwenImage21Transformer2DModel(**config).to("cpu").eval()
         model = QwenImage21Transformer(config)
         self.transfer(model, reference)
         layout = QwenImage21Layout.create(mx.array(slots), shapes, (4, 6, 6))
-        latents = torch.randn(1, len(shapes) * 4, 4, device="mps")
-        text = torch.randn(1, len(slots), 32, device="mps")
-        mask = torch.tensor([slots + [True]], device="mps")
+        latents = torch.randn(1, len(shapes) * 4, 4, device="cpu")
+        text = torch.randn(1, len(slots), 32, device="cpu")
+        mask = torch.tensor([slots + [True]], device="cpu")
         cache = []
         ref_cache = module.QwenImage21KVCache(2)
         for index, timestep in enumerate([0.8, 0.5]):
-            t = torch.tensor([timestep], device="mps")
+            t = torch.tensor([timestep], device="cpu")
             with torch.no_grad():
                 expected = reference(
                     latents,
@@ -108,11 +110,11 @@ class TestQwenImage21Reference:
             scale_factor_temporal=8,
         )
         torch.manual_seed(42)
-        reference = diffusers.AutoencoderKLQwenImage21(**config).to("mps").eval()
+        reference = diffusers.AutoencoderKLQwenImage21(**config).to("cpu").eval()
         model = QwenImage21VAE(config)
         self.transfer(model, reference, QwenImage21WeightDefinition.vae_weight)
-        pixels = torch.randn(1, 4, 1, 32, 32, device="mps")
-        latents = torch.randn(1, 4, 1, 2, 2, device="mps")
+        pixels = torch.randn(1, 4, 1, 32, 32, device="cpu")
+        latents = torch.randn(1, 4, 1, 2, 2, device="cpu")
         with torch.no_grad():
             self.assert_close(model.encode(mx.array(pixels.cpu().numpy())), reference.encode(pixels).latent_dist.mode())
             self.assert_close(model.decode(mx.array(latents.cpu().numpy())), reference.decode(latents).sample)
@@ -161,7 +163,7 @@ class TestQwenImage21Reference:
             ),
         )
         torch.manual_seed(42)
-        reference = Qwen3VLModel(Qwen3VLConfig(**config)).to(device="mps", dtype=dtype).eval()
+        reference = Qwen3VLModel(Qwen3VLConfig(**config)).to(device="cpu", dtype=dtype).eval()
         reference.language_model.norm = torch.nn.Identity()
         if dtype == torch.float32:
             # Exercise exact GELU versus its tanh approximation outside the near-linear initialization range.
@@ -169,6 +171,15 @@ class TestQwenImage21Reference:
                 for merger in [reference.visual.merger, *reference.visual.deepstack_merger_list]:
                     merger.linear_fc1.weight.mul_(10)
         model = QwenImage21TextEncoder(config)
+        if dtype == torch.float32:
+            # Keep the exact-GELU regression check independent of end-to-end accumulation drift.
+            inputs = mx.linspace(-3, 3, 257)
+            reference_inputs = torch.from_numpy(np.array(inputs))
+            for merger, reference_merger in zip(
+                [model.visual.merger, *model.visual.deepstack_merger_list],
+                [reference.visual.merger, *reference.visual.deepstack_merger_list],
+            ):
+                self.assert_close(merger.act_fn(inputs), reference_merger.act_fn(reference_inputs))
         weights = [
             (
                 key,
@@ -182,21 +193,26 @@ class TestQwenImage21Reference:
             for key, value in reference.state_dict().items()
         ]
         model.load_weights(weights, strict=False)
-        ids = torch.tensor([ids], device="mps")
+        ids = torch.tensor([ids], device="cpu")
         kwargs, mlx_kwargs = {}, {}
         if grids is not None:
-            grids = torch.tensor(grids, device="mps")
-            pixels = torch.randn(int(grids.prod(-1).sum()), 24, device="mps", dtype=dtype)
+            grids = torch.tensor(grids, device="cpu")
+            pixels = torch.randn(int(grids.prod(-1).sum()), 24, device="cpu", dtype=dtype)
             kwargs = dict(pixel_values=pixels, image_grid_thw=grids, mm_token_type_ids=(ids == 99).int())
             mlx_kwargs = dict(
-                pixel_values=mx.array(pixels.float().cpu().numpy()), image_grid_thw=mx.array(grids.cpu().numpy())
+                pixel_values=mx.array(pixels.float().cpu().numpy()).astype(
+                    mx.float32 if dtype == torch.float32 else mx.bfloat16
+                ),
+                image_grid_thw=mx.array(grids.cpu().numpy()),
             )
         with torch.no_grad():
             expected = reference(input_ids=ids, use_cache=False, **kwargs).last_hidden_state
         actual = model(mx.array(ids.cpu().numpy()), **mlx_kwargs)
         tolerance = 1e-4 if dtype == torch.float32 else 1e-2
+        # M5 Max review measured 1.23e-4 float32 drift with identical weights, on CPU and MPS.
+        absolute_tolerance = 2e-4 if dtype == torch.float32 else tolerance
         np.testing.assert_allclose(
-            np.array(actual.astype(mx.float32)), expected.float().cpu().numpy(), atol=tolerance, rtol=tolerance
+            np.array(actual.astype(mx.float32)), expected.float().cpu().numpy(), atol=absolute_tolerance, rtol=tolerance
         )
 
     @pytest.mark.parametrize("width,height", [(1024, 1024), (2048, 2048), (1536, 2752)])
@@ -213,5 +229,5 @@ class TestQwenImage21Reference:
             shift_terminal=0.02,
         )
         mu = 0.5 + (config.image_seq_len - 256) * (0.9 - 0.5) / (8192 - 256)
-        reference.set_timesteps(sigmas=np.linspace(1, 1 / 40, 40), mu=mu, device="mps")
+        reference.set_timesteps(sigmas=np.linspace(1, 1 / 40, 40), mu=mu, device="cpu")
         self.assert_close(config.scheduler.sigmas, reference.sigmas)

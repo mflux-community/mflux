@@ -1,6 +1,6 @@
 # Qwen Image 2.1
 
-For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `mflux-generate-qwen-2.1-edit`. The existing command below retains its text-to-image and strength-based img2img behavior.
+For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `uv run mflux-generate-qwen-2.1-edit`. The existing command below retains its text-to-image and strength-based img2img behavior.
 
 MFLUX’s MLX implementation of **Qwen-Image-2.1** (`Qwen/Qwen-Image-2.1`), the second-generation
 Qwen Image text-to-image model.
@@ -82,6 +82,8 @@ Pass `--image-path` and optionally `--image-strength`, like the other models.
 
 ## Notes
 
+The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing command has its own [capabilities and limitations](reference/README.md).
+
 - Weights: `Qwen/Qwen-Image-2.1` (~33 GB bf16 on disk: 14.2 GB transformer, 17.5 GB text encoder,
   1.4 GB VAE). The text encoder is kept in bf16 like the 1.x port; quantization applies to the
   transformer and VAE.
@@ -92,8 +94,7 @@ Pass `--image-path` and optionally `--image-strength`, like the other models.
   not mapped or loaded.
 - The prompt template is a raw string (not `apply_chat_template`) with the system-role tokens
   dropped from the final hidden states, matching the reference pipeline exactly.
-- The text prefix KV cache (valid because `causal_condition` makes text activations
-  step-independent) is a planned optimization; the current port recomputes the prefix each step.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format).
-- Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower)
-  and PID decoding.
+- The text-to-image command recomputes the text prefix each step. Use
+  `uv run mflux-generate-qwen-2.1-edit` for prefix KV caching and instruction-based reference editing.
+- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
+- Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
