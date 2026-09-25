@@ -14,6 +14,7 @@ from mflux.models.qwen21.model.qwen21_text_encoder.qwen21_text_encoder import Qw
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.model.qwen21_vae.qwen21_vae import Qwen21VAE
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
+from mflux.models.qwen21.qwen21_pdd_scheduler import Qwen21PDDScheduler
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
@@ -58,6 +59,11 @@ class QwenImage21(nn.Module):
         scheduler: str = "linear",
         negative_prompt: str | None = None,
     ) -> GeneratedImage:
+        is_pdd = self.transformer.has_pdd
+        if is_pdd and num_inference_steps != self.transformer.pdd_proj_out_weights.shape[0]:
+            raise ValueError(f"This Qwen Image 2.1 PDD model requires {self.transformer.pdd_proj_out_weights.shape[0]} steps.")
+        if is_pdd and (guidance != 1.0 or negative_prompt):
+            raise ValueError("Qwen Image 2.1 PDD models require guidance=1.0 with no negative prompt.")
         config = Config(
             width=width,
             height=height,
@@ -68,6 +74,8 @@ class QwenImage21(nn.Module):
             model_config=self.model_config,
             num_inference_steps=num_inference_steps,
         )
+        if is_pdd:
+            config._scheduler = Qwen21PDDScheduler(self.transformer.pdd_sigmas)
 
         latents = LatentCreator.create_for_txt2img_or_img2img(
             seed=seed,
@@ -83,7 +91,7 @@ class QwenImage21(nn.Module):
             ),
         )
         # img2img noise interpolation promotes to fp32; keep the stream in model precision
-        latents = latents.astype(ModelConfig.precision)
+        latents = latents.astype(mx.float32 if is_pdd else ModelConfig.precision)
 
         prompt_embeds, prompt_mask = Qwen21PromptEncoder.encode_prompt(
             prompt=prompt,
@@ -104,23 +112,25 @@ class QwenImage21(nn.Module):
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(latents)
 
-        for t in config.time_steps:
+        for step_index, t in enumerate(config.time_steps):
             try:
-                latents = config.scheduler.scale_model_input(latents, t)
+                model_input = config.scheduler.scale_model_input(latents, t)
                 noise = self.transformer(
                     t=t,
                     config=config,
-                    hidden_states=latents,
+                    hidden_states=model_input.astype(ModelConfig.precision) if is_pdd else model_input,
                     encoder_hidden_states=prompt_embeds,
                     encoder_hidden_states_mask=prompt_mask,
+                    pdd_step=step_index if is_pdd else None,
                 )
                 if do_true_cfg:
                     noise_negative = self.transformer(
                         t=t,
                         config=config,
-                        hidden_states=latents,
+                        hidden_states=model_input.astype(ModelConfig.precision) if is_pdd else model_input,
                         encoder_hidden_states=negative_prompt_embeds,
                         encoder_hidden_states_mask=negative_prompt_mask,
+                        pdd_step=step_index if is_pdd else None,
                     )
                     noise = noise_negative + config.guidance * (noise - noise_negative)
 

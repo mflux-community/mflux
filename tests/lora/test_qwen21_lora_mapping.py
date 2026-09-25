@@ -9,7 +9,10 @@ from mflux.cli.capabilities import describe_command
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.qwen21.cli import qwen21_generate
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
+from mflux.models.qwen21.pdd_loader import Qwen21PDDLoader
+from mflux.models.qwen21.qwen21_pdd_scheduler import Qwen21PDDScheduler
 from mflux.models.qwen21.weights.qwen21_lora_mapping import Qwen21LoRAMapping
 
 
@@ -48,7 +51,7 @@ def test_qwen21_peft_updates_target_layer(tmp_path, name, adapter_name, bake_lor
 
 
 @pytest.mark.fast
-def test_qwen21_peft_mapping_supports_transformer_prefixed_global_targets():
+def test_qwen21_peft_mapping_supports_transformer_prefixed_global_targets(tmp_path):
     targets = {target.model_path: target for target in Qwen21LoRAMapping.get_mapping()}
 
     assert (
@@ -68,6 +71,68 @@ def test_qwen21_peft_mapping_supports_transformer_prefixed_global_targets():
         in targets["time_text_embed.timestep_embedder.linear_2"].possible_up_patterns
     )
     assert "transformer.modulation.1.lora_B.default.weight" in targets["modulation.layers.1"].possible_up_patterns
+
+    model = nn.Module()
+    model.transformer_blocks = [Qwen21TransformerBlock(dim=8, num_attention_heads=2, attention_head_dim=4)]
+    model.time_text_embed = nn.Module()
+    model.time_text_embed.timestep_embedder = nn.Module()
+    model.time_text_embed.timestep_embedder.linear_1 = nn.Linear(4, 4, bias=False)
+    model.modulation = nn.Sequential(nn.SiLU(), nn.Linear(4, 16, bias=False))
+    aliases = {
+        "transformer.transformer_blocks.0.attn.to_q": "transformer_blocks.0.attn.to_q",
+        "transformer.time_text_embed.timestep_embedder.linear_1": "time_text_embed.timestep_embedder.linear_1",
+        "transformer.modulation.1": "modulation.layers.1",
+    }
+    weights = {}
+    for source_path, target_path in aliases.items():
+        linear = LoRALoader._get_target_module(model, target_path)
+        output_dims, input_dims = linear.weight.shape
+        weights[f"{source_path}.lora_A.default.weight"] = mx.ones((2, input_dims))
+        weights[f"{source_path}.lora_B.default.weight"] = mx.ones((output_dims, 2))
+    adapter = tmp_path / "prefixed-and-global.safetensors"
+    mx.save_safetensors(str(adapter), weights)
+
+    LoRALoader.load_and_apply_lora(Qwen21LoRAMapping.get_mapping(), model, [str(adapter)], bake_lora=False)
+
+    for target_path in aliases.values():
+        assert isinstance(LoRALoader._get_target_module(model, target_path), LoRALinear)
+
+
+@pytest.mark.fast
+def test_qwen21_pdd_loader_applies_prefused_output_heads(tmp_path):
+    transformer = Qwen21Transformer(
+        in_channels=4,
+        out_channels=2,
+        num_layers=1,
+        attention_head_dim=4,
+        num_attention_heads=2,
+        context_in_dim=6,
+    )
+    adapter = tmp_path / "fun-acc.safetensors"
+    mx.save_safetensors(
+        str(adapter),
+        {
+            "img_in.lora_down": mx.ones((2, 4)),
+            "img_in.lora_up": mx.ones((8, 2)),
+            "proj_out.weight": mx.ones((4, 2, 8)),
+        },
+        {"format": Qwen21PDDLoader.FORMAT},
+    )
+
+    Qwen21PDDLoader.load_and_apply(transformer, str(adapter), scale=1.0, bake_lora=True)
+
+    assert transformer.has_pdd
+    assert transformer.pdd_proj_out_weights.shape == (4, 2, 8)
+    assert mx.array_equal(transformer.pdd_sigmas, Qwen21PDDLoader.SIGMAS)
+    assert "pdd_proj_out_weights" in transformer.parameters()
+
+
+@pytest.mark.fast
+def test_qwen21_pdd_scheduler_uses_fp32_state():
+    scheduler = Qwen21PDDScheduler(mx.array([1.0, 0.5, 0.0]))
+    result = scheduler.step(mx.ones((1,), dtype=mx.bfloat16), 0, mx.ones((1,), dtype=mx.bfloat16))
+    assert result.dtype == mx.float32
+    assert mx.allclose(result, mx.array([0.5], dtype=mx.float32)).item()
 
 
 @pytest.mark.fast
