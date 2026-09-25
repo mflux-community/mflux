@@ -114,7 +114,7 @@ class QwenImage21(nn.Module):
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(latents)
 
-        for step_index, t in enumerate(config.time_steps):
+        for t in config.time_steps:
             try:
                 model_input = config.scheduler.scale_model_input(latents, t)
                 noise = self.transformer(
@@ -123,7 +123,7 @@ class QwenImage21(nn.Module):
                     hidden_states=model_input.astype(ModelConfig.precision) if is_pdd else model_input,
                     encoder_hidden_states=prompt_embeds,
                     encoder_hidden_states_mask=prompt_mask,
-                    pdd_step=step_index if is_pdd else None,
+                    pdd_step=t if is_pdd else None,
                 )
                 if do_true_cfg:
                     noise_negative = self.transformer(
@@ -132,7 +132,7 @@ class QwenImage21(nn.Module):
                         hidden_states=model_input.astype(ModelConfig.precision) if is_pdd else model_input,
                         encoder_hidden_states=negative_prompt_embeds,
                         encoder_hidden_states_mask=negative_prompt_mask,
-                        pdd_step=step_index if is_pdd else None,
+                        pdd_step=t if is_pdd else None,
                     )
                     noise = noise_negative + config.guidance * (noise - noise_negative)
 

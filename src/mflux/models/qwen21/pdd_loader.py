@@ -47,12 +47,13 @@ class Qwen21PDDLoader:
                 raise ValueError(f"Unsupported PDD tensor: {key}")
             target_path = key[: -len(".weight")]
             target = LoRALoader._get_target_module(transformer, target_path)
-            if not hasattr(target, "weight") or target.weight.shape != value.shape:
+            target_weight = getattr(target, "weight", None)
+            if target_weight is None or target_weight.shape != value.shape:
+                model_shape = None if target_weight is None else target_weight.shape
                 raise ValueError(
-                    f"PDD weight shape mismatch at {key}: model has {getattr(target, 'weight', None).shape}, "
-                    f"adapter has {value.shape}."
+                    f"PDD weight shape mismatch at {key}: model has {model_shape}, adapter has {value.shape}."
                 )
-            target.weight = value.astype(target.weight.dtype)
+            target.weight = value.astype(target_weight.dtype)
 
         if not transformer.has_pdd:
             raise ValueError("PDD adapter does not contain the required step-specific output heads.")
