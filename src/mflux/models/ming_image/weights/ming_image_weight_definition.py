@@ -8,11 +8,11 @@ from mflux.models.z_image.weights.z_image_weight_mapping import ZImageWeightMapp
 
 
 class MingImageWeightDefinition:
-    """inclusionAI/Ming-Image-0.1-Design. The text encoder, connector and heads load in
-    passthrough mode (their module paths follow the checkpoint names after the key transforms
-    below); the DiT reuses Z-Image's mapping and the VAE Qwen-Image's, whose checkpoints use the
-    same tensor names. The mllm/ shards also hold the Qwen2.5 ViT, lm_head and audio router,
-    which text-to-image never uses and which are dropped on load."""
+    # inclusionAI/Ming-Image-0.1-Design. The text encoder, connector and heads load in
+    # passthrough mode (their module paths follow the checkpoint names after the key transforms
+    # below); the DiT reuses Z-Image's mapping and the VAE Qwen-Image's, whose checkpoints use the
+    # same tensor names. The mllm/ shards also hold the Qwen2.5 ViT, lm_head and audio router,
+    # which text-to-image never uses and which are dropped on load.
 
     @staticmethod
     def get_components() -> List[ComponentDefinition]:

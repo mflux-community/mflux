@@ -23,8 +23,8 @@ PROMPT_TEMPLATE = (
 
 
 class MingHeads(nn.Module):
-    """The mlp/ folder: learned query tokens plus the projections around the connector and the
-    direct-VLM head that turns three LLM hidden states into DiT-width caption tokens."""
+    # The mlp/ folder: learned query tokens plus the projections around the connector and the
+    # direct-VLM head that turns three LLM hidden states into DiT-width caption tokens.
 
     def __init__(self):
         super().__init__()
@@ -38,9 +38,9 @@ class MingHeads(nn.Module):
 class MingConditionEncoder:
     @staticmethod
     def build_inputs(prompt_ids: list[int]) -> tuple[mx.array, mx.array, mx.array]:
-        """Append the query-token block and build the 3D video_rope positions that
-        get_t_scale_rope_index assigns: text counts up on all three axes, the 1x1x256 query grid
-        shares t = h = n_text with w centred on it, and the closing token resumes at t + 1."""
+        # Append the query-token block and build the 3D video_rope positions that
+        # get_t_scale_rope_index assigns: text counts up on all three axes, the 1x1x256 query grid
+        # shares t = h = n_text with w centred on it, and the closing token resumes at t + 1.
         n_q = QUERY_GRID * QUERY_GRID
         ids = prompt_ids + [IMAGE_START_ID] + [IMAGE_PATCH_ID] * n_q + [IMAGE_END_ID]
         n_text = len(prompt_ids) + 1
@@ -61,7 +61,7 @@ class MingConditionEncoder:
         connector: MingConnector,
         heads: MingHeads,
     ) -> tuple[mx.array, mx.array]:
-        """Returns (cap_feats (256, 2560), cap_feats_2 (n_prompt, 3840))."""
+        # Returns (cap_feats (256, 2560), cap_feats_2 (n_prompt, 3840)).
         input_ids, position_ids, image_mask = MingConditionEncoder.build_inputs(prompt_ids)
         embeds = text_encoder.word_embeddings(input_ids)
         q_start = len(prompt_ids) + 1

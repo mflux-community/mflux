@@ -21,38 +21,53 @@ class MingImageInitializer:
         text_encoder_quantize: int | None = None,
         model_path: str | None = None,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
         model.model_config = model_config
         model.callbacks = CallbackRegistry()
         model.tiling_config = None
         model.lora_paths, model.lora_scales = None, None
-        weights = WeightLoader.load(weight_definition=MingImageWeightDefinition, model_path=path)
-        weights.components["text_encoder"] = LingMoeEncoder.stack_experts(weights.components["text_encoder"])
+        model.weights_path = model_path if model_path else model_config.model_name
+        model.quantize_args = (quantize, text_encoder_quantize)
+        weights = MingImageInitializer._load(model.weights_path)
         model.tokenizers = TokenizerLoader.load_all(
             definitions=MingImageWeightDefinition.get_tokenizers(),
-            model_path=path,
+            model_path=model.weights_path,
         )
-        model.text_encoder = LingMoeEncoder()
-        model.connector = MingConnector()
-        model.heads = MingHeads()
         model.transformer = MingTransformer()
         model.vae = MingVAE()
-        MingImageInitializer._apply_weights(model, weights, quantize, text_encoder_quantize)
-
-    @staticmethod
-    def _apply_weights(model, weights: LoadedWeights, quantize: int | None, text_encoder_quantize: int | None) -> None:
-        # The text encoder is quantized on its own so its (dominant, ~16B-parameter) MoE can go
-        # lower than the DiT; a saved mixed checkpoint reloads per layer from its stored shapes.
         model.bits = WeightApplier.apply_and_quantize(
             weights=weights,
             quantize_arg=quantize,
             weight_definition=MingImageWeightDefinition,
-            models={
-                "transformer": model.transformer,
-                "connector": model.connector,
-                "heads": model.heads,
-                "vae": model.vae,
-            },
+            models={"transformer": model.transformer, "vae": model.vae},
+        )
+        MingImageInitializer._apply_text_side(model, weights)
+
+    @staticmethod
+    def load_text_side(model) -> None:
+        # Rebuilds only the text encoder, connector and heads (e.g. after they were released to
+        # make room for the DiT). The loader maps weights lazily, so the DiT/VAE tensors it also
+        # returns are never read.
+        MingImageInitializer._apply_text_side(model, MingImageInitializer._load(model.weights_path))
+
+    @staticmethod
+    def _load(path: str) -> LoadedWeights:
+        weights = WeightLoader.load(weight_definition=MingImageWeightDefinition, model_path=path)
+        weights.components["text_encoder"] = LingMoeEncoder.stack_experts(weights.components["text_encoder"])
+        return weights
+
+    @staticmethod
+    def _apply_text_side(model, weights: LoadedWeights) -> None:
+        # The text encoder is quantized on its own so its (dominant, ~16B-parameter) MoE can go
+        # lower than the DiT; a saved mixed checkpoint reloads per layer from its stored shapes.
+        quantize, text_encoder_quantize = model.quantize_args
+        model.text_encoder = LingMoeEncoder()
+        model.connector = MingConnector()
+        model.heads = MingHeads()
+        WeightApplier.apply_and_quantize(
+            weights=weights,
+            quantize_arg=quantize,
+            weight_definition=MingImageWeightDefinition,
+            models={"connector": model.connector, "heads": model.heads},
         )
         text_encoder_component = next(c for c in MingImageWeightDefinition.get_components() if c.name == "text_encoder")
         WeightApplier.apply_and_quantize_single(

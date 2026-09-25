@@ -5,8 +5,8 @@ from mflux.models.qwen.model.qwen_vae.qwen_vae import QwenVAE
 
 
 class MingVAE(QwenVAE):
-    """Qwen-Image's AutoencoderKLQwenImage retrained for RGBA (input_channels = 4). Latents are
-    normalised with a single scaling factor instead of Qwen-Image's per-channel mean/std."""
+    # Qwen-Image's AutoencoderKLQwenImage retrained for RGBA (input_channels = 4). Latents are
+    # normalised with a single scaling factor instead of Qwen-Image's per-channel mean/std.
 
     SCALING_FACTOR = 8.0064
     image_channels = 4

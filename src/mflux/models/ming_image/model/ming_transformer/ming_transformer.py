@@ -67,10 +67,10 @@ class MingBlock(nn.Module):
 
 
 class MingTransformer(nn.Module):
-    """Ming-Image's DiT: the Z-Image single-stream architecture (same weights layout) with two
-    conditioning streams. The caption sequence is cap_embedder(cap_feats) followed by the
-    already-projected cap_feats_2, and alignment padding is zero-masked upstream, so for a single
-    image the pad tokens are simply dropped while the image RoPE offset still counts them."""
+    # Ming-Image's DiT: the Z-Image single-stream architecture (same weights layout) with two
+    # conditioning streams. The caption sequence is cap_embedder(cap_feats) followed by the
+    # already-projected cap_feats_2, and alignment padding is zero-masked upstream, so for a single
+    # image the pad tokens are simply dropped while the image RoPE offset still counts them.
 
     def __init__(
         self,
@@ -103,8 +103,8 @@ class MingTransformer(nn.Module):
         self.rope_embedder = RopeEmbedder(theta=rope_theta, axes_dims=list(axes_dims), axes_lens=list(axes_lens))
 
     def __call__(self, x: mx.array, timestep: mx.array, cap_feats: mx.array, cap_feats_2: mx.array) -> mx.array:
-        """x: (C, 1, H, W) latents; timestep: (1,) = 1 - sigma; cap_feats: (N1, 2560);
-        cap_feats_2: (N2, dim). Returns the flow prediction (C, 1, H, W) with upstream's sign."""
+        # x: (C, 1, H, W) latents; timestep: (1,) = 1 - sigma; cap_feats: (N1, 2560);
+        # cap_feats_2: (N2, dim). Returns the flow prediction (C, 1, H, W) with upstream's sign.
         key = f"{self.patch_size}-1"
         dtype = ModelConfig.precision
         t_emb = self.t_embedder(timestep.astype(mx.float32) * self.t_scale).astype(dtype)

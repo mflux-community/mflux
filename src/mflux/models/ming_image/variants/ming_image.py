@@ -1,5 +1,6 @@
 import gc
 import time
+from collections import OrderedDict
 
 import mlx.core as mx
 from mlx import nn
@@ -26,6 +27,7 @@ from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.image_util import ImageUtil
 
 SIGMA_SHIFT = 6.0
+PROMPT_CACHE_SIZE = 16
 
 
 class MingImage(nn.Module):
@@ -51,10 +53,10 @@ class MingImage(nn.Module):
             text_encoder_quantize=text_encoder_quantize,
             model_path=model_path,
         )
-        # With low_ram the ~16B-parameter text encoder is released after the first prompt is
-        # encoded, so the DiT denoises without it resident. Later prompts then need a reload.
+        # With low_ram the ~16B-parameter text encoder is released after each prompt is encoded,
+        # so the DiT denoises without it resident; a new prompt reloads it from disk.
         self.low_ram = low_ram
-        self._prompt_cache: dict[str, tuple[mx.array, mx.array]] = {}
+        self._prompt_cache: OrderedDict[str, tuple[mx.array, mx.array]] = OrderedDict()
 
     def generate_image(
         self,
@@ -90,7 +92,7 @@ class MingImage(nn.Module):
                 if sigma.item() > 0:
                     velocity = predict(latents, 1.0 - sigma.reshape(1), cap_feats, cap_feats_2, guidance)
                     latents = latents + (sigma_next - sigma) * velocity.astype(mx.float32)
-                ctx.in_loop(t, latents)
+                ctx.in_loop(t, latents, time_steps=steps)
                 mx.eval(latents)
             except KeyboardInterrupt:  # noqa: PERF203
                 ctx.interruption(t, latents)
@@ -109,12 +111,10 @@ class MingImage(nn.Module):
 
     def encode_prompt(self, prompt: str) -> tuple[mx.array, mx.array]:
         if prompt in self._prompt_cache:
+            self._prompt_cache.move_to_end(prompt)
             return self._prompt_cache[prompt]
         if self.text_encoder is None:
-            raise RuntimeError(
-                "The text encoder was released (low_ram) after the first prompt; create a new MingImage "
-                "to encode a different prompt."
-            )
+            MingImageInitializer.load_text_side(self)
         tokenizer = self.tokenizers["ming"].tokenizer
         prompt_ids = tokenizer(PROMPT_TEMPLATE.format(prompt=prompt), add_special_tokens=False)["input_ids"]
         cap_feats, cap_feats_2 = MingConditionEncoder.encode(
@@ -125,6 +125,8 @@ class MingImage(nn.Module):
         )
         mx.eval(cap_feats, cap_feats_2)
         self._prompt_cache[prompt] = (cap_feats, cap_feats_2)
+        if len(self._prompt_cache) > PROMPT_CACHE_SIZE:
+            self._prompt_cache.popitem(last=False)
         if self.low_ram:
             self.release_text_encoder()
         return cap_feats, cap_feats_2
@@ -145,22 +147,9 @@ class MingImage(nn.Module):
         s = shift * s / (1.0 + (shift - 1.0) * s)
         return mx.concatenate([s, mx.zeros((1,), dtype=mx.float32)])
 
-    @staticmethod
-    def _predict(transformer: MingTransformer):
-        def predict(latents, timestep, cap_feats, cap_feats_2, guidance):
-            x = latents[0][:, None]  # (C, 1, H, W)
-            out = transformer(x, timestep, cap_feats, cap_feats_2)
-            if guidance > 1.0:
-                # The official negative condition is both streams zeroed.
-                uncond = transformer(x, timestep, mx.zeros_like(cap_feats), mx.zeros_like(cap_feats_2))
-                out = out + guidance * (out - uncond)
-            return out[:, 0][None]
-
-        return predict
-
     def save_model(self, base_path: str) -> None:
         if self.text_encoder is None:
-            raise RuntimeError("Cannot save after the text encoder was released (low_ram).")
+            MingImageInitializer.load_text_side(self)
         ModelSaver.save_model(
             model=self,
             bits=self.bits,
@@ -175,3 +164,16 @@ class MingImage(nn.Module):
         canvas = Image.new("RGB", image.size, background)
         canvas.paste(image, mask=image.split()[3])
         return canvas
+
+    @staticmethod
+    def _predict(transformer: MingTransformer):
+        def predict(latents, timestep, cap_feats, cap_feats_2, guidance):
+            x = latents[0][:, None]  # (C, 1, H, W)
+            out = transformer(x, timestep, cap_feats, cap_feats_2)
+            if guidance > 1.0:
+                # The official negative condition is both streams zeroed.
+                uncond = transformer(x, timestep, mx.zeros_like(cap_feats), mx.zeros_like(cap_feats_2))
+                out = out + guidance * (out - uncond)
+            return out[:, 0][None]
+
+        return predict

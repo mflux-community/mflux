@@ -26,9 +26,9 @@ ROUTED_SCALING = 2.5
 
 
 class LingRope:
-    """video_rope from Ming's modeling_bailing_moe_v2: 3D (t, h, w) positions over the first 64 of
-    each head's 128 dims (rotate-half layout). Of the 32 frequencies, the first 24 alternate
-    between the h (even) and w (odd) position and the last 8 follow t."""
+    # video_rope from Ming's modeling_bailing_moe_v2: 3D (t, h, w) positions over the first 64 of
+    # each head's 128 dims (rotate-half layout). Of the 32 frequencies, the first 24 alternate
+    # between the h (even) and w (odd) position and the last 8 follow t.
 
     @staticmethod
     def cos_sin(position_ids: mx.array) -> tuple[mx.array, mx.array]:
@@ -88,15 +88,14 @@ class LingMLP(nn.Module):
 
 
 class LingGate(nn.Module):
-    """Sigmoid router with expert bias and group-limited top-k (8 groups, best 4 by top-2 sum).
-    The bias only steers selection; the mixing weights come from the unbiased scores.
-
-    Upstream runs this under torch.autocast(bfloat16), which turns its float32 F.linear into a
-    bf16 one, so logits, scores and `scores + expert_bias` are bf16 (the sigmoid itself is
-    evaluated in float32 and rounded once), while autocast's float32 `sum` makes the group
-    scores and the mixing weights float32. With biases near 17.25 (bf16 spacing 0.125 there)
-    most experts tie, and torch.topk resolves ties towards the lower index. All of this is
-    reproduced exactly; routing in plain float32 picks noticeably different experts."""
+    # Sigmoid router with expert bias and group-limited top-k (8 groups, best 4 by top-2 sum).
+    # The bias only steers selection; the mixing weights come from the unbiased scores.
+    # Upstream runs this under torch.autocast(bfloat16), which turns its float32 F.linear into a
+    # bf16 one, so logits, scores and `scores + expert_bias` are bf16 (the sigmoid itself is
+    # evaluated in float32 and rounded once), while autocast's float32 `sum` makes the group
+    # scores and the mixing weights float32. With biases near 17.25 (bf16 spacing 0.125 there)
+    # most experts tie, and torch.topk resolves ties towards the lower index. All of this is
+    # reproduced exactly; routing in plain float32 picks noticeably different experts.
 
     def __init__(self):
         super().__init__()
@@ -131,8 +130,8 @@ class LingGate(nn.Module):
 
 
 class LingSparseMoe(nn.Module):
-    """MultiRouter MoE: text tokens use `gate`, image-patch tokens (Ming's learned query tokens)
-    use `image_gate`. Experts are stored stacked for gather_mm; one shared expert is always on."""
+    # MultiRouter MoE: text tokens use `gate`, image-patch tokens (Ming's learned query tokens)
+    # use `image_gate`. Experts are stored stacked for gather_mm; one shared expert is always on.
 
     def __init__(self):
         super().__init__()
@@ -185,8 +184,8 @@ class LingMoeEncoder(nn.Module):
         image_mask: mx.array | None,
         output_layers: tuple[int, ...],
     ) -> dict[int, mx.array]:
-        """Returns HF-style hidden_states entries by index: [i] is the input to layer i
-        (0 = embeddings) and [NUM_LAYERS] is the final-norm output."""
+        # Returns HF-style hidden_states entries by index: [i] is the input to layer i
+        # (0 = embeddings) and [NUM_LAYERS] is the final-norm output.
         cos, sin = LingRope.cos_sin(position_ids)
         wanted = set(output_layers)
         out = {}
@@ -201,8 +200,8 @@ class LingMoeEncoder(nn.Module):
 
     @staticmethod
     def stack_experts(weights: dict) -> dict:
-        """Turn the checkpoint's per-expert Linear weights into SwitchGLU's stacked layout.
-        Idempotent: weights already stacked (an mflux-saved model) pass through unchanged."""
+        # Turn the checkpoint's per-expert Linear weights into SwitchGLU's stacked layout.
+        # Idempotent: weights already stacked (an mflux-saved model) pass through unchanged.
         for layer in weights.get("layers", []):
             mlp = layer.get("mlp", {})
             experts = mlp.pop("experts", None)

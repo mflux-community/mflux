@@ -257,6 +257,15 @@ OVERLAY: dict[str, tuple[str, str, str, list[str], list[str], str, list[str] | N
         STANDARD_QUANTS,
     ),
     "lens-turbo": ("image", "lens", "lens-turbo", ["mflux-generate-lens"], [], "active", STANDARD_QUANTS),
+    "ming-image-design": (
+        "image",
+        "ming-image",
+        "ming-image-design",
+        ["mflux-generate-ming"],
+        [],
+        "active",
+        STANDARD_QUANTS,
+    ),
     "seedvr2-3b": ("video-upscale", "seedvr2", "seedvr2-3b", ["mflux-upscale-seedvr2"], [], "active", STANDARD_QUANTS),
     "seedvr2-7b": ("video-upscale", "seedvr2", "seedvr2-7b", ["mflux-upscale-seedvr2"], [], "active", STANDARD_QUANTS),
 }
