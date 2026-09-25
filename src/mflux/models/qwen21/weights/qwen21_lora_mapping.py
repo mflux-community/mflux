@@ -8,10 +8,12 @@ class Qwen21LoRAMapping:
             model_path=model_path,
             possible_up_patterns=[
                 f"{path}.lora_B{adapter_name}.weight" for path in source_paths for adapter_name in (".default", "")
-            ] + [f"{path}.lora_up" for path in source_paths],
+            ]
+            + [f"{path}.lora_up" for path in source_paths],
             possible_down_patterns=[
                 f"{path}.lora_A{adapter_name}.weight" for path in source_paths for adapter_name in (".default", "")
-            ] + [f"{path}.lora_down" for path in source_paths],
+            ]
+            + [f"{path}.lora_down" for path in source_paths],
         )
 
     @staticmethod

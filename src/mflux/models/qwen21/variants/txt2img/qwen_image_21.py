@@ -61,7 +61,9 @@ class QwenImage21(nn.Module):
     ) -> GeneratedImage:
         is_pdd = self.transformer.has_pdd
         if is_pdd and num_inference_steps != self.transformer.pdd_proj_out_weights.shape[0]:
-            raise ValueError(f"This Qwen Image 2.1 PDD model requires {self.transformer.pdd_proj_out_weights.shape[0]} steps.")
+            raise ValueError(
+                f"This Qwen Image 2.1 PDD model requires {self.transformer.pdd_proj_out_weights.shape[0]} steps."
+            )
         if is_pdd and (guidance != 1.0 or negative_prompt):
             raise ValueError("Qwen Image 2.1 PDD models require guidance=1.0 with no negative prompt.")
         config = Config(
