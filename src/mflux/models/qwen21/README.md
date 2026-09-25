@@ -92,6 +92,6 @@ Pass `--image-path` and optionally `--image-strength`, like the other models.
   dropped from the final hidden states, matching the reference pipeline exactly.
 - The text prefix KV cache (valid because `causal_condition` makes text activations
   step-independent) is a planned optimization; the current port recomputes the prefix each step.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format).
+- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
 - Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower)
   and PID decoding.
