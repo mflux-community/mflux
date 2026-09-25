@@ -15,11 +15,12 @@ from mflux.models.qwen21.weights.qwen21_lora_mapping import Qwen21LoRAMapping
 
 @pytest.mark.fast
 @pytest.mark.parametrize("bake_lora", [False, True])
+@pytest.mark.parametrize("adapter_name", [".default", ""])
 @pytest.mark.parametrize(
     "name",
     ["attn.to_q", "attn.to_k", "attn.to_v", "attn.to_out.0", "img_mlp.proj", "img_mlp.gate_layer", "img_mlp.out"],
 )
-def test_qwen21_peft_updates_target_layer(tmp_path, name, bake_lora):
+def test_qwen21_peft_updates_target_layer(tmp_path, name, adapter_name, bake_lora):
     model = nn.Module()
     model.transformer_blocks = [Qwen21TransformerBlock(dim=8, num_attention_heads=2, attention_head_dim=4)]
     path = f"transformer_blocks.0.{name}"
@@ -31,7 +32,9 @@ def test_qwen21_peft_updates_target_layer(tmp_path, name, bake_lora):
     expected = linear(x) + 0.7 * (x @ down.T @ up.T)
     mx.eval(expected)
     adapter = tmp_path / "adapter.safetensors"
-    mx.save_safetensors(str(adapter), {f"{path}.lora_A.default.weight": down, f"{path}.lora_B.default.weight": up})
+    mx.save_safetensors(
+        str(adapter), {f"{path}.lora_A{adapter_name}.weight": down, f"{path}.lora_B{adapter_name}.weight": up}
+    )
 
     paths, scales = LoRALoader.load_and_apply_lora(
         Qwen21LoRAMapping.get_mapping(), model, [str(adapter)], [0.7], bake_lora=bake_lora
@@ -42,6 +45,29 @@ def test_qwen21_peft_updates_target_layer(tmp_path, name, bake_lora):
     assert mx.allclose(actual(x), expected, atol=1e-6).item()
     assert paths == [str(adapter)]
     assert scales == [0.7]
+
+
+@pytest.mark.fast
+def test_qwen21_peft_mapping_supports_transformer_prefixed_global_targets():
+    targets = {target.model_path: target for target in Qwen21LoRAMapping.get_mapping()}
+
+    assert (
+        "transformer.transformer_blocks.{block}.attn.to_q.lora_A.default.weight"
+        in targets["transformer_blocks.{block}.attn.to_q"].possible_down_patterns
+    )
+    assert (
+        "transformer.transformer_blocks.{block}.attn.to_q.lora_A.weight"
+        in targets["transformer_blocks.{block}.attn.to_q"].possible_down_patterns
+    )
+    assert (
+        "transformer.time_text_embed.timestep_embedder.linear_1.lora_A.default.weight"
+        in targets["time_text_embed.timestep_embedder.linear_1"].possible_down_patterns
+    )
+    assert (
+        "transformer.time_text_embed.timestep_embedder.linear_2.lora_B.default.weight"
+        in targets["time_text_embed.timestep_embedder.linear_2"].possible_up_patterns
+    )
+    assert "transformer.modulation.1.lora_B.default.weight" in targets["modulation.layers.1"].possible_up_patterns
 
 
 @pytest.mark.fast
