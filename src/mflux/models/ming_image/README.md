@@ -65,6 +65,25 @@ checkpoint reloads each layer at the precision it was stored with.)
 The CLI encodes the prompt once and frees the text encoder before denoising, so peak memory
 is the larger of the two stages rather than their sum.
 
+| Text encoder bits (DiT q8) | Size on disk | Fidelity vs official (same noise) |
+|---|---|---|
+| 8 | 25.2 GB | matches |
+| 6 | 21.2 GB | matches |
+| 5 | 19.3 GB | matches (recommended for 24 GB Macs) |
+| 4 | 17.3 GB | clean typography, but scene details drift |
+
+## Performance
+
+Base M4 Mac mini (10-core GPU, 24 GB), q8 DiT + q5 text encoder, 12 steps:
+
+| Stage | Time | Peak GPU memory |
+|---|---|---|
+| Prompt encode (then released) | 4 s warm, 18 s cold disk cache | 12.5 GB |
+| 512² denoise + decode | 63 s | 9.8 GB |
+| 1024² denoise + decode | 4–4.5 min | 14.5 GB |
+
+The DiT is compute-bound on this GPU (~20 s per step at 1024²); `mx.compile` does not change it.
+
 ## Fidelity notes
 
 Verified stage by stage against tensors dumped from the official PyTorch pipeline (cosine
