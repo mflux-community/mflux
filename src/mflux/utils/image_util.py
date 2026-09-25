@@ -161,7 +161,16 @@ class ImageUtil:
         # Apply the EXIF Orientation tag before the model sees the pixels: most photos straight
         # off a phone carry a non-1 orientation, and without this the model is conditioned on a
         # sideways image, not merely shown one.
-        return open_oriented(image_or_path).convert("RGB")
+        image = open_oriented(image_or_path)
+        # convert("RGB") drops the alpha channel and exposes whatever RGB sits under fully
+        # transparent pixels, so two files that look identical on screen load as different
+        # arrays. Composite alpha-bearing sources over opaque white first. An opaque RGB source
+        # is unaffected: alpha==255 makes the composite the identity.
+        if image.mode in ("RGBA", "LA") or "transparency" in image.info:
+            rgba = image.convert("RGBA")
+            white = PIL.Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+            return PIL.Image.alpha_composite(white, rgba).convert("RGB")
+        return image.convert("RGB")
 
     @staticmethod
     def expand_image(
