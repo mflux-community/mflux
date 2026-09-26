@@ -32,13 +32,24 @@ class Qwen21TransformerBlock(nn.Module):
         rope_sin: mx.array,
         attn_mask: mx.array | None,
         text_len: int | None = None,
-    ) -> mx.array:
+        kv_pair: tuple[mx.array, mx.array] | None = None,
+        kv_mode: str | None = None,
+        prefix_len: int = 0,
+        segments: list[tuple[int, int, bool, mx.array | None]] | None = None,
+    ) -> mx.array | tuple[mx.array, tuple[mx.array, mx.array]]:
         scale1, gate1 = mx.split(mod1, 2, axis=-1)
         scale2, gate2 = mx.split(mod2, 2, axis=-1)
 
         attn_input = self.img_norm1(hidden_states) * (1 + scale1)
-        hidden_states = hidden_states + nn.tanh(gate1) * self.attn(attn_input, rope_cos, rope_sin, attn_mask, text_len)
+        attn_out = self.attn(
+            attn_input, rope_cos, rope_sin, attn_mask, text_len, kv_pair, kv_mode, prefix_len, segments
+        )
+        if kv_mode is not None:
+            attn_out, kv_pair = attn_out
+        hidden_states = hidden_states + nn.tanh(gate1) * attn_out
 
         mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
         hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
+        if kv_mode is not None:
+            return hidden_states, kv_pair
         return hidden_states

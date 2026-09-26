@@ -78,6 +78,10 @@ class GeneratedImage:
         self.init_metadata = init_metadata
         self.pid_decode = pid_decode
         self.pid_degrade_sigma = pid_degrade_sigma
+        # Optional post-edit self-check result set by callers (edit variant verify):
+        # {"verified": bool, "instruction_applied": bool, "outside_unchanged": bool,
+        #  "retries": int} -- not part of the generation parameters metadata.
+        self.verification = None
 
     def get_right_half(self) -> "GeneratedImage":
         # Calculate the coordinates for the right half

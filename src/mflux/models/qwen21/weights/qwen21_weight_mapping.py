@@ -9,6 +9,8 @@ class Qwen21WeightMapping(WeightMapping):
     NUM_DECODER_RESNETS = 3
     NUM_TRANSFORMER_BLOCKS = 32
     NUM_TEXT_LAYERS = 36
+    NUM_VISUAL_BLOCKS = 27
+    NUM_DEEPSTACK_MERGERS = 3
 
     @staticmethod
     def get_transformer_mapping() -> List[WeightTarget]:
@@ -59,6 +61,9 @@ class Qwen21WeightMapping(WeightMapping):
                 to_pattern="embed_tokens.weight",
                 from_pattern=["model.language_model.embed_tokens.weight"],
             ),
+            # the checkpoint ships an UNTIED lm_head: unused by the diffusion path but
+            # required for grounded decoding (Qwen21TextEncoder.locate_object)
+            WeightTarget(to_pattern="lm_head.weight", from_pattern=["lm_head.weight"]),
             WeightTarget(to_pattern="norm.weight", from_pattern=["model.language_model.norm.weight"]),
         ]
         for layer in range(Qwen21WeightMapping.NUM_TEXT_LAYERS):
@@ -84,6 +89,125 @@ class Qwen21WeightMapping(WeightMapping):
                     from_pattern=[f"{prefix}.mlp.{param}.weight"],
                 )
                 for param in ["gate_proj", "up_proj", "down_proj"]
+            )
+        return targets
+
+    @staticmethod
+    def get_text_encoder_visual_mapping() -> List[WeightTarget]:
+        # Qwen3-VL vision tower stored inside the text_encoder shards as model.visual.*.
+        # Only used by the edit variant (Qwen21EditWeightDefinition); t2i never maps it.
+        targets = [
+            WeightTarget(
+                to_pattern="visual.patch_embed.proj.weight",
+                from_pattern=["model.visual.patch_embed.proj.weight"],
+                transform=WeightTransforms.transpose_conv3d_weight,
+            ),
+            WeightTarget(
+                to_pattern="visual.patch_embed.proj.bias",
+                from_pattern=["model.visual.patch_embed.proj.bias"],
+            ),
+            WeightTarget(
+                to_pattern="visual.pos_embed.weight",
+                from_pattern=["model.visual.pos_embed.weight"],
+            ),
+        ]
+        for block in range(Qwen21WeightMapping.NUM_VISUAL_BLOCKS):
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.norm{norm}.weight",
+                    from_pattern=[f"model.visual.blocks.{block}.norm{norm}.weight"],
+                )
+                for norm in [1, 2]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.norm{norm}.bias",
+                    from_pattern=[f"model.visual.blocks.{block}.norm{norm}.bias"],
+                )
+                for norm in [1, 2]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.attn.{param}.weight",
+                    from_pattern=[f"model.visual.blocks.{block}.attn.{param}.weight"],
+                )
+                for param in ["qkv", "proj"]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.attn.{param}.bias",
+                    from_pattern=[f"model.visual.blocks.{block}.attn.{param}.bias"],
+                )
+                for param in ["qkv", "proj"]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.mlp.linear_fc{fc}.weight",
+                    from_pattern=[f"model.visual.blocks.{block}.mlp.linear_fc{fc}.weight"],
+                )
+                for fc in [1, 2]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.blocks.{block}.mlp.linear_fc{fc}.bias",
+                    from_pattern=[f"model.visual.blocks.{block}.mlp.linear_fc{fc}.bias"],
+                )
+                for fc in [1, 2]
+            )
+        targets.extend(
+            [
+                WeightTarget(
+                    to_pattern="visual.merger.norm.weight",
+                    from_pattern=["model.visual.merger.norm.weight"],
+                ),
+                WeightTarget(
+                    to_pattern="visual.merger.norm.bias",
+                    from_pattern=["model.visual.merger.norm.bias"],
+                ),
+                WeightTarget(
+                    to_pattern="visual.merger.linear_fc1.weight",
+                    from_pattern=["model.visual.merger.linear_fc1.weight"],
+                ),
+                WeightTarget(
+                    to_pattern="visual.merger.linear_fc1.bias",
+                    from_pattern=["model.visual.merger.linear_fc1.bias"],
+                ),
+                WeightTarget(
+                    to_pattern="visual.merger.linear_fc2.weight",
+                    from_pattern=["model.visual.merger.linear_fc2.weight"],
+                ),
+                WeightTarget(
+                    to_pattern="visual.merger.linear_fc2.bias",
+                    from_pattern=["model.visual.merger.linear_fc2.bias"],
+                ),
+            ]
+        )
+        for block in range(Qwen21WeightMapping.NUM_DEEPSTACK_MERGERS):
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.deepstack_merger_list.{block}.linear_fc{fc}.weight",
+                    from_pattern=[f"model.visual.deepstack_merger_list.{block}.linear_fc{fc}.weight"],
+                )
+                for fc in [1, 2]
+            )
+            targets.extend(
+                WeightTarget(
+                    to_pattern=f"visual.deepstack_merger_list.{block}.linear_fc{fc}.bias",
+                    from_pattern=[f"model.visual.deepstack_merger_list.{block}.linear_fc{fc}.bias"],
+                )
+                for fc in [1, 2]
+            )
+            targets.extend(
+                [
+                    WeightTarget(
+                        to_pattern=f"visual.deepstack_merger_list.{block}.norm.weight",
+                        from_pattern=[f"model.visual.deepstack_merger_list.{block}.norm.weight"],
+                    ),
+                    WeightTarget(
+                        to_pattern=f"visual.deepstack_merger_list.{block}.norm.bias",
+                        from_pattern=[f"model.visual.deepstack_merger_list.{block}.norm.bias"],
+                    ),
+                ]
             )
         return targets
 

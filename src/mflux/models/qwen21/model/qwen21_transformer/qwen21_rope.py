@@ -46,6 +46,48 @@ class Qwen21Rope(nn.Module):
         height_index[text_len:] = image_height_index
         width_index[text_len:] = image_width_index
 
+        return self._to_cos_sin(frame_index, height_index, width_index)
+
+    def __call_edit__(
+        self,
+        layout: list[tuple],
+        target_height: int,
+        target_width: int,
+    ) -> tuple[mx.array, mx.array]:
+        # Edit layout: template-ordered runs -- text runs get a shared 1D ladder on all
+        # three axes, image blocks hold the current frame position and consume max(h, w)
+        # of budget with centered 2D height/width grids, exactly like the reference
+        # QwenImage21Rope block iteration. The target image is the final block.
+        frame_index: list[int] = []
+        height_index: list[int] = []
+        width_index: list[int] = []
+        position = 0
+
+        for run in layout:
+            if run[0] == "text":
+                n = run[1].shape[1]
+                frame_index.extend(range(position, position + n))
+                height_index.extend(range(position, position + n))
+                width_index.extend(range(position, position + n))
+                position += n
+            else:
+                h, w = run[2]
+                frame_index.extend([position] * (h * w))
+                height_index.extend([hh for hh in range(-(h - h // 2), h // 2) for _ in range(w)])
+                width_index.extend([ww for _ in range(h) for ww in range(-(w - w // 2), w // 2)])
+                position += max(h, w)
+
+        def _target_block(h: int, w: int) -> None:
+            frame_index.extend([position] * (h * w))
+            height_index.extend([hh for hh in range(-(h - h // 2), h // 2) for _ in range(w)])
+            width_index.extend([ww for _ in range(h) for ww in range(-(w - w // 2), w // 2)])
+
+        _target_block(target_height, target_width)
+        return self._to_cos_sin(frame_index, height_index, width_index)
+
+    def _to_cos_sin(
+        self, frame_index: list[int], height_index: list[int], width_index: list[int]
+    ) -> tuple[mx.array, mx.array]:
         cos = mx.concatenate(
             [
                 self.cos_tables[0][mx.array(frame_index)],

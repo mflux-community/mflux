@@ -40,7 +40,16 @@ class VAEUtil:
         vae: nn.Module,
         latent: mx.array,
         tiling_config: TilingConfig | None = None,
+        keep_alpha: bool = False,
     ) -> mx.array:
+        # keep_alpha passes through to decoders with an alpha channel (e.g. the
+        # Qwen-Image-2.1 RGBA VAE); decoders without the kwarg ignore it.
+        def _decode(x):
+            try:
+                return vae.decode(x, keep_alpha=keep_alpha)
+            except TypeError:
+                return vae.decode(x)
+
         # 1. Tiled decoding if enabled
         if (
             tiling_config is not None
@@ -56,14 +65,14 @@ class VAEUtil:
             tile_size = int(tiling_config.vae_decode_tile_size)
             return VAETiler.decode_image_tiled(
                 latent=latent,
-                decode_fn=vae.decode,
+                decode_fn=_decode,
                 tile_size=(tile_size, tile_size),
                 tile_overlap=(overlap_px, overlap_px),
                 spatial_scale=spatial_scale,
             )
 
         # 2. Standard decoding (fallback)
-        decoded = vae.decode(latent)
+        decoded = _decode(latent)
 
         # 3. Handle dimension fixups (5D -> 4D if needed)
         # Most of our image saving/processing utilities expect (B, C, H, W)
