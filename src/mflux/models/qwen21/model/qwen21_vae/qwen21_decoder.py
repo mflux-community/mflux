@@ -15,7 +15,7 @@ class Qwen21ResidualUpBlock(nn.Module):
         in_dim: int,
         out_dim: int,
         num_res_blocks: int,
-        temperal_upsample: bool,
+        temporal_upsample: bool,
         up_flag: bool = True,
     ):
         super().__init__()
@@ -25,7 +25,7 @@ class Qwen21ResidualUpBlock(nn.Module):
             self.resnets.append(Qwen21ResBlock(current_dim, out_dim))
             current_dim = out_dim
         self.upsampler = Qwen21Resample(out_dim, out_dim, "upsample") if up_flag else None
-        self.avg_shortcut = Qwen21DupUp(in_dim, out_dim, factor_t=2 if temperal_upsample else 1) if up_flag else None
+        self.avg_shortcut = Qwen21DupUp(in_dim, out_dim, factor_t=2 if temporal_upsample else 1) if up_flag else None
 
     def __call__(self, x: mx.array) -> mx.array:
         x_copy = x
@@ -44,7 +44,7 @@ class Qwen21Decoder(nn.Module):
         z_dim: int = 64,
         dim_mult: tuple[int, ...] = (1, 2, 4, 8, 8),
         num_res_blocks: int = 2,
-        temperal_upsample: tuple[bool, ...] = (True, True, True, False),
+        temporal_upsample: tuple[bool, ...] = (True, True, True, False),
         out_channels: int = 4,
     ):
         super().__init__()
@@ -59,7 +59,7 @@ class Qwen21Decoder(nn.Module):
                 in_dim=dims[i],
                 out_dim=dims[i + 1],
                 num_res_blocks=num_res_blocks,
-                temperal_upsample=temperal_upsample[i] if i < len(temperal_upsample) else False,
+                temporal_upsample=temporal_upsample[i] if i < len(temporal_upsample) else False,
                 up_flag=i < len(dims) - 2,
             )
             for i in range(len(dims) - 1)

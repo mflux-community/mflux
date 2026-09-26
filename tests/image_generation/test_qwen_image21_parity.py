@@ -96,7 +96,7 @@ class TestQwenImage21Reference:
             dim_mult=[1, 2, 4, 8, 8],
             num_res_blocks=1,
             attn_scales=[],
-            temperal_downsample=[False, True, True, True],
+            temporal_downsample=[False, True, True, True],
             dropout=0.0,
             latents_mean=[0.0] * 4,
             latents_std=[1.0] * 4,

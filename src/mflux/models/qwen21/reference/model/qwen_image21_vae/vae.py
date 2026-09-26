@@ -9,7 +9,7 @@ class Encoder(nn.Module):
         super().__init__()
         dims = [config["base_dim"] * factor for factor in [1, *config["dim_mult"]]]
         self.conv_in = nn.Conv2d(config["in_channels"], dims[0], 3, padding=1)
-        temporal = config["temperal_downsample"]
+        temporal = config["temporal_downsample"]
         self.down_blocks = [
             DownBlock(a, b, config["num_res_blocks"], i < len(dims) - 2, temporal[i] if i < len(temporal) else False)
             for i, (a, b) in enumerate(zip(dims[:-1], dims[1:]))
@@ -33,7 +33,7 @@ class Decoder(nn.Module):
         dims = [config["decoder_base_dim"] * factor for factor in [dim_mult[-1], *reversed(dim_mult)]]
         self.conv_in = nn.Conv2d(config["z_dim"], dims[0], 3, padding=1)
         self.mid_block = MidBlock(dims[0])
-        temporal = list(reversed(config["temperal_downsample"]))
+        temporal = list(reversed(config["temporal_downsample"]))
         self.up_blocks = [
             UpBlock(a, b, config["num_res_blocks"], i < len(dims) - 2, temporal[i] if i < len(temporal) else False)
             for i, (a, b) in enumerate(zip(dims[:-1], dims[1:]))
