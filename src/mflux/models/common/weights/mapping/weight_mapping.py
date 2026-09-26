@@ -11,6 +11,7 @@ class WeightTarget:
     transform: Optional[Callable[[mx.array], mx.array]] = None
     required: bool = True
     max_blocks: Optional[int] = None
+    complete_when_present: bool = False
 
 
 class WeightMapping(Protocol):

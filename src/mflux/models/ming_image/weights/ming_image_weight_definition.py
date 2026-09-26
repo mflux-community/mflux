@@ -3,8 +3,8 @@ from typing import List
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.tokenizer import LanguageTokenizer
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition, TokenizerDefinition
+from mflux.models.ming_image.weights.ming_image_weight_mapping import MingImageWeightMapping
 from mflux.models.qwen.weights.qwen_weight_mapping import QwenWeightMapping
-from mflux.models.z_image.weights.z_image_weight_mapping import ZImageWeightMapping
 
 
 class MingImageWeightDefinition:
@@ -44,7 +44,7 @@ class MingImageWeightDefinition:
                 hf_subdir="transformer",
                 num_layers=30,
                 precision=ModelConfig.precision,
-                mapping_getter=ZImageWeightMapping.get_transformer_mapping,
+                mapping_getter=MingImageWeightMapping.get_transformer_mapping,
             ),
             ComponentDefinition(
                 name="vae",

@@ -27,7 +27,7 @@ class TransformerControlnet(nn.Module):
 
         self.controlnet_x_embedder = nn.Linear(64, 3072).apply(nn.init.constant(0))
         self.controlnet_blocks = [nn.Linear(3072, 3072).apply(nn.init.constant(0)) for _ in range(num_transformer_blocks)]  # fmt: off
-        self.controlnet_single_blocks = [nn.Linear(3072, 3072) for _ in range(num_single_transformer_blocks)]
+        self.controlnet_single_blocks = [nn.Linear(3072, 3072).apply(nn.init.constant(0)) for _ in range(num_single_transformer_blocks)]  # fmt: off
 
     def __call__(
         self,

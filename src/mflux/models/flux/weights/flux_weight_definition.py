@@ -99,7 +99,7 @@ class FluxControlnetWeightDefinition:
                 name="transformer_controlnet",
                 hf_subdir="transformer_controlnet",
                 precision=ModelConfig.precision,
-                mapping_getter=FluxWeightMapping.get_transformer_mapping,
+                mapping_getter=FluxWeightMapping.get_controlnet_transformer_mapping,
             ),
         ]
 

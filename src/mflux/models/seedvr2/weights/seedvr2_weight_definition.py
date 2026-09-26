@@ -53,7 +53,9 @@ class SeedVR2WeightDefinition7B:
                 hf_subdir=".",
                 num_blocks=36,
                 loading_mode="mlx_native",
-                mapping_getter=lambda: SeedVR2WeightMapping.get_transformer_mapping(num_blocks=36),
+                mapping_getter=lambda: SeedVR2WeightMapping.get_transformer_mapping(
+                    num_blocks=36, use_output_ada=False
+                ),
                 weight_files=["seedvr2_ema_7b_fp16.safetensors"],
             ),
             ComponentDefinition(

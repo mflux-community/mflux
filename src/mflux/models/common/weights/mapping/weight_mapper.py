@@ -7,6 +7,8 @@ from mflux.models.common.weights.mapping.weight_mapping import WeightTarget
 
 
 class WeightMapper:
+    _PLACEHOLDERS = ("{block}", "{layer}", "{i}", "{res}")
+
     @staticmethod
     def apply_mapping(
         hf_weights: Dict[str, mx.array],
@@ -53,6 +55,130 @@ class WeightMapper:
         # print(f"✅ Mapped {mapped_count} weights, skipped {skipped_count}")
 
         return mapped_weights
+
+    @staticmethod
+    def missing_required_targets(
+        hf_weights: Dict[str, mx.array],
+        mapping: List[WeightTarget],
+        num_blocks: Optional[int] = None,
+        num_layers: Optional[int] = None,
+    ) -> List[WeightTarget]:
+        num_blocks, num_layers = WeightMapper._block_and_layer_counts(hf_weights, num_blocks, num_layers)
+        return [
+            target
+            for target in mapping
+            if WeightMapper._first_missing_name(hf_weights, target, num_blocks, num_layers) is not None
+        ]
+
+    @staticmethod
+    def missing_required_names(
+        hf_weights: Dict[str, mx.array],
+        mapping: List[WeightTarget],
+        num_blocks: Optional[int] = None,
+        num_layers: Optional[int] = None,
+    ) -> List[str]:
+        num_blocks, num_layers = WeightMapper._block_and_layer_counts(hf_weights, num_blocks, num_layers)
+        names = (WeightMapper._first_missing_name(hf_weights, target, num_blocks, num_layers) for target in mapping)
+        return [name for name in names if name is not None]
+
+    @staticmethod
+    def unmapped_names(
+        hf_weights: Dict[str, mx.array],
+        mapping: List[WeightTarget],
+        num_blocks: Optional[int] = None,
+        num_layers: Optional[int] = None,
+    ) -> List[str]:
+        num_blocks, num_layers = WeightMapper._block_and_layer_counts(hf_weights, num_blocks, num_layers)
+        used = WeightMapper._build_flat_mapping(mapping, num_blocks, num_layers)
+        return sorted(name for name in hf_weights if name not in used)
+
+    @staticmethod
+    def _block_and_layer_counts(
+        hf_weights: Dict[str, mx.array], num_blocks: Optional[int], num_layers: Optional[int]
+    ) -> tuple[int, int]:
+        if num_blocks is None:
+            num_blocks = WeightMapper._detect_num_blocks(hf_weights)
+        if num_layers is None:
+            num_layers = WeightMapper._detect_num_layers(hf_weights)
+        return num_blocks, num_layers
+
+    @staticmethod
+    def _first_missing_name(
+        hf_weights: Dict[str, mx.array], target: WeightTarget, num_blocks: int, num_layers: int
+    ) -> Optional[str]:
+        # A required weight has to be in every block, layer and resnet the checkpoint has at its place in the pattern.
+        # Only indices the checkpoint has count: _build_flat_mapping expands placeholders to detected or fixed counts
+        # (every block pattern to the largest block count it detects, {i} to two where a VAE mid block has a single
+        # attention), and trimmed checkpoints ship fewer blocks. Optional ones are left alone, since some sit in only
+        # some blocks (the last up block of the FLUX.1 VAE has no upsampler), unless complete_when_present asks for the
+        # per-block check on a family the checkpoint may leave out as a whole (a ControlNet's single blocks).
+        if not target.required and not target.complete_when_present:
+            return None
+        found = any(name in hf_weights for name in WeightMapper._build_flat_mapping([target], num_blocks, num_layers))
+        if target.required and not found:
+            return WeightMapper._example_name(target)
+        patterns = WeightMapper._indexed_patterns(target)
+        for pattern in patterns:
+            for indices in WeightMapper._present_indices(hf_weights, pattern, target.max_blocks):
+                alternatives = [p for p in patterns if WeightMapper._placeholders(p) == set(indices)]
+                names = [WeightMapper._fill(p, indices) for p in alternatives]
+                if not any(name in hf_weights for name in names):
+                    return names[0]
+        return None
+
+    @staticmethod
+    def _indexed_patterns(target: WeightTarget) -> List[str]:
+        # Source patterns whose every placeholder numbers the destination too. A source copied to every block
+        # (one-to-many) keeps the any-name rule.
+        indexed = []
+        for pattern in target.from_pattern:
+            placeholders = WeightMapper._placeholders(pattern)
+            if placeholders and all(p in target.to_pattern for p in placeholders):
+                if min(pattern.index(p) for p in placeholders) > 0:
+                    indexed.append(pattern)
+        return indexed
+
+    @staticmethod
+    def _present_indices(
+        hf_weights: Dict[str, mx.array], pattern: str, max_blocks: Optional[int]
+    ) -> List[Dict[str, int]]:
+        # Every combination of indices the checkpoint has for this pattern, outermost placeholder first, so a
+        # (block, res) pair counts only when that block has that resnet.
+        placeholders = sorted(WeightMapper._placeholders(pattern), key=pattern.index)
+        if not placeholders:
+            return [{}]
+        first = placeholders[0]
+        prefix = pattern[: pattern.index(first)]
+        found = set()
+        for name in hf_weights:
+            if name.startswith(prefix):
+                head = name[len(prefix) :].split(".", 1)[0]
+                if head.isdigit():
+                    found.add(int(head))
+        present = []
+        for index in sorted(found):
+            if first == "{block}" and max_blocks is not None and index >= max_blocks:
+                continue
+            inner = WeightMapper._present_indices(hf_weights, pattern.replace(first, str(index)), max_blocks)
+            present.extend({first: index, **rest} for rest in inner)
+        return present
+
+    @staticmethod
+    def _placeholders(pattern: str) -> set[str]:
+        return {p for p in WeightMapper._PLACEHOLDERS if p in pattern}
+
+    @staticmethod
+    def _fill(pattern: str, indices: Dict[str, int]) -> str:
+        for placeholder, index in indices.items():
+            pattern = pattern.replace(placeholder, str(index))
+        return pattern
+
+    @staticmethod
+    def _example_name(target: WeightTarget) -> str:
+        name = target.from_pattern[0] if target.from_pattern else target.to_pattern
+        for placeholder in WeightMapper._PLACEHOLDERS:
+            name = name.replace(placeholder, "0")
+        return name
 
     @staticmethod
     def _detect_num_blocks(hf_weights: Dict[str, mx.array]) -> int:

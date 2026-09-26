@@ -93,16 +93,16 @@ class ZImageControlnetWeightMapping:
                 from_pattern=["control_layers.{block}.feed_forward.w3.weight"],
                 max_blocks=15,
             ),
-            # Control projections (only some blocks have before_proj)
+            # Control projections (only block 0 has before_proj)
             WeightTarget(
                 to_pattern="control_layers.{block}.before_proj.weight",
                 from_pattern=["control_layers.{block}.before_proj.weight"],
-                max_blocks=15,
+                max_blocks=1,
             ),
             WeightTarget(
                 to_pattern="control_layers.{block}.before_proj.bias",
                 from_pattern=["control_layers.{block}.before_proj.bias"],
-                max_blocks=15,
+                max_blocks=1,
             ),
             WeightTarget(
                 to_pattern="control_layers.{block}.after_proj.weight",
@@ -193,12 +193,12 @@ class ZImageControlnetWeightMapping:
             WeightTarget(
                 to_pattern="control_noise_refiner.{block}.before_proj.weight",
                 from_pattern=["control_noise_refiner.{block}.before_proj.weight"],
-                max_blocks=2,
+                max_blocks=1,
             ),
             WeightTarget(
                 to_pattern="control_noise_refiner.{block}.before_proj.bias",
                 from_pattern=["control_noise_refiner.{block}.before_proj.bias"],
-                max_blocks=2,
+                max_blocks=1,
             ),
             WeightTarget(
                 to_pattern="control_noise_refiner.{block}.after_proj.weight",

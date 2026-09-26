@@ -16,6 +16,8 @@ from mflux.models.common.weights.loading.loaded_weights import LoadedWeights, Me
 from mflux.models.common.weights.loading.safetensors_reader import SafetensorsReader
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.models.common.weights.mapping.weight_mapper import WeightMapper
+from mflux.models.common.weights.mapping.weight_mapping import WeightTarget
+from mflux.utils.exceptions import ModelConfigError
 
 if TYPE_CHECKING:
     from mflux.models.common.weights.loading.weight_definition import WeightDefinitionType
@@ -180,9 +182,21 @@ class WeightLoader:
             return tree_unflatten(list(raw_weights.items())), None, None
 
         # Standard mode: apply declarative weight mapping
+        mapping = component.mapping_getter()
+        missing = WeightMapper.missing_required_names(
+            hf_weights=raw_weights,
+            mapping=mapping,
+            num_blocks=component.num_blocks,
+            num_layers=component.num_layers,
+        )
+        if missing:
+            source = component.download_url or str(root_path / component.hf_subdir)
+            raise ModelConfigError(
+                WeightLoader._describe_missing_weights(component, source, mapping, missing, raw_weights)
+            )
         mapped_weights = WeightMapper.apply_mapping(
             hf_weights=raw_weights,
-            mapping=component.mapping_getter(),
+            mapping=mapping,
             num_blocks=component.num_blocks,
             num_layers=component.num_layers,
         )
@@ -447,3 +461,29 @@ class WeightLoader:
     @staticmethod
     def _convert_precision(weights: dict[str, mx.array], precision: mx.Dtype) -> dict[str, mx.array]:
         return {k: v if v.dtype == precision else v.astype(precision) for k, v in weights.items()}
+
+    @staticmethod
+    def _describe_missing_weights(
+        component: ComponentDefinition,
+        source: str,
+        mapping: list[WeightTarget],
+        missing: list[str],
+        raw_weights: dict[str, mx.array],
+    ) -> str:
+        expected = ", ".join(missing[:3])
+        # Names the mapping does not use point at the rename; the matched ones would only hide it.
+        # A quantized checkpoint's scales and biases are never in the mapping; they would crowd out the rename.
+        listed = [
+            name
+            for name in sorted(raw_weights)
+            if not (name.endswith((".scales", ".biases")) and f"{name.rsplit('.', 1)[0]}.weight" in raw_weights)
+        ]
+        unmapped = set(WeightMapper.unmapped_names(raw_weights, mapping, component.num_blocks, component.num_layers))
+        found = ", ".join(([name for name in listed if name in unmapped] or listed)[:3])
+        found = found or "none under the names this component reads"
+        return (
+            f"The {component.name} weights in {source} do not fit this model: {len(missing)} required "
+            f"{'weight has' if len(missing) == 1 else 'weights have'} no match (expected names like {expected}; "
+            f"found {found}). The checkpoint was probably converted for "
+            f"another program or model. Use one in the original layout, or one written by mflux-save."
+        )

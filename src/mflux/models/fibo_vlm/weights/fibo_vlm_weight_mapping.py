@@ -16,9 +16,11 @@ class FIBOVLMWeightMapping(WeightMapping):
                 to_pattern="layers.{block}.self_attn.q_proj.weight",
                 from_pattern=["model.language_model.layers.{block}.self_attn.q_proj.weight"],
             ),
+            # Qwen3-VL builds no attention or MLP biases (Qwen3VLDecoder attention_bias=False, Qwen3VLMLP bias=False).
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.q_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.self_attn.q_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.k_proj.weight",
@@ -27,6 +29,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.k_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.self_attn.k_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.v_proj.weight",
@@ -35,6 +38,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.v_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.self_attn.v_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.o_proj.weight",
@@ -43,6 +47,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.o_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.self_attn.o_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.self_attn.q_norm.weight",
@@ -59,6 +64,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.mlp.gate_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.mlp.gate_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.mlp.up_proj.weight",
@@ -67,6 +73,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.mlp.up_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.mlp.up_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.mlp.down_proj.weight",
@@ -75,6 +82,7 @@ class FIBOVLMWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="layers.{block}.mlp.down_proj.bias",
                 from_pattern=["model.language_model.layers.{block}.mlp.down_proj.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="layers.{block}.input_layernorm.weight",
