@@ -24,6 +24,7 @@ from mflux.models.ming_image.model.ming_transformer.ming_transformer import Ming
 from mflux.models.ming_image.model.ming_vae.ming_vae import MingVAE
 from mflux.models.ming_image.weights.ming_image_weight_definition import MingImageWeightDefinition
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
 
 SIGMA_SHIFT = 6.0
@@ -66,7 +67,7 @@ class MingImage(nn.Module):
         height: int = 1024,
         width: int = 1024,
         guidance: float | None = 1.0,
-    ) -> "GeneratedImage":  # noqa: F821
+    ) -> GeneratedImage:
         guidance = 1.0 if guidance is None else float(guidance)
         config = Config(
             model_config=self.model_config,

@@ -22,8 +22,8 @@ class MingVAE(QwenVAE):
         latents = self.post_quant_conv(latents / self.SCALING_FACTOR)
         return self.decoder(latents)
 
-    def encode(self, image: mx.array) -> mx.array:
-        if len(image.shape) == 4:
-            image = image.reshape(image.shape[0], image.shape[1], 1, image.shape[2], image.shape[3])
-        latents = self.quant_conv(self.encoder(image))[:, : self.latent_channels]
+    def encode(self, latents: mx.array) -> mx.array:
+        if len(latents.shape) == 4:
+            latents = latents.reshape(latents.shape[0], latents.shape[1], 1, latents.shape[2], latents.shape[3])
+        latents = self.quant_conv(self.encoder(latents))[:, : self.latent_channels]
         return latents * self.SCALING_FACTOR
