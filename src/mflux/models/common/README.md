@@ -588,6 +588,12 @@ image.save("image.png")
 ```
 </details>
 
+### Logging
+
+CLIs are configured with default logging. Pass `-v`/`--verbose` to add more debug output.
+Logs go to stderr, so piping stdout is unaffected.
+When [rich](https://github.com/Textualize/rich) is installed and stderr is a terminal, logs become even prettier.
+
 ---
 
 ## MLX cache limit
