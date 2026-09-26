@@ -115,6 +115,7 @@ mflux-generate-ernie-image = "mflux.models.ernie_image.cli.ernie_image_generate:
 mflux-generate-ideogram4 = "mflux.models.ideogram4.cli.ideogram4_generate:main"
 mflux-generate-krea2 = "mflux.models.krea2.cli.krea2_generate:main"
 mflux-generate-lens = "mflux.models.lens.cli.lens_generate:main"
+mflux-generate-ming = "mflux.models.ming_image.cli.ming_image_generate:main"
 mflux-refine-fibo = "mflux.models.fibo_vlm.cli.fibo_refine:main"
 mflux-inspire-fibo = "mflux.models.fibo_vlm.cli.fibo_inspire:main"
 mflux-concept = "mflux.models.flux.cli.flux_concept:main"
