@@ -8,9 +8,11 @@ class Qwen3VLVisionAttention(nn.Module):
         self,
         hidden_size: int = 1024,
         num_heads: int = 16,
+        preserve_input_dtype: bool = False,
     ):
         super().__init__()
         self.dim = hidden_size
+        self.preserve_input_dtype = preserve_input_dtype
         self.num_heads = num_heads
         self.head_dim = self.dim // self.num_heads
         self.scaling = self.head_dim**-0.5
@@ -41,6 +43,9 @@ class Qwen3VLVisionAttention(nn.Module):
                 cos=cos,
                 sin=sin,
             )
+            if self.preserve_input_dtype:
+                query_states = query_states.astype(value_states.dtype)
+                key_states = key_states.astype(value_states.dtype)
 
         attn_outputs_chunks: list[mx.array] = []
         if cu_seqlens is not None and len(cu_seqlens) > 1:
