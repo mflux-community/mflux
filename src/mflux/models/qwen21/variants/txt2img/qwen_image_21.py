@@ -30,6 +30,9 @@ class QwenImage21(nn.Module):
         quantize: int | None = None,
         model_path: str | None = None,
         model_config: ModelConfig = ModelConfig.qwen_image_21(),
+        lora_paths: list[str] | None = None,
+        lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ):
         super().__init__()
         Qwen21Initializer.init(
@@ -37,6 +40,9 @@ class QwenImage21(nn.Module):
             quantize=quantize,
             model_path=model_path,
             model_config=model_config,
+            lora_paths=lora_paths,
+            lora_scales=lora_scales,
+            bake_lora=bake_lora,
         )
 
     def generate_image(

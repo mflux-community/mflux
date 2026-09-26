@@ -40,7 +40,7 @@ class Qwen21VAE(nn.Module):
         self.post_quant_conv = Qwen21CausalConv(64, 64, 1, 0)
         self.decoder = Qwen21Decoder()
 
-    def decode(self, latents: mx.array) -> mx.array:
+    def decode(self, latents: mx.array, keep_alpha: bool = False) -> mx.array:
         if latents.shape[-3] == 1 and latents.ndim == 5:
             latents = latents[:, :, 0, :, :]
         latents_mean = mx.array(self.LATENTS_MEAN).reshape(1, self.latent_channels, 1, 1)
@@ -48,8 +48,11 @@ class Qwen21VAE(nn.Module):
         latents = latents * latents_std + latents_mean
         latents = self.post_quant_conv(latents)
         decoded = self.decoder(latents)
-        # The 2.1 VAE has 4 output channels (RGBA); the alpha channel carries edit masks,
-        # not image content, so image output drops it here.
+        # The 2.1 VAE has 4 output channels (RGBA). The alpha carries edit masks /
+        # transparency depending on the checkpoint's training; the default drops it
+        # (RGB output), keep_alpha=True returns the decoder's RGBA stream.
+        if keep_alpha or decoded.shape[1] < 4:
+            return decoded
         return decoded[:, :3, :, :]
 
     def encode(self, latents: mx.array) -> mx.array:

@@ -1,7 +1,8 @@
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
@@ -16,13 +17,30 @@ def build_parser() -> CommandLineParser:
     parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
+    parser.add_lora_arguments()
     parser.add_output_arguments()
     return parser
+
+
+def validate_args(parser: CommandLineParser, args) -> None:
+    """Cheap checks that must fail BEFORE the ~33 GB model load."""
+    if args.scheduler == "viggle_turbo":
+        if args.steps != len(ViggleTurboScheduler.SIGMA_NODES):
+            parser.error(
+                f"--scheduler viggle_turbo samples the distilled LoRA on its fixed sigma nodes; "
+                f"use --steps {len(ViggleTurboScheduler.SIGMA_NODES)}, got {args.steps}"
+            )
+        if not args.lora_paths:
+            print(
+                "⚠️  --scheduler viggle_turbo without --lora runs the BASE model on 6 nodes; "
+                "pass the distilled adapter for turbo results."
+            )
 
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    validate_args(parser, args)
 
     model_config = ConfigResolution.resolve_restricted(
         args.model,
@@ -35,6 +53,7 @@ def main():
         quantize=args.quantize,
         model_path=args.model_path,
         model_config=model_config,
+        **lora_init_kwargs_from_args(args),
     )
 
     memory_saver = CallbackManager.register_callbacks(

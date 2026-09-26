@@ -7,6 +7,26 @@ from mflux.utils.scale_factor import ScaleFactor
 
 class DimensionResolver:
     @staticmethod
+    def resolve_output_dimensions(
+        width: int | ScaleFactor,
+        height: int | ScaleFactor,
+        reference_image_path: str,
+        dims_specified: bool,
+    ) -> tuple[int | None, int | None]:
+        """Translate the edit CLI's dimension flags into generate_image arguments.
+
+        With no dimension flag on the command line, both map to (None, None) so the
+        variant derives its ~1MP target from the last condition image's aspect ratio,
+        like the reference pipeline. Once any dimension flag is given, the shared
+        flags' semantics apply: scale factors resolve against the reference image
+        ("1x" is the source's own displayed size) and plain integers pass through;
+        an axis still on its ScaleFactor(1) default then means 1x the source size.
+        """
+        if not dims_specified:
+            return None, None
+        return DimensionResolver.resolve(width=width, height=height, reference_image_path=reference_image_path)
+
+    @staticmethod
     def resolve(
         height: int | ScaleFactor,
         width: int | ScaleFactor,
