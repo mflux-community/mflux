@@ -1,10 +1,12 @@
 import json
+import subprocess
 import sys
 from types import SimpleNamespace
 
 import mlx.core as mx
 import numpy as np
 import pytest
+from mlx.utils import tree_flatten
 from PIL import Image
 
 from mflux.cli.defaults.defaults import model_inference_steps
@@ -17,6 +19,7 @@ from mflux.models.qwen21.reference.latent_creator.qwen_image21_latent_creator im
 from mflux.models.qwen21.reference.model.qwen_image21_transformer.layout import QwenImage21Layout
 from mflux.models.qwen21.reference.model.qwen_image21_transformer.transformer import QwenImage21Transformer
 from mflux.models.qwen21.reference.model.qwen_image21_vae.blocks import DownBlock
+from mflux.models.qwen21.reference.model.qwen_image21_vae.vae import QwenImage21VAE
 from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 from mflux.utils.exceptions import ModelConfigError
 from mflux.utils.generated_image import GeneratedImage
@@ -25,6 +28,23 @@ pytestmark = pytest.mark.fast
 
 
 class TestQwenImage21:
+    @pytest.mark.parametrize(
+        "first_import",
+        ["mflux.models.qwen21.reference", "mflux.models.qwen21.variants.edit.qwen_image_21_edit"],
+    )
+    def test_public_import_paths_in_fresh_process(self, first_import):
+        code = f"""
+from {first_import} import QwenImage21Edit
+from mflux.models.qwen21.reference import QwenImage21Edit as exported
+from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit as direct
+import mflux.models.qwen21.reference as reference
+assert QwenImage21Edit is exported is direct
+assert reference.__all__ == ["QwenImage21Edit"]
+assert not hasattr(reference, "missing_attribute")
+"""
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, result.stderr
+
     @staticmethod
     def small_transformer():
         return QwenImage21Transformer(
@@ -123,6 +143,32 @@ class TestQwenImage21:
         packed = QwenImage21LatentCreator.pack_latents(x)
         assert packed.shape == (1, 8, 64)
         np.testing.assert_array_equal(np.array(QwenImage21LatentCreator.unpack_latents(packed, 32, 64)), np.array(x))
+
+    def test_vae_legacy_checkpoint_config_matches_canonical_spelling(self):
+        config = dict(
+            base_dim=4,
+            decoder_base_dim=4,
+            z_dim=4,
+            dim_mult=[1, 2, 4, 8, 8],
+            num_res_blocks=1,
+            temporal_downsample=[False, True, True, True],
+            latents_mean=[0.0] * 4,
+            latents_std=[1.0] * 4,
+            is_residual=True,
+            in_channels=4,
+            out_channels=4,
+            patch_size=None,
+        )
+        canonical = QwenImage21VAE(config)
+        legacy_config = dict(config)
+        legacy_config["temperal_downsample"] = legacy_config.pop("temporal_downsample")
+        legacy = QwenImage21VAE(legacy_config)
+        legacy.load_weights(tree_flatten(canonical.parameters()))
+        pixels = mx.ones((1, 4, 1, 32, 32))
+        latents = canonical.encode(pixels)
+        np.testing.assert_array_equal(np.array(legacy.encode(pixels)), np.array(latents))
+        np.testing.assert_array_equal(np.array(legacy.decode(latents)), np.array(canonical.decode(latents)))
+        assert "temporal_downsample" not in legacy_config
 
     @pytest.mark.parametrize(
         "width,height,steps,count", [(31, 32, 40, 0), (32, 48, 40, 0), (32, 32, 1, 0), (32, 32, 40, 11)]
