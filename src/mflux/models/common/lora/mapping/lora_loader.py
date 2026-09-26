@@ -50,7 +50,7 @@ class LoRALoader:
         print(f"📦 Loading {len(resolved_paths)} LoRA file(s)...")
 
         for lora_file, scale in zip(resolved_paths, resolved_scales):
-            LoRALoader._apply_single_lora(transformer, lora_file, scale, lora_mapping, role=role)
+            LoRALoader._apply_single_lora(transformer, lora_file, scale, lora_mapping, role=role, bake_lora=bake_lora)
 
         print("✅ All LoRA weights applied successfully")
 
@@ -70,6 +70,7 @@ class LoRALoader:
         lora_mapping: list[LoRATarget],
         *,
         role: str | None,
+        bake_lora: bool = True,
     ) -> None:
         # An unreadable file is fatal rather than skipped: the run would otherwise report
         # success and generate from the untouched base model.
@@ -99,6 +100,14 @@ class LoRALoader:
 
         # Build pattern mappings from LoRATargets
         pattern_mappings = LoRALoader._build_pattern_mappings(lora_mapping)
+
+        if (not bake_lora or role is not None) and any(
+            LoRALoader._match_pattern(key, mapping.source_pattern) is not None
+            for mapping in pattern_mappings
+            if mapping.matrix_name in ("diff", "diff_b")
+            for key in weights
+        ):
+            raise ValueError("Direct .diff/.diff_b patches require bake_lora=True and no adapter role.")
 
         # Apply LoRA using the mappings (allows multiple targets per source)
         applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
@@ -148,6 +157,12 @@ class LoRALoader:
         mappings = []
 
         for target in targets:
+            for name, patterns in (
+                ("diff", target.possible_diff_patterns),
+                ("diff_b", target.possible_diff_b_patterns),
+            ):
+                mappings.extend(PatternMatch(pattern, target.model_path, name, False) for pattern in patterns)
+
             # Add up weight patterns (lora_B)
             mappings.extend(
                 PatternMatch(
@@ -328,6 +343,27 @@ class LoRALoader:
     def _apply_adapter_to_target(
         transformer: nn.Module, target_path: str, lora_data: dict, scale: float, *, role: str | None
     ) -> bool:
+        if "diff" in lora_data or "diff_b" in lora_data:
+            module = LoRALoader._get_target_module(transformer, target_path)
+            if isinstance(module, FusedLoRALinear):
+                module = module.base_linear
+            elif isinstance(module, (LoRALinear, LoKrLinear)):
+                module = module.linear
+            for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+                if name not in lora_data:
+                    continue
+                base = getattr(module, attribute, None)
+                delta = lora_data[name]
+                if base is None or base.ndim != 1 or base.shape != delta.shape:
+                    raise ValueError(
+                        f"Direct patch shape mismatch at {target_path}.{attribute}: expected an existing matching vector"
+                    )
+                setattr(
+                    module, attribute, (base.astype(mx.float32) + scale * delta.astype(mx.float32)).astype(base.dtype)
+                )
+            if not any(name in lora_data for name in ("lora_A", "lora_B")) and not is_lokr_adapter(lora_data):
+                return True
+
         if is_lokr_adapter(lora_data):
             return LoRALoader._apply_lokr_matrices_to_target(transformer, target_path, lora_data, scale, role=role)
 

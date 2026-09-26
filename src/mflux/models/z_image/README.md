@@ -5,6 +5,8 @@ MFLUX supports [Z-Image](https://huggingface.co/Tongyi-MAI/Z-Image) and [Z-Image
 
 All the standard modes such as img2img, LoRA and quantizations are supported for this model. See the [technical paper](https://arxiv.org/abs/2511.22699) for more details.
 
+ComfyUI LoRAs with fused QKV projections and normalization/bias deltas (`.diff`/`.diff_b`) are supported. Direct deltas require the default baked inference mode; they cannot be used with `--no-bake-lora` or role-controlled training adapters.
+
 ![Z-Image-Turbo Example](../../assets/z_image_turbo_example.jpg)
 
 ## Z-Image (Base) Example
