@@ -3,6 +3,7 @@ name: ci-extract
 on:
   push:
     branches: [main]
+  pull_request: {}
   workflow_dispatch: {}
 
 permissions:
@@ -47,7 +48,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          if [ "$REPO" = "mflux-community/mflux" ]; then
+          if [ "$REPO" = "mflux-community/mflux" ] && [ "$EVENT" = "push" ]; then
             echo "path=hf://buckets/mflux-community/ci" >> "$GITHUB_OUTPUT"
             echo "sync=true" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "workflow_dispatch" ]; then

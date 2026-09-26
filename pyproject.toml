@@ -49,6 +49,10 @@ dependencies = [
     # Already present through huggingface-hub; declared so mflux-capabilities --format yaml
     # does not depend on a transitive dependency staying where it is.
     "pyyaml>=6.0,<7.0",
+
+    # Security floor for anyio, which is used transitively by httpx through huggingface-hub;
+    # mflux does not import it directly
+    "anyio>=4.14.2,<5.0"
 ]
 classifiers = [
     "Intended Audience :: Developers",
