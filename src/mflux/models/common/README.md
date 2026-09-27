@@ -282,11 +282,11 @@ image.save("portrait_hf_lora.png")
 
 For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames.
 
+DoRA adapters saved with `lora_A` / `lora_B` matrices (the PEFT layout, with `lora_magnitude_vector` or `dora_scale`) are not supported for any model. mflux stops with an error instead of loading them without their magnitude. LoKr files with `dora_scale` still load (see below).
+
 ### LyCORIS LoKr (FLUX.1 and FLUX.2)
 
 LyCORIS LoKr safetensors use the same `--lora-paths` / `lora_scales` API as classic LoRA. mflux accepts direct `lokr_w1` / `lokr_w2` tensors, factorized `lokr_w1_a` / `lokr_w1_b` (and `lokr_w2_*`, optional `lokr_t2`), optional `dora_scale`, and common ComfyUI / SimpleTuner key prefixes (`lycoris_*`, `lora_unet_*`, `diffusion_model.*`).
-
-DoRA adapters saved with `lora_A` / `lora_B` matrices (the PEFT layout, with `lora_magnitude_vector` or `dora_scale`) are not supported. mflux stops with an error instead of loading them without their magnitude.
 
 ```sh
 mflux-generate-flux2 \
