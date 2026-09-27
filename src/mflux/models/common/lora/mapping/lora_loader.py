@@ -399,7 +399,9 @@ class LoRALoader:
             if name not in lora_data:
                 continue
             base = getattr(module, attribute, None)
-            if base is None or base.ndim != 1 or base.shape != lora_data[name].shape:
+            if base is None:
+                raise ValueError(f"Direct patch {name} at {target_path}: the module has no {attribute} to patch")
+            if base.ndim != 1 or base.shape != lora_data[name].shape:
                 raise ValueError(
                     f"Direct patch shape mismatch at {target_path}.{attribute}: expected an existing matching vector"
                 )

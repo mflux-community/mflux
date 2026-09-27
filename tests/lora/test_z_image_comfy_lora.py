@@ -172,14 +172,21 @@ def test_unmatched_direct_patch_does_not_block_lora(tmp_path, capsys, bake_lora,
 
 
 @pytest.mark.fast
-@pytest.mark.parametrize("suffix,shape", [("diff", (1,)), ("diff", (1, 64)), ("diff_b", (64,))])
-def test_direct_patch_rejects_broadcasting_and_missing_bias(tmp_path, suffix, shape):
+@pytest.mark.parametrize(
+    "suffix,shape,message",
+    [
+        ("diff", (1,), "Direct patch shape mismatch"),
+        ("diff", (1, 64), "Direct patch shape mismatch"),
+        ("diff_b", (64,), "has no bias to patch"),
+    ],
+)
+def test_direct_patch_rejects_broadcasting_and_missing_bias(tmp_path, suffix, shape, message):
     model = nn.Module()
     model.norm = nn.RMSNorm(64)
     target = LoRATarget("norm", [], [], possible_diff_patterns=["norm.diff"], possible_diff_b_patterns=["norm.diff_b"])
     adapter = tmp_path / "bad.safetensors"
     mx.save_safetensors(str(adapter), {f"norm.{suffix}": mx.ones(shape)})
-    with pytest.raises(ValueError, match="Direct patch shape mismatch"):
+    with pytest.raises(ValueError, match=message):
         LoRALoader.load_and_apply_lora([target], model, [str(adapter)], [1])
 
 
