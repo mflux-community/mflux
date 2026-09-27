@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import shutil
@@ -326,6 +327,13 @@ class QwenImage21Edit(nn.Module):
 
     def _vision_reply(self, instruction: str, images: list[Image.Image], max_new_tokens: int) -> str:
         # Greedy chat reply from the in-memory Qwen3-VL over small copies of the images.
+        # Greedy decoding is deterministic, so a multi-seed run grounds and rewrites once
+        # (the cache lives in __dict__, off the nn.Module parameter tree).
+        digests = tuple(hashlib.sha1(image.tobytes()).hexdigest() + f"{image.size}{image.mode}" for image in images)
+        key = (instruction, max_new_tokens, digests)
+        cache = self.__dict__.setdefault("_vision_cache", {})
+        if key in cache:
+            return cache[key]
         if self.text_encoder is None:
             raise RuntimeError("The text encoder was released by the memory saver; reload the model.")
         feeds = [QwenImage21Edit._vision_feed(image) for image in images]
@@ -337,7 +345,11 @@ class QwenImage21Edit(nn.Module):
             image_grid_thw=mx.array(inputs["image_grid_thw"]),
             max_new_tokens=max_new_tokens,
         )
-        return self.processor.tokenizer.decode(ids)
+        reply = self.processor.tokenizer.decode(ids)
+        if len(cache) >= 32:
+            cache.pop(next(iter(cache)))
+        cache[key] = reply
+        return reply
 
     @staticmethod
     def _vision_feed(image: Image.Image, budget: int = 512) -> Image.Image:
