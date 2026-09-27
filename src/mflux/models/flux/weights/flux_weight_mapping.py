@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import List
 
 from mflux.models.common.weights.mapping.weight_mapping import WeightMapping, WeightTarget
@@ -295,7 +296,16 @@ class FluxWeightMapping(WeightMapping):
 
     @staticmethod
     def get_controlnet_transformer_mapping() -> List[WeightTarget]:
-        return FluxWeightMapping.get_transformer_mapping() + [
+        # A ControlNet is a truncated FLUX transformer: no output head, and the Canny and Upscaler checkpoints
+        # carry no single blocks. When a ControlNet has single blocks, each of them must be complete.
+        single = "single_transformer_blocks."
+        transformer = [
+            replace(target, required=False, complete_when_present=target.to_pattern.startswith(single))
+            if target.to_pattern.startswith((single, "proj_out.", "norm_out."))
+            else target
+            for target in FluxWeightMapping.get_transformer_mapping()
+        ]
+        return transformer + [
             WeightTarget(
                 to_pattern="controlnet_x_embedder.weight",
                 from_pattern=["controlnet_x_embedder.weight"],
@@ -318,11 +328,15 @@ class FluxWeightMapping(WeightMapping):
                 to_pattern="controlnet_single_blocks.{block}.weight",
                 from_pattern=["controlnet_single_blocks.{block}.weight"],
                 max_blocks=38,
+                required=False,
+                complete_when_present=True,
             ),
             WeightTarget(
                 to_pattern="controlnet_single_blocks.{block}.bias",
                 from_pattern=["controlnet_single_blocks.{block}.bias"],
                 max_blocks=38,
+                required=False,
+                complete_when_present=True,
             ),
         ]
 
@@ -641,23 +655,28 @@ class FluxWeightMapping(WeightMapping):
                 from_pattern=["encoder.down_blocks.{block}.downsamplers.0.conv.bias"],
                 required=False,
             ),
+            # FLUX.1's VAE has no quant convs (diffusers config sets them off, the mflux VAE never builds them).
             WeightTarget(
                 to_pattern="quant_conv.weight",
                 from_pattern=["quant_conv.weight"],
                 transform=WeightTransforms.transpose_conv2d_weight,
+                required=False,
             ),
             WeightTarget(
                 to_pattern="quant_conv.bias",
                 from_pattern=["quant_conv.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="post_quant_conv.weight",
                 from_pattern=["post_quant_conv.weight"],
                 transform=WeightTransforms.transpose_conv2d_weight,
+                required=False,
             ),
             WeightTarget(
                 to_pattern="post_quant_conv.bias",
                 from_pattern=["post_quant_conv.bias"],
+                required=False,
             ),
         ]
 
