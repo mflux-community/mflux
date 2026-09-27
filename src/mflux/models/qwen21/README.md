@@ -98,3 +98,8 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   `uv run mflux-generate-qwen-2.1-edit` for prefix KV caching and instruction-based reference editing.
 - LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
 - Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
+- The text prefix KV cache (valid because `causal_condition` makes text activations
+  step-independent) is a planned optimization; the current port recomputes the prefix each step.
+- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
+- Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower)
+  and PID decoding.

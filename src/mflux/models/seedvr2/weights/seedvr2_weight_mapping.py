@@ -6,7 +6,7 @@ from mflux.models.common.weights.mapping.weight_transforms import WeightTransfor
 
 class SeedVR2WeightMapping(WeightMapping):
     @staticmethod
-    def get_transformer_mapping(num_blocks: int = 32) -> List[WeightTarget]:
+    def get_transformer_mapping(num_blocks: int = 32, use_output_ada: bool = True) -> List[WeightTarget]:
         return [
             WeightTarget(
                 to_pattern="vid_in.proj.weight",
@@ -341,17 +341,21 @@ class SeedVR2WeightMapping(WeightMapping):
                 max_blocks=num_blocks,
                 required=False,
             ),
+            # Mirrors the transformer's use_output_ada: 3B builds these, 7B (use_output_ada=False) has none.
             WeightTarget(
                 to_pattern="vid_out_norm.weight",
                 from_pattern=["vid_out_norm.weight"],
+                required=use_output_ada,
             ),
             WeightTarget(
                 to_pattern="out_shift",
                 from_pattern=["vid_out_ada.out_shift"],
+                required=use_output_ada,
             ),
             WeightTarget(
                 to_pattern="out_scale",
                 from_pattern=["vid_out_ada.out_scale"],
+                required=use_output_ada,
             ),
             WeightTarget(
                 to_pattern="vid_out.proj.weight",
