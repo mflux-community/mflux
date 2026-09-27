@@ -13,7 +13,7 @@ from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
-from mflux.utils.logging_util import configure_logging
+from mflux.utils.logging_util import LoggingUtil
 
 
 def finite_float(value: str) -> float:
@@ -395,7 +395,7 @@ class CommandLineParser(argparse.ArgumentParser):
 
     def parse_args(self) -> argparse.Namespace:  # type: ignore
         namespace = super().parse_args()
-        configure_logging(verbose=getattr(namespace, "verbose", False))
+        LoggingUtil.configure_logging(verbose=getattr(namespace, "verbose", False))
 
         if getattr(namespace, "no_metadata", False):
             from mflux.utils.image_util import ImageUtil
