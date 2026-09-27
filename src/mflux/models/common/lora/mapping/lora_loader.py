@@ -49,8 +49,21 @@ class LoRALoader:
 
         print(f"📦 Loading {len(resolved_paths)} LoRA file(s)...")
 
+        # Direct deltas from every file are held back until all files have loaded, so a
+        # later file failing cannot leave an earlier file's deltas in the base weights.
+        direct_deltas: list[tuple[str, dict, float]] = []
         for lora_file, scale in zip(resolved_paths, resolved_scales):
-            LoRALoader._apply_single_lora(transformer, lora_file, scale, lora_mapping, role=role, bake_lora=bake_lora)
+            LoRALoader._apply_single_lora(
+                transformer,
+                lora_file,
+                scale,
+                lora_mapping,
+                role=role,
+                bake_lora=bake_lora,
+                direct_deltas=direct_deltas,
+            )
+        for target_path, lora_data, scale in direct_deltas:
+            LoRALoader._apply_direct_deltas(transformer, target_path, lora_data, scale)
 
         print("✅ All LoRA weights applied successfully")
 
@@ -71,6 +84,7 @@ class LoRALoader:
         *,
         role: str | None,
         bake_lora: bool = True,
+        direct_deltas: list[tuple[str, dict, float]] | None = None,
     ) -> None:
         # An unreadable file is fatal rather than skipped: the run would otherwise report
         # success and generate from the untouched base model.
@@ -103,7 +117,7 @@ class LoRALoader:
 
         # Apply LoRA using the mappings (allows multiple targets per source)
         applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
-            transformer, weights, scale, pattern_mappings, role=role, bake_lora=bake_lora
+            transformer, weights, scale, pattern_mappings, role=role, bake_lora=bake_lora, direct_deltas=direct_deltas
         )
 
         if failed_targets:
@@ -286,6 +300,7 @@ class LoRALoader:
         *,
         role: str | None,
         bake_lora: bool = True,
+        direct_deltas: list[tuple[str, dict, float]] | None = None,
     ) -> tuple[int, set, list[str]]:
         applied_count = 0
         lora_data_by_target: dict[str, dict] = {}
@@ -355,8 +370,12 @@ class LoRALoader:
                 failed_targets.append(target_path)
 
         if not failed_targets:
+            # A caller passing a list applies the deltas itself, once its whole load succeeds.
             for target_path in direct_targets:
-                LoRALoader._apply_direct_deltas(transformer, target_path, lora_data_by_target[target_path], scale)
+                if direct_deltas is None:
+                    LoRALoader._apply_direct_deltas(transformer, target_path, lora_data_by_target[target_path], scale)
+                else:
+                    direct_deltas.append((target_path, lora_data_by_target[target_path], scale))
 
         return applied_count, matched_keys, failed_targets
 

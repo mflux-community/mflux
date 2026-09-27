@@ -248,3 +248,16 @@ def test_fused_and_separate_projection_keys_conflict(tmp_path):
     with pytest.raises(ValueError, match="both map to layers.0.attention.to_q"):
         LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1])
     assert model.layers[0].attention.to_q is original
+
+
+@pytest.mark.fast
+def test_later_file_failure_leaves_earlier_direct_patches_unapplied(tmp_path):
+    model = ZImageTransformer(dim=64, n_layers=1, n_refiner_layers=1, n_heads=2, cap_feat_dim=64)
+    norm_weight = model.cap_embedder[0].weight
+    good = tmp_path / "good.safetensors"
+    bad = tmp_path / "bad.safetensors"
+    mx.save_safetensors(str(good), {"diffusion_model.cap_embedder.0.diff": mx.ones((64,))})
+    mx.save_safetensors(str(bad), {"diffusion_model.x_embedder.lora_down.weight": mx.ones((2, 64))})
+    with pytest.raises(ValueError, match="could not be applied"):
+        LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(good), str(bad)], [1, 1])
+    assert mx.array_equal(model.cap_embedder[0].weight, norm_weight).item()
