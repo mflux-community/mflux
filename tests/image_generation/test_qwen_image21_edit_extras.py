@@ -429,6 +429,12 @@ def test_grounding_parse_rewrite_and_verification():
     verdict = '{"instruction_applied": true, "outside_unchanged": false}'
     assert QwenImage21Grounding.parse_verification(verdict) == (True, False)
     assert QwenImage21Grounding.parse_verification("no verdict") is None
+    # the plain-language fallback (no parseable JSON) ignores spacing
+    assert QwenImage21Grounding.parse_verification('"instruction_applied":true, "outside_unchanged" :true') == (
+        True,
+        True,
+    )
+    assert QwenImage21Grounding.parse_verification("instruction_applied: false, unchanged: true") == (False, True)
 
 
 def test_grounding_masks():

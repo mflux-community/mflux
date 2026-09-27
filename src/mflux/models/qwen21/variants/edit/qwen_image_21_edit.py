@@ -305,7 +305,7 @@ class QwenImage21Edit(nn.Module):
         if not prompt or not prompt.strip():
             return prompt
         try:
-            reply = self._vision_reply(QwenImage21Grounding.REWRITE_PROMPT.format(instruction=prompt), [source], 256)
+            reply = self._vision_reply(QwenImage21Grounding.REWRITE_PROMPT.format(instruction=prompt), [source], 384)
         except Exception as exc:  # noqa: BLE001
             logger.warning("enhance_prompt failed (%s); using the original", exc)
             return prompt
