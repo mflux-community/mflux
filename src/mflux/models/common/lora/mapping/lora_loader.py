@@ -101,17 +101,9 @@ class LoRALoader:
         # Build pattern mappings from LoRATargets
         pattern_mappings = LoRALoader._build_pattern_mappings(lora_mapping)
 
-        if (not bake_lora or role is not None) and any(
-            LoRALoader._match_pattern(key, mapping.source_pattern) is not None
-            for mapping in pattern_mappings
-            if mapping.matrix_name in ("diff", "diff_b")
-            for key in weights
-        ):
-            raise ValueError("Direct .diff/.diff_b patches require bake_lora=True and no adapter role.")
-
         # Apply LoRA using the mappings (allows multiple targets per source)
         applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
-            transformer, weights, scale, pattern_mappings, role=role
+            transformer, weights, scale, pattern_mappings, role=role, bake_lora=bake_lora
         )
 
         if failed_targets:
@@ -293,9 +285,11 @@ class LoRALoader:
         pattern_mappings: list[PatternMatch],
         *,
         role: str | None,
+        bake_lora: bool = True,
     ) -> tuple[int, set, list[str]]:
         applied_count = 0
         lora_data_by_target: dict[str, dict] = {}
+        source_keys: dict[tuple[str, str], str] = {}
         matched_keys: set[str] = set()
         failed_targets: list[str] = []
 
@@ -328,42 +322,84 @@ class LoRALoader:
                 if target_path not in lora_data_by_target:
                     lora_data_by_target[target_path] = {}
 
+                # Two different keys filling one slot would silently drop one of them
+                # (e.g. a fused attention.qkv and a separate to_q in the same file).
+                slot = (target_path, mapping.matrix_name)
+                if source_keys.setdefault(slot, weight_key) != weight_key:
+                    raise ValueError(
+                        f"LoRA keys {source_keys[slot]} and {weight_key} both map to "
+                        f"{target_path}.{mapping.matrix_name}"
+                    )
                 lora_data_by_target[target_path][mapping.matrix_name] = transformed_value
+
+        # Direct deltas change base weights in place, which neither stripping nor a failed
+        # load can undo. Validate them all before touching the model, and write them only
+        # once every LoRA target has applied.
+        direct_targets = [path for path, data in lora_data_by_target.items() if "diff" in data or "diff_b" in data]
+        if direct_targets and (not bake_lora or role is not None):
+            raise ValueError("Direct .diff/.diff_b patches require bake_lora=True and no adapter role.")
+        for target_path in list(direct_targets):
+            if not LoRALoader._validate_direct_deltas(transformer, target_path, lora_data_by_target[target_path]):
+                failed_targets.append(target_path)
+                direct_targets.remove(target_path)
 
         # Apply LoRA to each target
         for target_path, lora_data in lora_data_by_target.items():
-            if LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
+            if target_path in failed_targets:
+                continue
+            if lora_data.keys() <= {"diff", "diff_b"}:
+                applied_count += 1
+            elif LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
                 applied_count += 1
             else:
                 failed_targets.append(target_path)
 
+        if not failed_targets:
+            for target_path in direct_targets:
+                LoRALoader._apply_direct_deltas(transformer, target_path, lora_data_by_target[target_path], scale)
+
         return applied_count, matched_keys, failed_targets
+
+    @staticmethod
+    def _direct_delta_module(transformer: nn.Module, target_path: str) -> nn.Module:
+        module = LoRALoader._get_target_module(transformer, target_path)
+        if isinstance(module, FusedLoRALinear):
+            return module.base_linear
+        if isinstance(module, (LoRALinear, LoKrLinear)):
+            return module.linear
+        return module
+
+    @staticmethod
+    def _validate_direct_deltas(transformer: nn.Module, target_path: str, lora_data: dict) -> bool:
+        try:
+            module = LoRALoader._direct_delta_module(transformer, target_path)
+        except (AttributeError, IndexError, KeyError):
+            print(f"❌ Could not find target path: {target_path}")
+            return False
+        for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+            if name not in lora_data:
+                continue
+            base = getattr(module, attribute, None)
+            if base is None or base.ndim != 1 or base.shape != lora_data[name].shape:
+                raise ValueError(
+                    f"Direct patch shape mismatch at {target_path}.{attribute}: expected an existing matching vector"
+                )
+        return True
+
+    @staticmethod
+    def _apply_direct_deltas(transformer: nn.Module, target_path: str, lora_data: dict, scale: float) -> None:
+        module = LoRALoader._direct_delta_module(transformer, target_path)
+        for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+            if name not in lora_data:
+                continue
+            base = getattr(module, attribute)
+            delta = lora_data[name]
+            setattr(module, attribute, (base.astype(mx.float32) + scale * delta.astype(mx.float32)).astype(base.dtype))
 
     @staticmethod
     def _apply_adapter_to_target(
         transformer: nn.Module, target_path: str, lora_data: dict, scale: float, *, role: str | None
     ) -> bool:
-        if "diff" in lora_data or "diff_b" in lora_data:
-            module = LoRALoader._get_target_module(transformer, target_path)
-            if isinstance(module, FusedLoRALinear):
-                module = module.base_linear
-            elif isinstance(module, (LoRALinear, LoKrLinear)):
-                module = module.linear
-            for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
-                if name not in lora_data:
-                    continue
-                base = getattr(module, attribute, None)
-                delta = lora_data[name]
-                if base is None or base.ndim != 1 or base.shape != delta.shape:
-                    raise ValueError(
-                        f"Direct patch shape mismatch at {target_path}.{attribute}: expected an existing matching vector"
-                    )
-                setattr(
-                    module, attribute, (base.astype(mx.float32) + scale * delta.astype(mx.float32)).astype(base.dtype)
-                )
-            if not any(name in lora_data for name in ("lora_A", "lora_B")) and not is_lokr_adapter(lora_data):
-                return True
-
         if is_lokr_adapter(lora_data):
             return LoRALoader._apply_lokr_matrices_to_target(transformer, target_path, lora_data, scale, role=role)
 

@@ -14,6 +14,12 @@ class ZImageLoRAMapping(LoRAMapping):
         return targets
 
     @staticmethod
+    def _split_qkv(weight: mx.array, index: int) -> mx.array:
+        if weight.shape[0] % 3:
+            raise ValueError(f"Fused attention.qkv LoRA up weight {weight.shape} does not split into three equal parts")
+        return mx.split(weight, 3, axis=0)[index]
+
+    @staticmethod
     def _get_comfy_targets() -> list[LoRATarget]:
         targets = []
         for layer_type in ("layers", "noise_refiner", "context_refiner"):
@@ -26,7 +32,7 @@ class ZImageLoRAMapping(LoRAMapping):
                         possible_up_patterns=[f"{source}.attention.qkv.lora_up.weight"],
                         possible_down_patterns=[f"{source}.attention.qkv.lora_down.weight"],
                         possible_alpha_patterns=[f"{source}.attention.qkv.alpha"],
-                        up_transform=lambda weight, index=index: mx.split(weight, 3, axis=0)[index],
+                        up_transform=lambda weight, index=index: ZImageLoRAMapping._split_qkv(weight, index),
                     )
                 )
             for source_norm, target_norm in (

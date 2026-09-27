@@ -191,5 +191,60 @@ def test_fused_qkv_rejects_unequal_chunks(tmp_path):
     mx.save_safetensors(
         str(adapter), {f"{source}.lora_down.weight": mx.ones((2, 64)), f"{source}.lora_up.weight": mx.ones((193, 2))}
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="three equal parts"):
         LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1])
+
+
+@pytest.mark.fast
+def test_failed_load_leaves_direct_patches_unapplied(tmp_path):
+    model = ZImageTransformer(dim=64, n_layers=1, n_refiner_layers=1, n_heads=2, cap_feat_dim=64)
+    norm_weight = model.cap_embedder[0].weight
+    bias = model.all_x_embedder["2-1"].bias
+    adapter = tmp_path / "partial.safetensors"
+    mx.save_safetensors(
+        str(adapter),
+        {
+            "diffusion_model.cap_embedder.0.diff": mx.ones((64,)),
+            "diffusion_model.x_embedder.diff_b": mx.ones(bias.shape),
+            "diffusion_model.x_embedder.lora_down.weight": mx.ones((2, 64)),
+        },
+    )
+    with pytest.raises(ValueError, match="could not be applied"):
+        LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1])
+    assert mx.array_equal(model.cap_embedder[0].weight, norm_weight).item()
+    assert mx.array_equal(model.all_x_embedder["2-1"].bias, bias).item()
+
+
+@pytest.mark.fast
+def test_direct_patch_on_missing_target_reports_failure(tmp_path):
+    model = nn.Module()
+    model.norm = nn.RMSNorm(4)
+    targets = [
+        LoRATarget("norm", [], [], possible_diff_patterns=["norm.diff"]),
+        LoRATarget("blocks.3.norm", [], [], possible_diff_patterns=["blocks.3.norm.diff"]),
+    ]
+    adapter = tmp_path / "missing.safetensors"
+    mx.save_safetensors(str(adapter), {"norm.diff": mx.ones((4,)), "blocks.3.norm.diff": mx.ones((4,))})
+    with pytest.raises(ValueError, match="could not be applied"):
+        LoRALoader.load_and_apply_lora(targets, model, [str(adapter)], [1])
+    assert mx.array_equal(model.norm.weight, mx.ones((4,))).item()
+
+
+@pytest.mark.fast
+def test_fused_and_separate_projection_keys_conflict(tmp_path):
+    model = ZImageTransformer(dim=64, n_layers=1, n_refiner_layers=1, n_heads=2, cap_feat_dim=64)
+    original = model.layers[0].attention.to_q
+    adapter = tmp_path / "mixed.safetensors"
+    prefix = "diffusion_model.layers.0.attention"
+    mx.save_safetensors(
+        str(adapter),
+        {
+            f"{prefix}.qkv.lora_down.weight": mx.ones((2, 64)),
+            f"{prefix}.qkv.lora_up.weight": mx.ones((192, 2)),
+            f"{prefix}.to_q.lora_down.weight": mx.ones((2, 64)),
+            f"{prefix}.to_q.lora_up.weight": mx.ones((64, 2)),
+        },
+    )
+    with pytest.raises(ValueError, match="both map to layers.0.attention.to_q"):
+        LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1])
+    assert model.layers[0].attention.to_q is original
