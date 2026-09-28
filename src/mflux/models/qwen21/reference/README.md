@@ -2,9 +2,9 @@
 
 Native MLX inference for [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1): text-to-image, editing with up to ten reference images, and RGBA output. This is a separate architecture from the earlier [Qwen Image models](../../qwen/README.md), with a 7B diffusion transformer, a Qwen3-VL text/vision encoder, and a 64-channel RGBA VAE.
 
-The new `mflux-generate-qwen-2.1-edit` entry point complements the existing `mflux-generate-qwen-2.1` text-to-image and strength-based img2img command. Both use the same model registry entry. This variant adds the vision tower and interleaved reference conditioning; its components live in `qwen21/reference` because the original text-only port uses a different checkpoint layout and drops alpha. Existing generation behavior and saved checkpoints keep their original entry point.
+The `mflux-generate-qwen-2.1-edit` entry point complements the existing `mflux-generate-qwen-2.1` text-to-image and strength-based img2img command. Both use the same model registry entry, Transformer blocks, component-loading mechanism, and LoRA mappings. This variant adds the vision tower and interleaved reference conditioning. Its VAE and text/vision encoder remain separate implementations under `qwen21/reference`; consolidating those components is follow-up work. Existing generation behavior and saved checkpoints keep their original entry point.
 
-The editing pipeline includes prefix KV caching, quantization, local checkpoint export/reload, metadata replay, and the common generation callbacks. Training and LoRA loading are not implemented for this model.
+The editing pipeline includes prefix KV caching, LoRA loading, quantization, local checkpoint export/reload, metadata replay, and the common generation callbacks. Training is not implemented for this variant.
 
 ## Generate an image
 
@@ -61,6 +61,23 @@ Reference order is significant. If width and height are omitted, the last refere
 
 RGBA references retain alpha in the VAE. The vision encoder reads a separate copy composited over white, matching the upstream pipeline.
 
+## LoRA
+
+Use the same LoRA arguments and adapter formats as the text-to-image command:
+
+```sh
+mflux-generate-qwen-2.1-edit \
+  --image-paths portrait.png \
+  --prompt "Change the jacket to dark green. Preserve the person's face and pose." \
+  --lora adapter.safetensors 1.0 \
+  --seed 42 --quantize 8 \
+  --output edited-with-lora.png
+```
+
+Supported mappings include PEFT `.default`, `transformer.`, and `diffusion_model.` formats, including fused `gate_up` adapters. DoRA and mixed full-weight files remain unsupported. Use `--no-bake-lora` to keep adapters separate during inference; model export uses the common saver, which bakes their effect into the saved weights. Reload an exported adapted model without reapplying the same adapter. Image metadata records the adapter paths and scales used for generation.
+
+The Python constructor accepts `lora_paths=["adapter.safetensors"]`, `lora_scales=[1.0]`, and `bake_lora=True` alongside the existing model arguments. Whether a particular adapter produces useful reference edits depends on its training; sharing the loader does not establish edit quality for every adapter.
+
 ## Transparent output
 
 ```sh
@@ -84,6 +101,8 @@ model.save_model("./qwen21-8bit")
 ```
 
 The existing `mflux-save --model qwen-image-2.1` exports the original text-only implementation and omits the vision tower. Those exports cannot be used by this editing entry point. Use the native Hugging Face checkpoint or an export produced by `QwenImage21Edit.save_model`.
+
+Editing exports created before Transformer consolidation remain loadable. The loader translates the old `modulation.1` parameter names, including quantized tensors, to the shared layout without requantizing them. The generation and editing variants retain their respective quantization defaults.
 
 ```sh
 mflux-generate-qwen-2.1-edit \

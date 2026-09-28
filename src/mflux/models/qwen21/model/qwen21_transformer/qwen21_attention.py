@@ -1,3 +1,6 @@
+# Copyright 2026 The Qwen Team and The HuggingFace Team.
+# SPDX-License-Identifier: Apache-2.0
+# Reference attention adapted from Qwen/Hugging Face's QwenImage21Transformer2DModel.
 from __future__ import annotations
 
 import mlx.core as mx
@@ -8,6 +11,7 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
     fused_qk_norm_rope,
     fused_qk_norm_rope_available,
 )
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 
 
 class Qwen21Attention(nn.Module):
@@ -59,6 +63,48 @@ class Qwen21Attention(nn.Module):
             mask=attn_mask,
         )
         return self._unproject(hidden_states)
+
+    def forward_reference(
+        self,
+        x: mx.array,
+        layout: QwenImage21Layout,
+        rope: tuple[mx.array, mx.array],
+        cached: tuple[mx.array, mx.array] | None = None,
+        extract: bool = False,
+        key_valid: mx.array | None = None,
+    ) -> tuple[mx.array, tuple[mx.array, mx.array] | None]:
+        batch, length, dim = x.shape
+        q, k, v = [
+            layer(x).reshape(batch, length, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+            for layer in (self.to_q, self.to_k, self.to_v)
+        ]
+        q = QwenImage21Layout.rotate(self.norm_q(q).astype(v.dtype), rope)
+        k = QwenImage21Layout.rotate(self.norm_k(k).astype(v.dtype), rope)
+        stored = None
+        if cached is not None:
+            k, v = mx.concatenate([cached[0], k], axis=2), mx.concatenate([cached[1], v], axis=2)
+        elif extract:
+            stored = (mx.contiguous(k[:, :, : layout.prefix_length]), mx.contiguous(v[:, :, : layout.prefix_length]))
+        scale = self.head_dim**-0.5
+        if cached is not None:
+            mask = key_valid[:, None, None, :] if key_valid is not None else None
+            output = scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+        else:
+            outputs = []
+            for start, end, is_text in [*layout.segments, (layout.prefix_length, length, False)]:
+                mask = None
+                if is_text:
+                    mask = mx.arange(end)[None, :] <= mx.arange(start, end)[:, None]
+                if key_valid is not None:
+                    valid = key_valid[:, None, None, :end]
+                    mask = valid if mask is None else mask[None, None] & valid
+                outputs.append(
+                    scaled_dot_product_attention(
+                        q[:, :, start:end], k[:, :, :end], v[:, :, :end], scale=scale, mask=mask
+                    )
+                )
+            output = mx.concatenate(outputs, axis=2)
+        return self.to_out[0](output.transpose(0, 2, 1, 3).reshape(batch, length, dim)), stored
 
     def _project(
         self,

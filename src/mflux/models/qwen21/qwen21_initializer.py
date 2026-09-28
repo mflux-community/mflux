@@ -1,8 +1,13 @@
+from pathlib import Path
+
+import mlx.core as mx
+from mlx.utils import tree_flatten, tree_unflatten
+
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.tokenizer import TokenizerLoader
-from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
 from mflux.models.qwen21.model.qwen21_text_encoder.qwen21_text_encoder import Qwen21TextEncoder
@@ -24,11 +29,49 @@ class Qwen21Initializer:
         bake_lora: bool = True,
     ) -> None:
         path = model_path if model_path else model_config.model_name
-        Qwen21Initializer._init_config(model, model_config)
-        weights = Qwen21Initializer._load_weights(path)
+        Qwen21Initializer.init_config(model, model_config)
+        root = PathResolution.resolve(path, Qwen21WeightDefinition.get_download_patterns())
+        if root is None:
+            raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")
         Qwen21Initializer._init_tokenizers(model, path)
         Qwen21Initializer._init_models(model)
-        Qwen21Initializer._apply_weights(model, weights, quantize)
+        Qwen21Initializer.load_components(model, root, Qwen21WeightDefinition, quantize)
+        Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
+
+    @staticmethod
+    def load_components(model, root: Path, weight_definition, quantize: int | None, *, validate: bool = False) -> None:
+        # Release each dense component before loading the next, especially for edit's visual encoder.
+        model.bits = None
+        for component in weight_definition.get_components():
+            module = getattr(model, component.model_attr or component.name)
+            weights = WeightLoader.load_single_local(component, root)
+            supplied = dict(tree_flatten(weights.components[component.name]))
+            if component.name == "transformer":
+                supplied = Qwen21Initializer._normalize_transformer_weights(supplied)
+                weights.components[component.name] = tree_unflatten(list(supplied.items()))
+            if validate and weights.meta_data.quantization_level is None:
+                Qwen21Initializer._validate_weights(component.name, module, supplied)
+            bits = WeightApplier.apply_and_quantize(
+                weights=weights,
+                models={component.name: module},
+                quantize_arg=quantize,
+                weight_definition=weight_definition,
+            )
+            if model.bits is None:
+                model.bits = bits
+            if validate and weights.meta_data.quantization_level is not None:
+                Qwen21Initializer._validate_weights(component.name, module, supplied)
+            mx.eval(module.parameters())
+            del weights, supplied
+            mx.clear_cache()
+
+    @staticmethod
+    def apply_lora(
+        model,
+        lora_paths: list[str] | None,
+        lora_scales: list[float] | None,
+        bake_lora: bool,
+    ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=Qwen21LoRAMapping.get_mapping(),
             transformer=model.transformer,
@@ -38,18 +81,11 @@ class Qwen21Initializer:
         )
 
     @staticmethod
-    def _init_config(model, model_config: ModelConfig) -> None:
+    def init_config(model, model_config: ModelConfig) -> None:
         model.prompt_cache = {}
         model.model_config = model_config
         model.callbacks = CallbackRegistry()
         model.tiling_config = None
-
-    @staticmethod
-    def _load_weights(model_path: str) -> LoadedWeights:
-        return WeightLoader.load(
-            weight_definition=Qwen21WeightDefinition,
-            model_path=model_path,
-        )
 
     @staticmethod
     def _init_tokenizers(model, model_path: str) -> None:
@@ -65,14 +101,28 @@ class Qwen21Initializer:
         model.text_encoder = Qwen21TextEncoder()
 
     @staticmethod
-    def _apply_weights(model, weights: LoadedWeights, quantize: int | None) -> None:
-        model.bits = WeightApplier.apply_and_quantize(
-            weights=weights,
-            quantize_arg=quantize,
-            weight_definition=Qwen21WeightDefinition,
-            models={
-                "vae": model.vae,
-                "transformer": model.transformer,
-                "text_encoder": model.text_encoder,
-            },
-        )
+    def _normalize_transformer_weights(supplied: dict[str, mx.array]) -> dict[str, mx.array]:
+        normalized = {}
+        for key, value in supplied.items():
+            if key == "time_text_embed.time_proj.freqs" or key in {
+                f"pos_embed.{table}.{axis}" for table in ("cos_tables", "sin_tables") for axis in range(3)
+            }:
+                continue  # Older text-only exports included these deterministic, non-learned buffers.
+            # Saved mflux exports bypass HF mappings; include packed weights and quantization metadata.
+            target = key.replace("modulation.1.", "modulation.layers.1.", 1) if key.startswith("modulation.1.") else key
+            if target in normalized:
+                raise ValueError(f"Duplicate transformer checkpoint key after normalization: {target}")
+            normalized[target] = value
+        return normalized
+
+    @staticmethod
+    def _validate_weights(name: str, module, supplied: dict[str, mx.array]) -> None:
+        expected = dict(tree_flatten(module.parameters()))
+        missing = {key for key in set(expected) - set(supplied) if not key.endswith(".inv_freq")}
+        unexpected = set(supplied) - set(expected)
+        mismatched = [key for key in expected.keys() & supplied.keys() if expected[key].shape != supplied[key].shape]
+        if missing or unexpected or mismatched:
+            raise ValueError(
+                f"{name} checkpoint mismatch: missing={sorted(missing)}, "
+                f"unexpected={sorted(unexpected)}, shapes={mismatched}"
+            )

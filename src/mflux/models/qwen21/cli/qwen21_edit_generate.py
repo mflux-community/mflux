@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.reference import QwenImage21Edit
 from mflux.models.qwen21.reference.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
@@ -12,6 +12,7 @@ from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopIm
 from mflux.utils.prompt_util import PromptUtil
 from mflux.utils.scale_factor import ScaleFactor
 
+IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
 CONDITIONAL_OPTIONS = {
     "--scheduler": {
         "condition": "linear Euler scheduler only",
@@ -28,6 +29,7 @@ def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate and edit RGB/RGBA images with Qwen-Image-2.1.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False, default_model="qwen-image-2.1")
+    parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.set_defaults(width=None, height=None)
     for flag in ("--width", "--height"):
@@ -55,6 +57,7 @@ def build_parser() -> CommandLineParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
     if args.guidance is None or args.guidance == 1:
         CommandLineParser.warn_ignored_options(
             {"--negative-prompt": CONDITIONAL_OPTIONS["--negative-prompt"]["reason"]}
@@ -90,6 +93,7 @@ def main() -> None:
         quantize=args.quantize,
         model_path=args.model_path,
         model_config=model_config,
+        **lora_init_kwargs_from_args(args),
     )
     memory_saver = CallbackManager.register_callbacks(args, model, QwenImage21LatentCreator)
     try:

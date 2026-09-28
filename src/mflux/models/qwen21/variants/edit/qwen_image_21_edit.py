@@ -25,10 +25,18 @@ from mflux.utils.image_util import ImageUtil
 
 class QwenImage21Edit(nn.Module):
     def __init__(
-        self, quantize: int | None = None, model_path: str | None = None, model_config: ModelConfig | None = None
+        self,
+        quantize: int | None = None,
+        model_path: str | None = None,
+        model_config: ModelConfig | None = None,
+        lora_paths: list[str] | None = None,
+        lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
     ):
         super().__init__()
-        QwenImage21Initializer.init(self, model_config or ModelConfig.qwen_image_21(), quantize, model_path)
+        QwenImage21Initializer.init(
+            self, model_config or ModelConfig.qwen_image_21(), quantize, model_path, lora_paths, lora_scales, bake_lora
+        )
 
     def generate_image(
         self,
@@ -129,6 +137,8 @@ class QwenImage21Edit(nn.Module):
             seed=seed,
             prompt=prompt,
             quantization=self.bits,
+            lora_paths=self.lora_paths,
+            lora_scales=self.lora_scales,
             generation_time=config.time_steps.format_dict["elapsed"],
             image_paths=image_paths,
             negative_prompt=negative_prompt,

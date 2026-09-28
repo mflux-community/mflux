@@ -1,6 +1,6 @@
 # Qwen Image 2.1
 
-For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `uv run mflux-generate-qwen-2.1-edit`. The existing command below retains its text-to-image and strength-based img2img behavior.
+For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `uv run mflux-generate-qwen-2.1-edit`. Both commands share the Transformer, component-loading mechanism, and LoRA mappings. The existing command below retains its text-to-image and strength-based img2img behavior.
 
 MFLUX’s MLX implementation of **Qwen-Image-2.1** (`Qwen/Qwen-Image-2.1`), the second-generation
 Qwen Image text-to-image model.
@@ -109,6 +109,6 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
   deterministic for a given (steps, resolution, ratio). The CLI flag is `--teacache-ratio`.
   If the selector picks two or more steps in a row, all of them reuse the same noise prediction.
-- LoRA: `--lora adapter.safetensors 1.0` in the text-to-image command. Supported formats are PEFT
-  `.default`, `transformer.` and `diffusion_model.`. DoRA and mixed full-weight files are not supported.
-- Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
+- LoRA: `--lora adapter.safetensors 1.0` in either command (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
+- The VAE and text/vision encoder remain separate between the two commands; their consolidation is follow-up work.
+- Not yet supported: PID decoding.

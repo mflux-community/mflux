@@ -1,3 +1,6 @@
+# Copyright 2026 The Qwen Team and The HuggingFace Team.
+# SPDX-License-Identifier: Apache-2.0
+# Reference execution adapted from Qwen/Hugging Face's QwenImage21Transformer2DModel.
 from __future__ import annotations
 
 import mlx.core as mx
@@ -6,6 +9,7 @@ from mlx import nn
 
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_norm_out import Qwen21AdaLayerNormContinuous
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_rope import Qwen21Rope
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_text_projection import Qwen21TextProjection
@@ -27,6 +31,7 @@ class Qwen21Transformer(nn.Module):
         eps: float = 1e-6,
     ) -> None:
         super().__init__()
+        self.axes = tuple(axes_dims_rope)
         self.inner_dim = num_attention_heads * attention_head_dim
         self.pos_embed = Qwen21Rope(theta=10000, axes_dim=list(axes_dims_rope))
         self.time_text_embed = Qwen21TimeTextEmbed(embedding_dim=self.inner_dim)
@@ -55,7 +60,7 @@ class Qwen21Transformer(nn.Module):
         self.use_text_cache = True
         self._text_caches: dict[int, dict] = {}
         self.proj_out = nn.Linear(self.inner_dim, out_channels, bias=False)
-        self._geometry_cache: dict[tuple[int, int, int], tuple[mx.array, mx.array, mx.array]] = {}
+        self._geometry_cache: dict[tuple[int, int, int], tuple[mx.array, mx.array, mx.array | None]] = {}
 
     def __call__(
         self,
@@ -167,6 +172,63 @@ class Qwen21Transformer(nn.Module):
         scale = mx.broadcast_to(scale[0][None, None, :], (1, num_image_tokens, scale.shape[-1]))
         hidden_states = self.proj_out(self.norm_out(hidden_states, scale))
         return hidden_states
+
+    def forward_reference(
+        self,
+        hidden_states: mx.array,
+        encoder_hidden_states: mx.array,
+        timestep: mx.array,
+        layout: QwenImage21Layout,
+        cache: list | None = None,
+        encoder_hidden_states_mask: mx.array | None = None,
+    ) -> mx.array:
+        cached = cache is not None and len(cache) > 0
+        target_mask = layout.target_mask
+        rope = layout.rope
+        if cached:
+            if len(cache) != len(self.transformer_blocks):
+                raise ValueError("Incomplete Qwen-Image-2.1 prefix cache.")
+            x = self.img_in(hidden_states[:, -layout.target_tokens :])
+            target_mask = target_mask[layout.prefix_length :]
+            rope = tuple(v[layout.prefix_length :] for v in rope)
+        else:
+            images = self.img_in(hidden_states)
+            text = self.txt_in(encoder_hidden_states)
+            x = mx.concatenate(
+                [text, mx.zeros((text.shape[0], layout.target_tokens // 4, text.shape[-1]), dtype=text.dtype)], axis=1
+            )
+            x = x[:, layout.repeat_indices]
+            x[:, layout.image_indices] = images
+        key_valid = None
+        if encoder_hidden_states_mask is not None:
+            mask = mx.concatenate(
+                [
+                    encoder_hidden_states_mask.astype(mx.bool_),
+                    mx.ones((x.shape[0], layout.target_tokens // 4), dtype=mx.bool_),
+                ],
+                axis=1,
+            )
+            key_valid = mask[:, layout.repeat_indices]
+            key_valid[:, layout.image_indices] = True
+        t = mx.concatenate([timestep.astype(x.dtype).reshape(-1), mx.zeros((1,), dtype=x.dtype)])
+        time = self.time_text_embed(t, x.dtype)
+        modulation = self.modulation(time)
+        for index, block in enumerate(self.transformer_blocks):
+            x, stored = block.forward_reference(
+                x,
+                modulation,
+                target_mask,
+                layout,
+                rope,
+                cached=cache[index] if cached else None,
+                extract=cache is not None and not cached,
+                key_valid=key_valid,
+            )
+            if stored is not None:
+                cache.append(stored)
+            mx.eval(x)
+        scale = Qwen21TransformerBlock.select_rows(self.norm_out.linear(nn.silu(time)), target_mask)
+        return self.proj_out(self.norm_out(x, scale))[:, -layout.target_tokens :]
 
     def _forward(
         self,
