@@ -148,6 +148,15 @@ class TestQwen21StepCacheCli:
         monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--config-from-metadata", str(sidecar)])
         assert qwen21_generate.build_parser().parse_args().step_cache_ratio == 0.25
 
+    @pytest.mark.parametrize("bad", ["5", "0", "-0.2", '"abc"'])
+    def test_invalid_metadata_ratio_rejected_during_parsing(self, monkeypatch, tmp_path, bad):
+        sidecar = tmp_path / "image.json"
+        sidecar.write_text(f'{{"prompt": "x", "seed": 3, "steps": 40, "step_cache_ratio": {bad}}}')
+        monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--config-from-metadata", str(sidecar)])
+        with pytest.raises(SystemExit) as exc:
+            qwen21_generate.build_parser().parse_args()
+        assert exc.value.code == 2
+
     def test_command_line_ratio_overrides_metadata(self, monkeypatch, tmp_path):
         sidecar = tmp_path / "image.json"
         sidecar.write_text('{"prompt": "x", "seed": 3, "steps": 40, "step_cache_ratio": 0.25}')

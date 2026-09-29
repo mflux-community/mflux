@@ -491,7 +491,11 @@ class CommandLineParser(argparse.ArgumentParser):
                 and prior_gen_metadata.get("step_cache_ratio") is not None
                 and not self._option_was_provided("--step-cache-ratio", "--teacache-ratio")
             ):
-                namespace.step_cache_ratio = prior_gen_metadata["step_cache_ratio"]
+                # Same range check as the flag, so a bad sidecar fails here instead of after the model loads.
+                try:
+                    namespace.step_cache_ratio = open_unit_float(str(prior_gen_metadata["step_cache_ratio"]))
+                except argparse.ArgumentTypeError as exc:
+                    self.error(f"step_cache_ratio in --config-from-metadata: {exc}")
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")
