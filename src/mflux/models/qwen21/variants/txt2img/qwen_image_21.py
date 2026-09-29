@@ -147,7 +147,7 @@ class QwenImage21(nn.Module):
 
         skip_steps = (
             QwenImage21._teacache_skip_steps(self.transformer, config, teacache_ratio)
-            if teacache_ratio
+            if teacache_ratio is not None
             else frozenset()
         )
         previous_noise: mx.array | None = None
