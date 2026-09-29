@@ -42,3 +42,50 @@ class Qwen21TransformerBlock(nn.Module):
         mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
         hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
         return hidden_states
+
+    def text_forward(
+        self,
+        hidden_states: mx.array,
+        mod1: mx.array,
+        mod2: mx.array,
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """Run this block over the text prefix only (causal, t=0 modulation).
+
+        Returns the updated text hidden states and this block's post-rope K/V
+        over the text positions, for reuse by the image-only denoise steps.
+        """
+        scale1, gate1 = mx.split(mod1, 2, axis=-1)
+        scale2, gate2 = mx.split(mod2, 2, axis=-1)
+
+        attn_input = self.img_norm1(hidden_states) * (1 + scale1)
+        attn_out, key_text, value_text = self.attn.text_attention(attn_input, rope_cos, rope_sin)
+        hidden_states = hidden_states + nn.tanh(gate1) * attn_out
+
+        mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
+        hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
+        return hidden_states, key_text, value_text
+
+    def image_forward(
+        self,
+        hidden_states: mx.array,
+        key_text: mx.array,
+        value_text: mx.array,
+        mod1: mx.array,
+        mod2: mx.array,
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+    ) -> mx.array:
+        """Run this block over the image tokens only, against the cached text K/V."""
+        scale1, gate1 = mx.split(mod1, 2, axis=-1)
+        scale2, gate2 = mx.split(mod2, 2, axis=-1)
+
+        attn_input = self.img_norm1(hidden_states) * (1 + scale1)
+        hidden_states = hidden_states + nn.tanh(gate1) * self.attn.image_attention(
+            attn_input, key_text, value_text, rope_cos, rope_sin
+        )
+
+        mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
+        hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
+        return hidden_states

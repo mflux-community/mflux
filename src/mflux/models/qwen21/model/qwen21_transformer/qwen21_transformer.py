@@ -47,6 +47,12 @@ class Qwen21Transformer(nn.Module):
         ]
         self.norm_out = Qwen21AdaLayerNormContinuous(embedding_dim=self.inner_dim, eps=eps)
         self._step_fn = None
+        self._image_step_fn = None
+        # Per-prompt text-prefix K/V caches, keyed by the encoder-hidden-states array
+        # identity (the caller caches embeddings per prompt, so the object persists across
+        # steps and across true-CFG's alternating positive/negative embeddings).
+        self.use_text_cache = True
+        self._text_caches: dict[int, dict] = {}
         self.proj_out = nn.Linear(self.inner_dim, out_channels, bias=False)
         self._geometry_cache: dict[tuple[int, int, int], tuple[mx.array, mx.array, mx.array]] = {}
 
@@ -59,18 +65,100 @@ class Qwen21Transformer(nn.Module):
         encoder_hidden_states_mask: mx.array | None = None,
     ) -> mx.array:
         timestep = Qwen21Transformer._compute_timestep(t, config)
-        timestep_rows = mx.concatenate([timestep, mx.zeros((1,), dtype=timestep.dtype)])
         rope_cos, rope_sin, attn_mask = self._geometry(
             text_len=encoder_hidden_states.shape[1],
             latent_height=config.height // 16,
             latent_width=config.width // 16,
             encoder_hidden_states_mask=encoder_hidden_states_mask,
         )
-        if self._step_fn is None:
-            # compile after the shapes of one denoise step are known; mx.compile retraces
-            # per shape, so prompt-length and resolution changes just compile again
-            self._step_fn = mx.compile(self._forward)
-        return self._step_fn(hidden_states, encoder_hidden_states, timestep_rows, rope_cos, rope_sin, attn_mask)
+        text_len = encoder_hidden_states.shape[1]
+        if attn_mask is not None or not self.use_text_cache:
+            # padded prompts (and cache-disabled runs) keep the full joint recompute path
+            timestep_rows = mx.concatenate([timestep, mx.zeros((1,), dtype=timestep.dtype)])
+            if self._step_fn is None:
+                # compile after the shapes of one denoise step are known; mx.compile retraces
+                # per shape, so prompt-length and resolution changes just compile again
+                self._step_fn = mx.compile(self._forward)
+            return self._step_fn(hidden_states, encoder_hidden_states, timestep_rows, rope_cos, rope_sin, attn_mask)
+
+        geometry = (text_len, config.height // 16, config.width // 16)
+        cache = self._text_caches.get(id(encoder_hidden_states))
+        if cache is None or cache["geometry"] != geometry or cache["embedding"] is not encoder_hidden_states:
+            cache = self._build_text_cache(encoder_hidden_states, rope_cos, rope_sin, geometry)
+            self._text_caches[id(encoder_hidden_states)] = cache
+        if self._image_step_fn is None:
+            # like _step_fn: retraces per (image-token-count, text-length) shape change
+            self._image_step_fn = mx.compile(self._image_forward)
+        return self._image_step_fn(
+            hidden_states,
+            timestep,
+            cache["text_kvs"],
+            rope_cos[text_len:],
+            rope_sin[text_len:],
+        )
+
+    def _build_text_cache(
+        self,
+        encoder_hidden_states: mx.array,
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+        geometry: tuple[int, int, int],
+    ) -> dict:
+        """Compute the text hidden stream once per (prompt, geometry).
+
+        Text tokens read the t=0 modulation row (both timestep rows are zero here)
+        and attend only causally to each other, so this stream — and each block's
+        post-rope K/V over the text positions — is identical on every denoise step.
+        """
+        text_len = encoder_hidden_states.shape[1]
+        timestep_rows = mx.zeros((2,), dtype=mx.float32)
+        temb = self.time_text_embed(timestep_rows)
+        modulation = self.modulation(temb)
+        mod1, mod2 = mx.split(modulation, 2, axis=-1)
+        mod1 = mx.broadcast_to(mod1[1][None, None, :], (1, text_len, mod1.shape[-1]))
+        mod2 = mx.broadcast_to(mod2[1][None, None, :], (1, text_len, mod2.shape[-1]))
+
+        hidden_states = self.txt_in(encoder_hidden_states)
+        text_kvs = []
+        for block in self.transformer_blocks:
+            hidden_states, key_text, value_text = block.text_forward(
+                hidden_states, mod1, mod2, rope_cos[:text_len], rope_sin[:text_len]
+            )
+            text_kvs.append((key_text, value_text))
+        arrays = [hidden_states]
+        for key_text, value_text in text_kvs:
+            arrays.extend((key_text, value_text))
+        mx.eval(*arrays)
+        return {"embedding": encoder_hidden_states, "geometry": geometry, "text_kvs": text_kvs}
+
+    def _image_forward(
+        self,
+        hidden_states: mx.array,
+        timestep: mx.array,
+        text_kvs: list[tuple[mx.array, mx.array]],
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+    ) -> mx.array:
+        # image tokens only: the text prefix contributes through the cached per-block K/V
+        num_image_tokens = hidden_states.shape[1]
+        timestep_rows = mx.concatenate([timestep, mx.zeros((1,), dtype=timestep.dtype)])
+        temb = self.time_text_embed(timestep_rows)
+        modulation = self.modulation(temb)
+        mod1, mod2 = mx.split(modulation, 2, axis=-1)
+        # image tokens read the sampled-t row (row 0)
+        mod1 = mx.broadcast_to(mod1[0][None, None, :], (1, num_image_tokens, mod1.shape[-1]))
+        mod2 = mx.broadcast_to(mod2[0][None, None, :], (1, num_image_tokens, mod2.shape[-1]))
+
+        hidden_states = self.img_in(hidden_states)
+        for block, (key_text, value_text) in zip(self.transformer_blocks, text_kvs):
+            hidden_states = block.image_forward(
+                hidden_states, key_text, value_text, mod1, mod2, rope_cos, rope_sin
+            )
+
+        scale = self.norm_out.linear(nn.silu(temb))
+        scale = mx.broadcast_to(scale[0][None, None, :], (1, num_image_tokens, scale.shape[-1]))
+        hidden_states = self.proj_out(self.norm_out(hidden_states, scale))
+        return hidden_states
 
     def _forward(
         self,
