@@ -109,8 +109,6 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
   deterministic for a given (steps, resolution, ratio). The CLI flag is `--teacache-ratio`.
   If the selector picks two or more steps in a row, all of them reuse the same noise prediction.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
+- LoRA: `--lora adapter.safetensors 1.0` in the text-to-image command. Supported formats are PEFT
+  `.default`, `transformer.` and `diffusion_model.`. DoRA and mixed full-weight files are not supported.
 - Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
-- Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower)
-  and PID decoding.

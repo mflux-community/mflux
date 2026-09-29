@@ -110,9 +110,9 @@ class TestQwenImage21Reference:
             scale_factor_temporal=8,
         )
         torch.manual_seed(42)
-        # The pinned Diffusers reference still names this parameter "temporal_downsample".
+        # The pinned Diffusers reference still names this parameter "temperal_downsample".
         reference_config = dict(config)
-        reference_config["temporal_downsample"] = reference_config.pop("temporal_downsample")
+        reference_config["temperal_downsample"] = reference_config.pop("temporal_downsample")
         reference = diffusers.AutoencoderKLQwenImage21(**reference_config).to("cpu").eval()
         model = QwenImage21VAE(config)
         self.transfer(model, reference, QwenImage21WeightDefinition.vae_weight)

@@ -65,6 +65,16 @@ def positive_float(value: str) -> float:
     return parsed
 
 
+def open_unit_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid number")
+    if not 0 < parsed < 1:
+        raise argparse.ArgumentTypeError(f"'{value}' must be > 0 and < 1")
+    return parsed
+
+
 def vae_tile_size(value: str) -> int:
     # The decode tiler uses a fixed 64px overlap; the tile must be strictly larger
     # than the overlap or the tiling stride becomes <= 0. 128 is the practical floor.

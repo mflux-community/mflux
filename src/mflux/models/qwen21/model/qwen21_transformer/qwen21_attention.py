@@ -21,7 +21,8 @@ class Qwen21Attention(nn.Module):
         self.to_out = [nn.Linear(num_heads * head_dim, dim, bias=False)]
         self.norm_q = nn.RMSNorm(head_dim, eps=eps)
         self.norm_k = nn.RMSNorm(head_dim, eps=eps)
-        self.use_fused_prologue = fused_qk_norm_rope_available(head_dim)
+        # the fused kernel hard-codes eps = 1e-6. Other eps values use the composed path.
+        self.use_fused_prologue = fused_qk_norm_rope_available(head_dim) and eps == 1e-6
 
     def __call__(
         self,

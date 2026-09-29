@@ -62,6 +62,10 @@ class TestFusedQkNormRopeKernel:
         )
         assert out is None
 
+    def test_non_default_eps_uses_composed_path(self):
+        # the kernel hard-codes eps = 1e-6
+        assert not Qwen21Attention(dim=128, num_heads=2, head_dim=64, eps=1e-5).use_fused_prologue
+
     def test_head_dim_above_reduction_buffer_is_unavailable(self):
         # the kernel reduces over at most 8 simdgroups (D/2 <= 256 threads)
         assert not fused_qk_norm_rope_available(1024)

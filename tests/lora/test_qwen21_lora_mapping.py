@@ -171,3 +171,18 @@ def test_qwen21_capabilities_report_lora_style_as_ignored():
     assert command["traits"]["lora"] is True
     assert options["--lora"]["status"] == "honored"
     assert options["--lora-style"]["status"] == "ignored"
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("value", ["0", "1", "-0.5", "abc"])
+def test_generate_cli_rejects_invalid_teacache_ratio_before_loading(monkeypatch, value):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--prompt", "x", "--teacache-ratio", value])
+    with pytest.raises(SystemExit) as exc:
+        qwen21_generate.build_parser().parse_args()
+    assert exc.value.code == 2
+
+
+@pytest.mark.fast
+def test_generate_cli_accepts_valid_teacache_ratio(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--prompt", "x", "--teacache-ratio", "0.25"])
+    assert qwen21_generate.build_parser().parse_args().teacache_ratio == 0.25

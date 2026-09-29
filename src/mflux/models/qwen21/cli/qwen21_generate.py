@@ -1,5 +1,5 @@
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args, open_unit_float
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
@@ -21,7 +21,7 @@ def build_parser() -> CommandLineParser:
     parser.add_output_arguments()
     parser.add_argument(
         "--teacache-ratio",
-        type=float,
+        type=open_unit_float,
         default=None,
         help="Skip the transformer on this fraction of denoise steps and reuse the previous noise prediction. Must be within (0, 1). Default: off.",
     )
