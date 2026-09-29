@@ -119,9 +119,7 @@ class Qwen21Attention(nn.Module):
         once per prompt and reuse them for the image-only steps.
         """
         query, key, value = self._project(hidden_states, rope_cos, rope_sin)
-        hidden_states = scaled_dot_product_attention(
-            query, key, value, scale=self.head_dim**-0.5, mask="causal"
-        )
+        hidden_states = scaled_dot_product_attention(query, key, value, scale=self.head_dim**-0.5, mask="causal")
         return self._unproject(hidden_states), mx.contiguous(key), mx.contiguous(value)
 
     def image_attention(

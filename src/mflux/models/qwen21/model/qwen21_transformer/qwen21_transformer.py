@@ -157,9 +157,7 @@ class Qwen21Transformer(nn.Module):
 
         hidden_states = self.img_in(hidden_states)
         for block, (key_text, value_text) in zip(self.transformer_blocks, text_kvs):
-            hidden_states = block.image_forward(
-                hidden_states, key_text, value_text, mod1, mod2, rope_cos, rope_sin
-            )
+            hidden_states = block.image_forward(hidden_states, key_text, value_text, mod1, mod2, rope_cos, rope_sin)
 
         scale = self.norm_out.linear(nn.silu(temb))
         scale = mx.broadcast_to(scale[0][None, None, :], (1, num_image_tokens, scale.shape[-1]))

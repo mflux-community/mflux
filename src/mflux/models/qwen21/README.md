@@ -90,7 +90,12 @@ Pass `--image-path` and optionally `--image-strength`, like the other models.
   not mapped or loaded.
 - The prompt template is a raw string (not `apply_chat_template`) with the system-role tokens
   dropped from the final hidden states, matching the reference pipeline exactly.
-- The text prefix KV cache (valid because `causal_condition` makes text activations
-  step-independent) is a planned optimization; the current port recomputes the prefix each step.
+- The text prefix K/V is cached per (prompt, resolution): `causal_condition` makes text
+  activations step-independent, so each denoise step runs image tokens only against the
+  cached prefix. The cache holds at most the two most recent embeddings (the positive and
+  negative CFG prompts); padded prompts recompute the joint sequence. Set
+  `use_text_cache = False` on the transformer to force the recompute path.
+- Q/K norm+rope runs as one fused custom Metal kernel when available (`head_dim` a multiple
+  of 64 and matching rope tables); `MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE=1` disables it.
 - Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower), LoRA
   mappings, and PID decoding.

@@ -126,6 +126,13 @@ def fused_qk_norm_rope(
         return None
     B, L, _ = q_flat.shape
     H, D = num_heads, head_dim
+    # Fail safe on geometry mismatches (e.g. an axes_dims_rope whose per-axis
+    # widths do not sum to head_dim): the composed path then raises the same
+    # loud broadcast error as stock instead of silently reading wrong angles.
+    if rope_cos.shape[-1] != D // 2 or rope_sin.shape[-1] != D // 2:
+        return None
+    if rope_cos.shape[0] != L or rope_sin.shape[0] != L:
+        return None
     if rope_cos.dtype != mx.float32:
         rope_cos = rope_cos.astype(mx.float32)
     if rope_sin.dtype != mx.float32:
