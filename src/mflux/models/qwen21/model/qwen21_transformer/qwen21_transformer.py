@@ -48,9 +48,10 @@ class Qwen21Transformer(nn.Module):
         self.norm_out = Qwen21AdaLayerNormContinuous(embedding_dim=self.inner_dim, eps=eps)
         self._step_fn = None
         self._image_step_fn = None
-        # Per-prompt text-prefix K/V caches, keyed by the encoder-hidden-states array
-        # identity (the caller caches embeddings per prompt, so the object persists across
-        # steps and across true-CFG's alternating positive/negative embeddings).
+        # Per-prompt text-prefix K/V caches, bounded to the two embeddings of the most
+        # recent generation (positive and negative CFG prompts), keyed by the
+        # encoder-hidden-states array identity (the caller caches embeddings per prompt,
+        # so the object persists across steps).
         self.use_text_cache = True
         self._text_caches: dict[int, dict] = {}
         self.proj_out = nn.Linear(self.inner_dim, out_channels, bias=False)
@@ -85,6 +86,11 @@ class Qwen21Transformer(nn.Module):
         cache = self._text_caches.get(id(encoder_hidden_states))
         if cache is None or cache["geometry"] != geometry or cache["embedding"] is not encoder_hidden_states:
             cache = self._build_text_cache(encoder_hidden_states, rope_cos, rope_sin, geometry)
+            # Evict oldest entries first so the cache holds at most the two
+            # embeddings of one generation (the positive and negative CFG prompts);
+            # a single long prompt's per-block K/V is already O(100 MB).
+            while len(self._text_caches) >= 2:
+                self._text_caches.pop(next(iter(self._text_caches)))
             self._text_caches[id(encoder_hidden_states)] = cache
         if self._image_step_fn is None:
             # like _step_fn: retraces per (image-token-count, text-length) shape change
