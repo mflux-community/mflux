@@ -102,6 +102,12 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   The reference-editing command (`uv run mflux-generate-qwen-2.1-edit`) keeps its own prefix cache.
 - Q/K norm+rope runs as one fused custom Metal kernel when available (`head_dim` a multiple
   of 64 and matching rope tables); `MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE=1` disables it.
+- TeaCache-style step reuse: `generate_image(..., teacache_ratio=0.25)` skips the transformer
+  on the ~25% of denoise steps whose timestep-embedding signal changes least (first/last 10%
+  of the run are never skipped) and reuses the previous noise prediction. Measured on M4,
+  512², 40 steps: 1.40× at ratio 0.25 (PSNR 27.5 dB, SSIM 0.943 vs uncached), 1.77× at 0.4
+  (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
+  deterministic for a given (steps, resolution, ratio).
 - LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
 - Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
 - LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).

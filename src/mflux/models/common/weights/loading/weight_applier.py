@@ -184,7 +184,12 @@ class WeightApplier:
         predicate = WeightApplier._predicate_with_bits(weight_definition.quantization_predicate, bits)
         for name, model in models.items():
             component = components.get(name)
-            if component and component.skip_quantization:
+            # skip_quantization only applies to on-load quantization of bf16 weights.
+            # When loading a pre-quantized checkpoint (weights is not None) the stored
+            # per-layer shapes must drive structuring so packed weights land in
+            # QuantizedLinear/QuantizedEmbedding modules instead of raw arrays —
+            # e.g. community packs that ship an already-quantized text encoder.
+            if component and component.skip_quantization and weights is None:
                 continue
             model_predicate = predicate
             if weights is not None:

@@ -1,11 +1,16 @@
+from types import SimpleNamespace
+
 import mlx.core as mx
 import pytest
+from tqdm import tqdm as _tqdm
 
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import fused_qk_norm_rope
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_time_text_embed import Qwen21TimeTextEmbed
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
+from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 
 
 @pytest.mark.fast
@@ -129,3 +134,50 @@ class TestTextPrefixCache:
         second = self._run(transformer, embedding, latents)
         assert len(transformer._text_caches) == 1
         assert mx.array_equal(first, second)
+
+
+@pytest.mark.fast
+class TestTeacacheStepSelection:
+    @staticmethod
+    def _config(num_steps: int, first: int = 0) -> Config:
+        config = Config(
+            width=512,
+            height=512,
+            guidance=1.0,
+            scheduler="linear",
+            model_config=ModelConfig.qwen_image_21(),
+            num_inference_steps=first + num_steps,
+        )
+        if first:
+            # img2img-style run: advance the loop start like init_time_step does
+            config._time_steps = _tqdm(range(first, first + num_steps))
+        return config
+
+    @staticmethod
+    def _transformer() -> SimpleNamespace:
+        return SimpleNamespace(time_text_embed=Qwen21TimeTextEmbed(embedding_dim=64))
+
+    def test_skips_only_within_protected_window(self):
+        skip = QwenImage21._teacache_skip_steps(self._transformer(), self._config(40), 0.25)
+        assert len(skip) == round(0.25 * 40) == 10
+        assert all(4 <= t < 36 for t in skip)  # first/last 10% never skipped
+
+    def test_img2img_offset_window(self):
+        skip = QwenImage21._teacache_skip_steps(self._transformer(), self._config(16, first=24), 0.25)
+        assert skip
+        assert all(25 <= t < 39 for t in skip)
+
+    def test_selection_is_deterministic(self):
+        transformer = self._transformer()  # one instance: signal weights fixed across calls
+        first = QwenImage21._teacache_skip_steps(transformer, self._config(40), 0.3)
+        second = QwenImage21._teacache_skip_steps(transformer, self._config(40), 0.3)
+        assert first == second
+
+    def test_too_few_steps_skips_nothing(self):
+        assert not QwenImage21._teacache_skip_steps(self._transformer(), self._config(9), 0.3)
+
+    def test_ratio_out_of_range_raises(self):
+        with pytest.raises(ValueError):
+            QwenImage21._teacache_skip_steps(self._transformer(), self._config(40), 1.0)
+        with pytest.raises(ValueError):
+            QwenImage21._teacache_skip_steps(self._transformer(), self._config(40), 0.0)
