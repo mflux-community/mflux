@@ -209,6 +209,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def ming_image_design() -> "ModelConfig":
+        return AVAILABLE_MODELS["ming-image-design"]
+
+    @staticmethod
+    @lru_cache
     def z_image_turbo_controlnet_union_2_1() -> "ModelConfig":
         return AVAILABLE_MODELS["z-image-turbo-controlnet-union-2.1"]
 
@@ -641,6 +646,18 @@ AVAILABLE_MODELS = {
         max_sequence_length=512,
         supports_guidance=True,
         requires_sigma_shift=True,
+    ),
+    "ming-image-design": ModelConfig(
+        priority=30,
+        aliases=["ming-image-design", "ming-image", "ming-design", "ming"],
+        model_name="inclusionAI/Ming-Image-0.1-Design",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=1024,
+        supports_guidance=True,  # CFG off by default (1.0); >1 uses the zeroed-condition negative
+        requires_sigma_shift=False,  # static shift 6, see MingImage.sigmas
     ),
     "lens-turbo": ModelConfig(
         priority=22,

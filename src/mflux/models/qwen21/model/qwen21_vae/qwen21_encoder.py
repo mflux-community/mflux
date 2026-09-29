@@ -15,7 +15,7 @@ class Qwen21ResidualDownBlock(nn.Module):
         in_dim: int,
         out_dim: int,
         num_res_blocks: int,
-        temperal_downsample: bool,
+        temporal_downsample: bool,
         down_flag: bool = True,
     ):
         super().__init__()
@@ -30,7 +30,7 @@ class Qwen21ResidualDownBlock(nn.Module):
         self.avg_shortcut = Qwen21AvgDown(
             in_dim,
             out_dim,
-            factor_t=2 if temperal_downsample else 1,
+            factor_t=2 if temporal_downsample else 1,
             factor_s=2 if down_flag else 1,
         )
 
@@ -51,7 +51,7 @@ class Qwen21Encoder(nn.Module):
         z_dim: int = 128,
         dim_mult: tuple[int, ...] = (1, 2, 4, 8, 8),
         num_res_blocks: int = 2,
-        temperal_downsample: tuple[bool, ...] = (False, True, True, True),
+        temporal_downsample: tuple[bool, ...] = (False, True, True, True),
     ):
         super().__init__()
         # [1] + dim_mult doubles the first multiplier: dims = [96, 96, 192, 384, 768, 768],
@@ -65,7 +65,7 @@ class Qwen21Encoder(nn.Module):
                 in_dim=dims[i],
                 out_dim=dims[i + 1],
                 num_res_blocks=num_res_blocks,
-                temperal_downsample=temperal_downsample[i] if i < len(temperal_downsample) else False,
+                temporal_downsample=temporal_downsample[i] if i < len(temporal_downsample) else False,
                 down_flag=i < len(dims) - 2,
             )
             for i in range(len(dims) - 1)

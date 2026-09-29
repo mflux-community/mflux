@@ -16,6 +16,7 @@ from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
 from mflux.models.ideogram4.variants.txt2img.ideogram4 import Ideogram4
 from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
 from mflux.models.krea2.variants.txt2img.krea2 import Krea2
+from mflux.models.ming_image import MingImage
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
@@ -55,6 +56,7 @@ MODEL_CLASSES: dict[str, type] = {
     "krea-2": Krea2,
     "krea-2-raw": Krea2,
     "krea-dev": Flux1,
+    "ming-image-design": MingImage,
     "qwen-image": QwenImage,
     "qwen-image-2.1": QwenImage21,
     "qwen-image-edit": QwenImageEdit,

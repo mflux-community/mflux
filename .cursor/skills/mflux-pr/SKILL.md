@@ -24,11 +24,12 @@ Use after the core port lands and you are polishing for merge. For the full **in
 ### Correctness
 
 1. `just lint` and `just test-fast`
-2. Slow golden tests for the new model:
+2. `just ci-extract` after changing `AVAILABLE_MODELS` or `scripts/ci_extract_models.py`
+3. Slow golden tests for the new model:
    ```sh
    MFLUX_PRESERVE_TEST_OUTPUT=1 uv run pytest tests/image_generation/test_generate_image_<model>.py -m slow -v
    ```
-3. Optional but high-signal: diffusers side-by-side + latent injection (`mflux-debugging`, `mflux-manual-testing`)
+4. Optional but high-signal: diffusers side-by-side + latent injection (`mflux-debugging`, `mflux-manual-testing`)
 
 ### Cross-model diff audit
 
@@ -37,6 +38,7 @@ List files changed outside `src/mflux/models/<model>/`:
 | Category | Expected |
 |---|---|
 | `pyproject.toml`, `cli/defaults/defaults.py`, `ModelConfig`, `mflux-save` routing | Required wiring |
+| `scripts/ci_extract_models.py` `OVERLAY` / `EXTRA_ENTRIES` | Required CI-manifest wiring for every new model key or standalone tool |
 | `README.md` table + attribution | Required |
 | Training `runner.py`, example JSON, `.gitignore` JSON exceptions | If training supported |
 | Shared VAE/callback/training one-liners | Only if required; document blast radius in PR |

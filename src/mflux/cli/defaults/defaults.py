@@ -1,5 +1,5 @@
 import os
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import platformdirs
@@ -47,6 +47,7 @@ MODEL_INFERENCE_STEPS = {
     "krea-2": 8,
     "krea-dev": 25,
     "lens-turbo": 4,
+    "ming-image-design": 12,
     "qwen-image": 20,
     "qwen-image-edit": 20,
     "qwen-image-2.1": 40,
@@ -68,7 +69,7 @@ else:
 MFLUX_LORA_CACHE_DIR = MFLUX_CACHE_DIR / "loras"
 
 
-@lru_cache(maxsize=1)
+@cache
 def model_choices() -> tuple[str, ...]:
     # Every spelling of a built-in model: canonical AVAILABLE_MODELS keys plus their
     # aliases. Hand-maintaining this list is what made `--model lens-turbo` (and ~40 other
@@ -83,7 +84,7 @@ def model_choices() -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
-@lru_cache(maxsize=1)
+@cache
 def canonical_model_choices() -> tuple[str, ...]:
     # The canonical key of each registry entry, in registry (priority) order — the short
     # list worth printing in --help, where every alias would be noise.

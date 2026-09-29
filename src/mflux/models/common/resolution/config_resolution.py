@@ -1,6 +1,6 @@
 import copy
 import logging
-from functools import lru_cache
+from functools import cache
 from typing import TYPE_CHECKING
 
 from mflux.models.common.resolution.actions import ConfigAction, Rule
@@ -176,7 +176,7 @@ class ConfigResolution:
         raise ValueError(f"No rule matched for model_name: {model_name}")
 
     @staticmethod
-    @lru_cache(maxsize=1)
+    @cache
     def base_model_names() -> tuple[str, ...]:
         # Every value the explicit-base rule accepts: each root config's aliases and its
         # repo id, in priority order. The CLI validates --base-model against this instead
@@ -193,7 +193,7 @@ class ConfigResolution:
         return tuple(names)
 
     @staticmethod
-    @lru_cache(maxsize=1)
+    @cache
     def base_model_keys() -> tuple[str, ...]:
         # The canonical key of each root config: the short, printable form of
         # base_model_names(), which is too long to put in an error message once every

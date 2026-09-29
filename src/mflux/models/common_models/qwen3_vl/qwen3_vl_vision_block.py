@@ -12,11 +12,14 @@ class Qwen3VLVisionBlock(nn.Module):
         num_heads: int = 16,
         intermediate_size: int = 4096,
         hidden_act: str = "gelu_pytorch_tanh",
+        preserve_input_dtype: bool = False,
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, eps=1e-6)
         self.norm2 = nn.LayerNorm(hidden_size, eps=1e-6)
-        self.attn = Qwen3VLVisionAttention(hidden_size=hidden_size, num_heads=num_heads)
+        self.attn = Qwen3VLVisionAttention(
+            hidden_size=hidden_size, num_heads=num_heads, preserve_input_dtype=preserve_input_dtype
+        )
         self.mlp = Qwen3VLVisionMLP(
             hidden_size=hidden_size,
             intermediate_size=intermediate_size,

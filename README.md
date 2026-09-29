@@ -127,11 +127,12 @@ MFLUX supports the following model families. They have different strengths and w
 |[Ideogram 4](src/mflux/models/ideogram4/README.md) | Jun 2026 | 9B | Base | No | JSON-caption-native, typography-focused text-to-image generation. |
 |[ERNIE-Image](src/mflux/models/ernie_image/README.md) | Apr 2026 | 8B | Distilled & Base | No | Single-stream DiT from Baidu. Vivid, high-contrast output. |
 |[Lens](src/mflux/models/lens/README.md) | May 2026 | 3.8B (+20B TE) | Turbo (distilled) | No | Dual-stream MMDiT from Microsoft with a GPT-OSS text encoder. Strong prompt adherence in 4 steps. |
+|[Ming-Image](src/mflux/models/ming_image/README.md) | Sep 2026 | 6.15B (+16B MoE TE) | Base | No | Design-focused (posters, cards, UI) with strong typography; outputs RGBA. |
 |[Boogu Image](src/mflux/models/boogu/README.md) | Jun 2026 | 10B | Turbo (distilled) | No | DMD-distilled 4-step model with a photographic look and bilingual (EN/ZH) text rendering. |
 |[FIBO](src/mflux/models/fibo/README.md) | Oct 2025+ | 8B | Distilled & Base | No | Very good JSON-based prompt understanding. Has edit capabilities. |
 |[SeedVR2](src/mflux/models/seedvr2/README.md) | Jun 2025 | 3B & 7B | — | No | Best upscaling model. |
 |[Qwen Image](src/mflux/models/qwen/README.md) | Aug 2025+ | 20B | Base | No | Large model (slower); strong prompt understanding and world knowledge. Has edit capabilities |
-|[Qwen Image 2.1](src/mflux/models/qwen21/README.md) | Sep 2026 | 7.1B (+8B TE) | Base | No | Single-stream block-causal DiT with a Qwen3-VL text encoder; 40-step guidance-free sampling. |
+|[Qwen Image 2.1](src/mflux/models/qwen21/README.md) | Sep 2026 | 7.1B (+8B TE) | Base | No | Single-stream block-causal DiT with a Qwen3-VL text encoder; 40-step guidance-free sampling. [Multi-reference editing and RGBA](src/mflux/models/qwen21/reference/README.md). |
 |[Depth Pro](src/mflux/models/depth_pro/README.md) | Oct 2024 | — | — | No | Very fast and accurate depth estimation model from Apple. |
 |[FLUX.1](src/mflux/models/flux/README.md) | Aug 2024 | 12B | Distilled & Base | No (legacy) | Legacy option with decent quality. Has edit capabilities with 'Kontext' model and upscaling support via ControlNet |
 
@@ -176,6 +177,41 @@ MFlux was originally created by [Filip Strand](https://github.com/filipstrand)
 
 ### 🌱 Related projects
 
+#### Build a UI under `mflux.web`
+
+We welcome independently distributed `mflux.web.*` implementations using Gradio,
+FastAPI, FastHTML, or any other UI framework. Each project can choose its own
+framework, dependencies, release schedule, and launch command.
+
+`mflux` owns the parent initializer and inference implementation. Its package
+path extends across installed distributions, including separate editable
+checkouts. `mflux.web` is an implicit namespace package: Python combines the
+`mflux/web/` directories contributed by independently installed UI packages.
+No intermediate distribution is required; neither core nor UI packages need to
+depend on `mflux-web`. The [`mflux-web`](https://pypi.org/project/mflux-web/)
+distribution reserves the generic `mflux-web` name on PyPI; it does not provide
+the shared namespace and does not need to be installed. Its optional demo is
+just another child module, `mflux.web.demo`.
+
+Your UI distribution owns a unique child, for example
+`src/mflux/web/example_ui/__init__.py`. With `uv_build`, configure
+`module-name = "mflux.web.example_ui"`. Declare `mflux` and your chosen framework
+as dependencies with versions your UI supports. The minimum `mflux` version for
+split-directory installs must include this parent path extension.
+
+Do not ship `mflux/__init__.py`, which belongs to core, or
+`mflux/web/__init__.py`, which must remain absent for the implicit namespace.
+Choose a unique child name to avoid collisions. PyPI distribution names can use
+hyphens; Python child names must be valid identifiers, such as `example_ui`.
+Reserving a PyPI distribution name does not reserve a Python namespace.
+
+After installation in the same environment, consumers can use
+`import mflux.web.example_ui`. Installing a UI does not automatically launch it,
+discover applications, or mount routes. UI framework dependencies belong to the
+individual UI distributions; this namespace support adds none to `mflux`.
+
+#### Community applications
+
 - [MindCraft Studio](https://themindstudio.cc/mindcraft#models) — macOS app built on mflux by [@shaoju](https://github.com/shaoju)
 - [mflux-paint](https://github.com/Amo643/mflux-paint) — native macOS inpaint/edit app (pywebview), 16 models across edit/inpaint/text-to-image, mask painting, multi-seed batch, by [@Amo643](https://github.com/Amo643)
 - [Mflux-ComfyUI](https://github.com/raysers/Mflux-ComfyUI) by [@raysers](https://github.com/raysers)
@@ -200,6 +236,7 @@ MFLUX would not be possible without the great work of:
 - Krea.ai for the [Krea 2 project](https://www.krea.ai/blog/krea-2-technical-report)
 - Qwen Team for the [Qwen Image project](https://qwen.ai/blog?id=a6f483777144685d33cd3d2af95136fcbeb57652&from=research.research-list)
 - Microsoft for the Lens (Turbo) model, and Comfy-Org for the [weights repackage](https://huggingface.co/Comfy-Org/Lens)
+- inclusionAI for the [Ming-Image project](https://github.com/inclusionAI/Ming-Image)
 - The Boogu team for the [Boogu Image project](https://huggingface.co/Boogu/Boogu-Image-0.1-Turbo)
 - ByteDance, @numz and @adrientoupet for the [SeedVR2 project](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
 - Hugging Face for the [Diffusers library implementations](https://github.com/huggingface/diffusers) 

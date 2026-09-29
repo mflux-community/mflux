@@ -68,7 +68,7 @@ These rules exist to make agent work in this repo **predictable, verifiable, and
 - Keep changes tight, and prefer **verifiable goals** (tests/lint/build) over speculation.
 - If the task scope changes materially, stop and re-align rather than continuing in a confused state.
 - When users ask for CLI usage (e.g., “Can you help me generate an image using z-image?”), use the `mflux-cli` skill.
-- For new models or major feature additions, the definition of done usually includes shared config wiring, a thin CLI entrypoint, verification coverage, and a README/example update that matches existing model docs.
+- For new models or major feature additions, the definition of done includes shared config wiring, a thin CLI entrypoint, CI-manifest wiring (`scripts/ci_extract_models.py` `OVERLAY` for every `AVAILABLE_MODELS` key, or `EXTRA_ENTRIES` for standalone tools), `just ci-extract`, verification coverage, and a README/example update that matches existing model docs.
 
 ## Bug/behavior reporting format (chat)
 

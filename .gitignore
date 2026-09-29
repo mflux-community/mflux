@@ -36,3 +36,9 @@ build/
 .claude
 CLAUDE.md
 .gitnexus
+.agents/skills/gitnexus-cli/SKILL.md
+.agents/skills/gitnexus-debugging/SKILL.md
+.agents/skills/gitnexus-exploring/SKILL.md
+.agents/skills/gitnexus-guide/SKILL.md
+.agents/skills/gitnexus-impact-analysis/SKILL.md
+.agents/skills/gitnexus-refactoring/SKILL.md

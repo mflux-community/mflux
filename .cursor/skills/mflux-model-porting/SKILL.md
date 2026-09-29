@@ -127,6 +127,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 |---|---|
 | `pyproject.toml` | Register `mflux-generate-<model>` (and edit/turbo variants if separate) |
 | `ModelConfig` | Entry in `AVAILABLE_MODELS`: aliases, HF repo id, `num_train_steps`, guidance support, sigma shift, `transformer_overrides`, distilled vs base step defaults |
+| `scripts/ci_extract_models.py` | Add an `OVERLAY` row for every new `AVAILABLE_MODELS` key: taxonomy, CLI/tool commands, status, and quantization support. Use `EXTRA_ENTRIES` only for standalone tools with no `ModelConfig` entry. Run `just ci-extract` and confirm the model is present in `.ci_cache/models_mflux.json`. |
 | `cli/defaults/defaults.py` | `MODEL_INFERENCE_STEPS` (keyed by the canonical `AVAILABLE_MODELS` key — the `--model` choices derive from the registry, nothing to add there) |
 | `models/common/cli/save.py` | Route `mflux-save` to the **correct variant class** (txt2img vs edit vs turbo — wrong class silently drops weights; see [#405](https://github.com/filipstrand/mflux/pull/405)) |
 | Main `README.md` | Model table row + attribution line |
@@ -176,6 +177,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 |---|---|
 | Slow golden test | `tests/image_generation/test_generate_image_<model>.py` + `reference_*.png` on CI hardware |
 | Fast tests | LoRA mapping, training-adapter preview defaults, argparser if new CLI flags |
+| `just ci-extract` | Required after changing `AVAILABLE_MODELS` or `OVERLAY`; verifies every registry key has CI-manifest metadata |
 | `just lint` / `just test-fast` | Before slow tests |
 
 When fixing a gap for model *N*, ask whether the same gap exists for other recent models and whether a **shared** fix belongs in `models/common/` (preferred over copy-paste per model).

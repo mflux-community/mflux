@@ -49,6 +49,10 @@ dependencies = [
     # Already present through huggingface-hub; declared so mflux-capabilities --format yaml
     # does not depend on a transitive dependency staying where it is.
     "pyyaml>=6.0,<7.0",
+
+    # Security floor for anyio, which is used transitively by httpx through huggingface-hub;
+    # mflux does not import it directly
+    "anyio>=4.14.2,<5.0"
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -101,6 +105,7 @@ mflux-generate-kontext = "mflux.models.flux.cli.flux_generate_kontext:main"
 mflux-generate-qwen = "mflux.models.qwen.cli.qwen_image_generate:main"
 mflux-generate-qwen-edit = "mflux.models.qwen.cli.qwen_image_edit_generate:main"
 "mflux-generate-qwen-2.1" = "mflux.models.qwen21.cli.qwen21_generate:main"
+"mflux-generate-qwen-2.1-edit" = "mflux.models.qwen21.cli.qwen21_edit_generate:main"
 mflux-generate-fibo = "mflux.models.fibo.cli.fibo_generate:main"
 mflux-generate-fibo-edit = "mflux.models.fibo.cli.fibo_edit:main"
 mflux-generate-z-image = "mflux.models.z_image.cli.z_image_generate:main"
@@ -111,6 +116,7 @@ mflux-generate-ernie-image = "mflux.models.ernie_image.cli.ernie_image_generate:
 mflux-generate-ideogram4 = "mflux.models.ideogram4.cli.ideogram4_generate:main"
 mflux-generate-krea2 = "mflux.models.krea2.cli.krea2_generate:main"
 mflux-generate-lens = "mflux.models.lens.cli.lens_generate:main"
+mflux-generate-ming = "mflux.models.ming_image.cli.ming_image_generate:main"
 mflux-refine-fibo = "mflux.models.fibo_vlm.cli.fibo_refine:main"
 mflux-inspire-fibo = "mflux.models.fibo_vlm.cli.fibo_inspire:main"
 mflux-concept = "mflux.models.flux.cli.flux_concept:main"

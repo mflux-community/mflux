@@ -136,13 +136,16 @@ class FIBOWeightMapping(WeightMapping):
                 to_pattern="transformer_blocks.{block}.attn.to_add_out.bias",
                 from_pattern=["transformer_blocks.{block}.attn.to_add_out.bias"],
             ),
+            # FIBO's norm2 and norm2_context are LayerNorm(affine=False): no weight or bias exists.
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.norm2.weight",
                 from_pattern=["transformer_blocks.{block}.norm2.weight"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.norm2.bias",
                 from_pattern=["transformer_blocks.{block}.norm2.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.ff.net.0.proj.weight",
@@ -163,10 +166,12 @@ class FIBOWeightMapping(WeightMapping):
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.norm2_context.weight",
                 from_pattern=["transformer_blocks.{block}.norm2_context.weight"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.norm2_context.bias",
                 from_pattern=["transformer_blocks.{block}.norm2_context.bias"],
+                required=False,
             ),
             WeightTarget(
                 to_pattern="transformer_blocks.{block}.ff_context.net.0.proj.weight",

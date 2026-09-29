@@ -315,23 +315,28 @@ class QwenWeightMapping(WeightMapping):
                 from_pattern=["decoder.up_blocks.{block}.resnets.{res}.conv_shortcut.bias"],
                 required=False,
             ),
+            # Up blocks 0-2 upsample; only the two upsample3d blocks (0, 1) have a time_conv.
             WeightTarget(
                 to_pattern="decoder.up_block{block}.upsamplers.0.resample_conv.weight",
                 from_pattern=["decoder.up_blocks.{block}.upsamplers.0.resample.1.weight"],
                 transform=WeightTransforms.transpose_conv2d_weight,
+                max_blocks=3,
             ),
             WeightTarget(
                 to_pattern="decoder.up_block{block}.upsamplers.0.resample_conv.bias",
                 from_pattern=["decoder.up_blocks.{block}.upsamplers.0.resample.1.bias"],
+                max_blocks=3,
             ),
             WeightTarget(
                 to_pattern="decoder.up_block{block}.upsamplers.0.time_conv.conv3d.weight",
                 from_pattern=["decoder.up_blocks.{block}.upsamplers.0.time_conv.weight"],
                 transform=WeightTransforms.transpose_conv3d_weight,
+                max_blocks=2,
             ),
             WeightTarget(
                 to_pattern="decoder.up_block{block}.upsamplers.0.time_conv.conv3d.bias",
                 from_pattern=["decoder.up_blocks.{block}.upsamplers.0.time_conv.bias"],
+                max_blocks=2,
             ),
             WeightTarget(
                 to_pattern="encoder.conv_in.conv3d.weight",
