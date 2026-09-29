@@ -1,5 +1,5 @@
 from mflux.callbacks.callback_manager import CallbackManager
-from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args, open_unit_float
+from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
@@ -19,12 +19,7 @@ def build_parser() -> CommandLineParser:
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
     parser.add_output_arguments()
-    parser.add_argument(
-        "--teacache-ratio",
-        type=open_unit_float,
-        default=None,
-        help="Skip the transformer on this fraction of denoise steps and reuse the previous noise prediction. Must be within (0, 1). Default: off.",
-    )
+    parser.add_step_cache_arguments()
     return parser
 
 
@@ -72,7 +67,7 @@ def main():
                 image_path=args.image_path,
                 num_inference_steps=args.steps,
                 image_strength=args.image_strength,
-                teacache_ratio=args.teacache_ratio,
+                step_cache_ratio=args.step_cache_ratio,
             )
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:

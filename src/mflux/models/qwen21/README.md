@@ -102,13 +102,15 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   The reference-editing command (`uv run mflux-generate-qwen-2.1-edit`) keeps its own prefix cache.
 - Q/K norm+rope runs as one fused custom Metal kernel when available (`head_dim` a multiple
   of 64 and matching rope tables); `MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE=1` disables it.
-- TeaCache-style step reuse: `generate_image(..., teacache_ratio=0.25)` skips the transformer
-  on the ~25% of denoise steps whose timestep-embedding signal changes least (first/last 10%
-  of the run are never skipped) and reuses the previous noise prediction. Measured on M4,
-  512², 40 steps: 1.40× at ratio 0.25 (PSNR 27.5 dB, SSIM 0.943 vs uncached), 1.77× at 0.4
-  (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
-  deterministic for a given (steps, resolution, ratio). The CLI flag is `--teacache-ratio`.
-  If the selector picks two or more steps in a row, all of them reuse the same noise prediction.
+- Step reuse (TeaCache-style, shared across models via `StepCache`): `--step-cache-ratio 0.25`
+  (Python: `generate_image(..., step_cache_ratio=0.25)`) skips the transformer on the ~25% of
+  denoise steps whose timestep-embedding signal changes least (first/last 10% of the run are
+  never skipped) and reuses the previous noise prediction. Measured on M4, 512², 40 steps:
+  1.40× at ratio 0.25 (PSNR 27.5 dB, SSIM 0.943 vs uncached), 1.77× at 0.4 (PSNR 25.4 dB,
+  SSIM 0.910). Skipping depends only on the sigma schedule, so it is deterministic for a given
+  (steps, resolution, ratio), and the ratio is recorded in image metadata. If the selector picks
+  two or more steps in a row, all of them reuse the same noise prediction. `--teacache-ratio`
+  and `teacache_ratio=` remain as aliases.
 - LoRA: `--lora adapter.safetensors 1.0` in either command (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
 - The VAE and text/vision encoder remain separate between the two commands; their consolidation is follow-up work.
 - Not yet supported: PID decoding.
