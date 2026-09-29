@@ -59,7 +59,7 @@ class QwenImage21VAE(nn.Module):
             raise ValueError("Qwen-Image-2.1 requires the residual, unpatched image VAE.")
         if "temporal_downsample" not in config:
             # Published Qwen checkpoints and the pinned Diffusers reference use this legacy spelling.
-            config = {**config, "temporal_downsample": config["temperal_downsample"]}
+            config = {**config, "temporal_downsample": config["temporal_downsample"]}
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
         channels = config["z_dim"]
