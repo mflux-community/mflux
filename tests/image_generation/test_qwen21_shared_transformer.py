@@ -92,3 +92,36 @@ class TestQwen21SharedTransformer:
         layout = QwenImage21Layout.create(mx.array([False] * 3), [(1, 2, 2)], self.CONFIG["axes_dims_rope"])
         with pytest.raises(ValueError, match="Incomplete"):
             model(mx.zeros((1, 4, 4)), mx.zeros((1, 3, 16)), mx.array([0.5]), layout, [(None, None)])
+
+    @pytest.mark.parametrize("use_cache", [False, True])
+    def test_reference_matches_pinned_diffusers_output(self, use_cache):
+        # Diffusers 80c7ed262aeffbeb43ef13ae04baeb9b84515a69, Torch 2.13, MPS/fp32.
+        # Same CONFIG and model() weights, with modulation.layers.1 renamed to modulation.1.
+        expected = np.array(
+            [
+                [
+                    [-0.15800124, -0.09224132, 0.24032217, 0.06377916],
+                    [-0.22636631, -0.16943991, 0.21787375, 0.03485199],
+                    [0.33880991, 0.37005740, 0.63740784, 0.04616484],
+                    [-0.00045063, -0.09319917, 0.58677953, -0.20555922],
+                ],
+                [
+                    [-0.17191347, -0.14115849, 0.19537288, 0.08816920],
+                    [-0.28929472, -0.27973193, 0.10479852, 0.07836930],
+                    [0.39429393, 0.39955461, 0.64231950, 0.07531667],
+                    [0.01898079, -0.10951041, 0.44683599, -0.24780083],
+                ],
+            ],
+            dtype=np.float32,
+        )
+        model = self.model()
+        slots = [False, False, True, False, False]
+        layout = QwenImage21Layout.create(mx.array(slots), [(1, 2, 2)] * 2, self.CONFIG["axes_dims_rope"])
+        rng = np.random.default_rng(21)
+        latents = mx.array(rng.standard_normal((1, 8, 4)).astype(np.float32))
+        text = mx.array(rng.standard_normal((1, 5, 16)).astype(np.float32))
+        cache = [] if use_cache else None
+        for index, timestep in enumerate([0.8, 0.5]):
+            target = latents.at[:, -4:].add(timestep)
+            actual = model(target, text, mx.array([timestep]), layout, cache)
+            np.testing.assert_allclose(np.array(actual), expected[index][None], atol=1e-5, rtol=1e-5)

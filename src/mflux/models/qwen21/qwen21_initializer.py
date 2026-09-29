@@ -35,7 +35,7 @@ class Qwen21Initializer:
             raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")
         Qwen21Initializer._init_tokenizers(model, path)
         Qwen21Initializer._init_models(model)
-        Qwen21Initializer.load_components(model, root, Qwen21WeightDefinition, quantize)
+        Qwen21Initializer.load_components(model, root, Qwen21WeightDefinition, quantize, validate=True)
         Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
 
     @staticmethod
@@ -57,7 +57,12 @@ class Qwen21Initializer:
                 quantize_arg=quantize,
                 weight_definition=weight_definition,
             )
-            if model.bits is None:
+            if bits is not None:
+                if model.bits is not None and model.bits != bits:
+                    raise ValueError(
+                        f"Conflicting component quantization levels: {component.name} uses {bits}-bit, "
+                        f"but an earlier component uses {model.bits}-bit."
+                    )
                 model.bits = bits
             if validate and weights.meta_data.quantization_level is not None:
                 Qwen21Initializer._validate_weights(component.name, module, supplied)

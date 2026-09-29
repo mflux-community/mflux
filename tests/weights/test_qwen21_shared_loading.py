@@ -17,9 +17,38 @@ from mflux.models.qwen21.reference.model.qwen_image21_transformer.layout import 
 from mflux.models.qwen21.reference.model.qwen_image21_transformer.transformer import QwenImage21Transformer
 from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
 
 pytestmark = pytest.mark.fast
+
+
+class TinyText:
+    @staticmethod
+    def make(bits=None):
+        model = SimpleNamespace(
+            vae=nn.Sequential(nn.Linear(64, 64, bias=False)),
+            transformer=nn.Linear(64, 64, bias=False),
+            text_encoder=nn.Sequential(nn.Linear(64, 64, bias=False)),
+            tokenizers={},
+            bits=bits,
+        )
+        if bits:
+            for component in Qwen21WeightDefinition.get_components():
+                if not component.skip_quantization:
+                    nn.quantize(getattr(model, component.name), bits=bits)
+        return model
+
+    @staticmethod
+    def init_models(model):
+        components = TinyText.make()
+        for name in ("vae", "transformer", "text_encoder"):
+            setattr(model, name, getattr(components, name))
+
+    @staticmethod
+    def use_tiny_components(monkeypatch):
+        monkeypatch.setattr(Qwen21Initializer, "_init_models", TinyText.init_models)
+        monkeypatch.setattr(Qwen21Initializer, "_init_tokenizers", lambda model, path: None)
 
 
 class TinyEdit:
@@ -82,6 +111,54 @@ class TinyEdit:
             "QwenImage21Processor",
             lambda *args: SimpleNamespace(save_pretrained=lambda path: None),
         )
+
+
+@pytest.mark.parametrize("bits", [None, 8])
+def test_text_initializer_validates_and_reloads_compatible_exports(tmp_path, monkeypatch, bits):
+    original = TinyText.make(bits)
+    ModelSaver.save_model(original, bits, str(tmp_path), Qwen21WeightDefinition)
+    TinyText.use_tiny_components(monkeypatch)
+
+    restored = QwenImage21(model_path=str(tmp_path))
+
+    assert restored.bits == bits
+    for component in Qwen21WeightDefinition.get_components():
+        expected = dict(tree_flatten(getattr(original, component.name).parameters()))
+        actual = dict(tree_flatten(getattr(restored, component.name).parameters()))
+        assert actual.keys() == expected.keys()
+        for key in expected:
+            np.testing.assert_array_equal(np.array(actual[key]), np.array(expected[key]))
+
+
+@pytest.mark.parametrize("bits", [None, 8])
+def test_text_initializer_rejects_edit_export(tmp_path, monkeypatch, bits):
+    TinyEdit.make(bits).save_model(str(tmp_path))
+    TinyText.use_tiny_components(monkeypatch)
+
+    with pytest.raises(ValueError, match="vae checkpoint mismatch"):
+        QwenImage21(model_path=str(tmp_path))
+
+
+@pytest.mark.parametrize("levels", [(4, 8, 8), (8, 4, 4), (None, 8, 4)])
+def test_shared_loading_rejects_conflicting_component_quantization(tmp_path, levels):
+    for component, bits in zip(Qwen21WeightDefinition.get_components(), levels, strict=True):
+        source = TinyText.make(bits)
+        ModelSaver._save_weights(str(tmp_path), bits, getattr(source, component.name), component.hf_subdir)
+
+    with pytest.raises(ValueError, match="Conflicting component quantization levels"):
+        Qwen21Initializer.load_components(TinyText.make(), tmp_path, Qwen21WeightDefinition, None, validate=True)
+
+
+@pytest.mark.parametrize("levels", [(None, 8, 8), (8, 8, None)])
+def test_shared_loading_allows_dense_and_matching_quantized_components(tmp_path, levels):
+    for component, bits in zip(Qwen21WeightDefinition.get_components(), levels, strict=True):
+        source = TinyText.make(bits)
+        ModelSaver._save_weights(str(tmp_path), bits, getattr(source, component.name), component.hf_subdir)
+    restored = TinyText.make()
+
+    Qwen21Initializer.load_components(restored, tmp_path, Qwen21WeightDefinition, None, validate=True)
+
+    assert restored.bits == 8
 
 
 @pytest.mark.parametrize("bits", [None, 8])
