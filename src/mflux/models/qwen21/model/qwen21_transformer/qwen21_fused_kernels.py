@@ -102,6 +102,8 @@ def fused_qk_norm_rope_available(head_dim: int) -> bool:
         return False
     if head_dim % 64 != 0:  # D/2 must be a multiple of 32
         return False
+    if head_dim > 512:  # the shq/shk reduction buffers hold 8 simdgroups (D/2 <= 256 threads)
+        return False
     return _get_kernel() is not None
 
 

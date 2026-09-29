@@ -7,7 +7,10 @@ from tqdm import tqdm as _tqdm
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
-from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import fused_qk_norm_rope
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
+    fused_qk_norm_rope,
+    fused_qk_norm_rope_available,
+)
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_time_text_embed import Qwen21TimeTextEmbed
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
@@ -58,6 +61,10 @@ class TestFusedQkNormRopeKernel:
             head_dim=64,
         )
         assert out is None
+
+    def test_head_dim_above_reduction_buffer_is_unavailable(self):
+        # the kernel reduces over at most 8 simdgroups (D/2 <= 256 threads)
+        assert not fused_qk_norm_rope_available(1024)
 
 
 @pytest.mark.fast
@@ -113,6 +120,13 @@ class TestTextPrefixCache:
         assert len(transformer._text_caches) == 2
         assert id(embeddings[-1]) in transformer._text_caches
         assert id(embeddings[-2]) in transformer._text_caches
+
+    def test_clear_text_cache_releases_entries(self):
+        transformer = self._tiny_transformer()
+        self._run(transformer, mx.random.normal((1, 8, 64)).astype(mx.bfloat16), self._latents())
+        assert transformer._text_caches
+        transformer.clear_text_cache()
+        assert not transformer._text_caches
 
     def test_cached_and_uncached_steps_agree_within_bf16_rounding(self):
         transformer = self._tiny_transformer()

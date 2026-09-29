@@ -103,6 +103,10 @@ class Qwen21Transformer(nn.Module):
             rope_sin[text_len:],
         )
 
+    def clear_text_cache(self) -> None:
+        """Release the cached text-prefix K/V and the prompt embeddings they reference."""
+        self._text_caches.clear()
+
     def _build_text_cache(
         self,
         encoder_hidden_states: mx.array,

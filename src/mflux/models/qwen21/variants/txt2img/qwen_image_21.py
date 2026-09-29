@@ -152,42 +152,46 @@ class QwenImage21(nn.Module):
         )
         previous_noise: mx.array | None = None
 
-        for t in config.time_steps:
-            try:
-                latents = config.scheduler.scale_model_input(latents, t)
-                if t in skip_steps and previous_noise is not None:
-                    # TeaCache-style step reuse: the timestep-embedding signal for this
-                    # step is close to the previous one, so reuse its noise prediction
-                    # and skip the transformer (and any true-CFG pass) entirely.
-                    noise = previous_noise
-                else:
-                    noise = self.transformer(
-                        t=t,
-                        config=config,
-                        hidden_states=latents,
-                        encoder_hidden_states=prompt_embeds,
-                        encoder_hidden_states_mask=prompt_mask,
-                    )
-                    if do_true_cfg:
-                        noise_negative = self.transformer(
+        try:
+            for t in config.time_steps:
+                try:
+                    latents = config.scheduler.scale_model_input(latents, t)
+                    if t in skip_steps and previous_noise is not None:
+                        # TeaCache-style step reuse: the timestep-embedding signal for this
+                        # step is close to the previous one, so reuse its noise prediction
+                        # and skip the transformer (and any true-CFG pass) entirely.
+                        noise = previous_noise
+                    else:
+                        noise = self.transformer(
                             t=t,
                             config=config,
                             hidden_states=latents,
-                            encoder_hidden_states=negative_prompt_embeds,
-                            encoder_hidden_states_mask=negative_prompt_mask,
+                            encoder_hidden_states=prompt_embeds,
+                            encoder_hidden_states_mask=prompt_mask,
                         )
-                        noise = noise_negative + config.guidance * (noise - noise_negative)
-                    previous_noise = noise
+                        if do_true_cfg:
+                            noise_negative = self.transformer(
+                                t=t,
+                                config=config,
+                                hidden_states=latents,
+                                encoder_hidden_states=negative_prompt_embeds,
+                                encoder_hidden_states_mask=negative_prompt_mask,
+                            )
+                            noise = noise_negative + config.guidance * (noise - noise_negative)
+                        previous_noise = noise
 
-                latents = config.scheduler.step(noise=noise, timestep=t, latents=latents)
-                ctx.in_loop(t, latents)
-                mx.eval(latents)
+                    latents = config.scheduler.step(noise=noise, timestep=t, latents=latents)
+                    ctx.in_loop(t, latents)
+                    mx.eval(latents)
 
-            except KeyboardInterrupt:  # noqa: PERF203
-                ctx.interruption(t, latents)
-                raise StopImageGenerationException(
-                    f"Stopping image generation at step {t + 1}/{config.num_inference_steps}"
-                )
+                except KeyboardInterrupt:  # noqa: PERF203
+                    ctx.interruption(t, latents)
+                    raise StopImageGenerationException(
+                        f"Stopping image generation at step {t + 1}/{config.num_inference_steps}"
+                    )
+        finally:
+            # the text-prefix K/V cache is O(100 MB) per prompt: free it when the loop ends
+            self.transformer.clear_text_cache()
 
         ctx.after_loop(latents)
 

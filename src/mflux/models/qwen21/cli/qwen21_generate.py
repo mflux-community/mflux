@@ -19,6 +19,12 @@ def build_parser() -> CommandLineParser:
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
     parser.add_output_arguments()
+    parser.add_argument(
+        "--teacache-ratio",
+        type=float,
+        default=None,
+        help="Skip the transformer on this fraction of denoise steps and reuse the previous noise prediction. Must be within (0, 1). Default: off.",
+    )
     return parser
 
 
@@ -66,6 +72,7 @@ def main():
                 image_path=args.image_path,
                 num_inference_steps=args.steps,
                 image_strength=args.image_strength,
+                teacache_ratio=args.teacache_ratio,
             )
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:

@@ -107,7 +107,8 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   of the run are never skipped) and reuses the previous noise prediction. Measured on M4,
   512², 40 steps: 1.40× at ratio 0.25 (PSNR 27.5 dB, SSIM 0.943 vs uncached), 1.77× at 0.4
   (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
-  deterministic for a given (steps, resolution, ratio).
+  deterministic for a given (steps, resolution, ratio). The CLI flag is `--teacache-ratio`.
+  If the selector picks two or more steps in a row, all of them reuse the same noise prediction.
 - LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
 - Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
 - LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).

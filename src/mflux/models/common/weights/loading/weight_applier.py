@@ -184,20 +184,19 @@ class WeightApplier:
         predicate = WeightApplier._predicate_with_bits(weight_definition.quantization_predicate, bits)
         for name, model in models.items():
             component = components.get(name)
-            # skip_quantization only applies to on-load quantization of bf16 weights.
-            # When loading a pre-quantized checkpoint (weights is not None) the stored
-            # per-layer shapes must drive structuring so packed weights land in
-            # QuantizedLinear/QuantizedEmbedding modules instead of raw arrays —
-            # e.g. community packs that ship an already-quantized text encoder.
-            if component and component.skip_quantization and weights is None:
+            component_weights = weights.components.get(name) if weights is not None else None
+            if component is not None and component.weight_subkey is not None and component_weights is not None:
+                component_weights = component_weights.get(component.weight_subkey, component_weights)
+            # skip_quantization applies to on-load quantization of bf16 weights.
+            # A pre-quantized checkpoint can ship this component already quantized
+            # (for example, a community pack with a quantized text encoder). Then the
+            # stored per-layer shapes select the QuantizedLinear/QuantizedEmbedding
+            # modules. When the checkpoint has no weights for this component, keep the skip.
+            if component and component.skip_quantization and component_weights is None:
                 continue
             model_predicate = predicate
-            if weights is not None:
-                component_weights = weights.components.get(name)
-                if component is not None and component.weight_subkey is not None and component_weights is not None:
-                    component_weights = component_weights.get(component.weight_subkey, component_weights)
-                if component_weights is not None:
-                    model_predicate = WeightApplier._stored_layer_predicate(component_weights, predicate)
+            if component_weights is not None:
+                model_predicate = WeightApplier._stored_layer_predicate(component_weights, predicate)
             nn.quantize(
                 model,
                 group_size=group_size,
