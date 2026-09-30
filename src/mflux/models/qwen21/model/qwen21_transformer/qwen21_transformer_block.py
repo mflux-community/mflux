@@ -1,8 +1,12 @@
+# Copyright 2026 The Qwen Team and The HuggingFace Team.
+# SPDX-License-Identifier: Apache-2.0
+# Reference modulation adapted from Qwen/Hugging Face's QwenImage21Transformer2DModel.
 import mlx.core as mx
 from mlx import nn
 
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_feed_forward import Qwen21SwiGLUFeedForward
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 
 
 class Qwen21TransformerBlock(nn.Module):
@@ -42,3 +46,73 @@ class Qwen21TransformerBlock(nn.Module):
         mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
         hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
         return hidden_states
+
+    def text_forward(
+        self,
+        hidden_states: mx.array,
+        mod1: mx.array,
+        mod2: mx.array,
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+    ) -> tuple[mx.array, mx.array, mx.array]:
+        """Run this block over the text prefix only (causal, t=0 modulation).
+
+        Returns the updated text hidden states and this block's post-rope K/V
+        over the text positions, for reuse by the image-only denoise steps.
+        """
+        scale1, gate1 = mx.split(mod1, 2, axis=-1)
+        scale2, gate2 = mx.split(mod2, 2, axis=-1)
+
+        attn_input = self.img_norm1(hidden_states) * (1 + scale1)
+        attn_out, key_text, value_text = self.attn.text_attention(attn_input, rope_cos, rope_sin)
+        hidden_states = hidden_states + nn.tanh(gate1) * attn_out
+
+        mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
+        hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
+        return hidden_states, key_text, value_text
+
+    def image_forward(
+        self,
+        hidden_states: mx.array,
+        key_text: mx.array,
+        value_text: mx.array,
+        mod1: mx.array,
+        mod2: mx.array,
+        rope_cos: mx.array,
+        rope_sin: mx.array,
+    ) -> mx.array:
+        """Run this block over the image tokens only, against the cached text K/V."""
+        scale1, gate1 = mx.split(mod1, 2, axis=-1)
+        scale2, gate2 = mx.split(mod2, 2, axis=-1)
+
+        attn_input = self.img_norm1(hidden_states) * (1 + scale1)
+        hidden_states = hidden_states + nn.tanh(gate1) * self.attn.image_attention(
+            attn_input, key_text, value_text, rope_cos, rope_sin
+        )
+
+        mlp_input = self.img_norm2(hidden_states) * (1 + scale2)
+        hidden_states = hidden_states + nn.tanh(gate2) * self.img_mlp(mlp_input)
+        return hidden_states
+
+    def forward_reference(
+        self,
+        x: mx.array,
+        modulation: mx.array,
+        target_mask: mx.array,
+        layout: QwenImage21Layout,
+        rope: tuple[mx.array, mx.array],
+        cached: tuple[mx.array, mx.array] | None = None,
+        extract: bool = False,
+        key_valid: mx.array | None = None,
+    ) -> tuple[mx.array, tuple[mx.array, mx.array] | None]:
+        scale1, gate1, scale2, gate2 = [self.select_rows(v, target_mask) for v in mx.split(modulation, 4, axis=-1)]
+        attn, stored = self.attn.forward_reference(
+            self.img_norm1(x) * (1 + scale1), layout, rope, cached, extract, key_valid
+        )
+        x = x + mx.tanh(gate1) * attn
+        x = x + mx.tanh(gate2) * self.img_mlp(self.img_norm2(x) * (1 + scale2))
+        return x, stored
+
+    @staticmethod
+    def select_rows(value: mx.array, mask: mx.array) -> mx.array:
+        return mx.where(mask[None, :, None], value[:-1, None], value[-1:, None])

@@ -18,12 +18,12 @@ class Qwen21Rope(nn.Module):
         pos_index = np.arange(8192, dtype=np.int64)
         neg_index = np.arange(1024, dtype=np.int64)[::-1] * -1 - 1
         index = np.concatenate([pos_index, neg_index])
-        self.cos_tables = []
-        self.sin_tables = []
+        self._cos_tables = []
+        self._sin_tables = []
         for dim in axes_dim:
             freqs = Qwen21Rope._rope_params(index, dim, theta)
-            self.cos_tables.append(mx.array(freqs[..., 0]))
-            self.sin_tables.append(mx.array(freqs[..., 1]))
+            self._cos_tables.append(mx.array(freqs[..., 0]))
+            self._sin_tables.append(mx.array(freqs[..., 1]))
 
     @staticmethod
     def _rope_params(index: np.ndarray, dim: int, theta: int) -> np.ndarray:
@@ -48,17 +48,17 @@ class Qwen21Rope(nn.Module):
 
         cos = mx.concatenate(
             [
-                self.cos_tables[0][mx.array(frame_index)],
-                self.cos_tables[1][mx.array(height_index)],
-                self.cos_tables[2][mx.array(width_index)],
+                self._cos_tables[0][mx.array(frame_index)],
+                self._cos_tables[1][mx.array(height_index)],
+                self._cos_tables[2][mx.array(width_index)],
             ],
             axis=-1,
         )
         sin = mx.concatenate(
             [
-                self.sin_tables[0][mx.array(frame_index)],
-                self.sin_tables[1][mx.array(height_index)],
-                self.sin_tables[2][mx.array(width_index)],
+                self._sin_tables[0][mx.array(frame_index)],
+                self._sin_tables[1][mx.array(height_index)],
+                self._sin_tables[2][mx.array(width_index)],
             ],
             axis=-1,
         )

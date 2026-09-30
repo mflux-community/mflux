@@ -13,6 +13,7 @@ from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
+from mflux.utils.logging_util import LoggingUtil
 
 
 def finite_float(value: str) -> float:
@@ -64,6 +65,16 @@ def positive_float(value: str) -> float:
     return parsed
 
 
+def open_unit_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid number")
+    if not 0 < parsed < 1:
+        raise argparse.ArgumentTypeError(f"'{value}' must be > 0 and < 1")
+    return parsed
+
+
 def vae_tile_size(value: str) -> int:
     # The decode tiler uses a fixed 64px overlap; the tile must be strictly larger
     # than the overlap or the tiling stride becomes <= 0. 128 is the practical floor.
@@ -100,6 +111,7 @@ class CommandLineParser(argparse.ArgumentParser):
         self.require_image_paths = False
         self.require_redux_image_paths = False
         self.default_model = None
+        self.add_argument("--verbose", "-v", action="store_true", default=False, help="Enable verbose (debug-level) logging.")
 
     def add_general_arguments(self) -> None:
         self.add_argument("--battery-percentage-stop-limit", "-B", type=lambda v: max(min(int(v), 99), 1), default=ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT, help=f"On Macs powered by battery, stop image generation when battery reaches this percentage. Default: {ui_defaults.BATTERY_PERCENTAGE_STOP_LIMIT}")
@@ -393,6 +405,7 @@ class CommandLineParser(argparse.ArgumentParser):
 
     def parse_args(self) -> argparse.Namespace:  # type: ignore
         namespace = super().parse_args()
+        LoggingUtil.configure_logging(verbose=getattr(namespace, "verbose", False))
 
         if getattr(namespace, "no_metadata", False):
             from mflux.utils.image_util import ImageUtil

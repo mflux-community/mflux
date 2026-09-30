@@ -32,6 +32,8 @@ class TestQwenImage21Reference:
         weights = []
         for key, tensor in reference.state_dict().items():
             value = mx.array(tensor.detach().float().cpu().numpy())
+            if isinstance(model, QwenImage21Transformer) and key.startswith("modulation.1."):
+                key = key.replace("modulation.1.", "modulation.layers.1.", 1)
             weights.append((key, transform(key, value) if transform else value))
         model.load_weights(weights)
 

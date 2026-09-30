@@ -132,7 +132,7 @@ MFLUX supports the following model families. They have different strengths and w
 |[FIBO](src/mflux/models/fibo/README.md) | Oct 2025+ | 8B | Distilled & Base | No | Very good JSON-based prompt understanding. Has edit capabilities. |
 |[SeedVR2](src/mflux/models/seedvr2/README.md) | Jun 2025 | 3B & 7B | — | No | Best upscaling model. |
 |[Qwen Image](src/mflux/models/qwen/README.md) | Aug 2025+ | 20B | Base | No | Large model (slower); strong prompt understanding and world knowledge. Has edit capabilities |
-|[Qwen Image 2.1](src/mflux/models/qwen21/README.md) | Sep 2026 | 7.1B (+8B TE) | Base | No | Single-stream block-causal DiT with a Qwen3-VL text encoder; 40-step guidance-free sampling. [Multi-reference editing and RGBA](src/mflux/models/qwen21/reference/README.md). |
+|[Qwen Image 2.1](src/mflux/models/qwen21/README.md) | Sep 2026 | 7.1B (+8B TE) | Base | No | Single-stream block-causal DiT with a Qwen3-VL text encoder; 40-step guidance-free sampling. [Multi-reference editing, LoRA, and RGBA](src/mflux/models/qwen21/reference/README.md). |
 |[Depth Pro](src/mflux/models/depth_pro/README.md) | Oct 2024 | — | — | No | Very fast and accurate depth estimation model from Apple. |
 |[FLUX.1](src/mflux/models/flux/README.md) | Aug 2024 | 12B | Distilled & Base | No (legacy) | Legacy option with decent quality. Has edit capabilities with 'Kontext' model and upscaling support via ControlNet |
 
@@ -176,6 +176,41 @@ MFlux was originally created by [Filip Strand](https://github.com/filipstrand)
 <a id="related-projects"></a>
 
 ### 🌱 Related projects
+
+#### Build a UI under `mflux.web`
+
+We welcome independently distributed `mflux.web.*` implementations using Gradio,
+FastAPI, FastHTML, or any other UI framework. Each project can choose its own
+framework, dependencies, release schedule, and launch command.
+
+`mflux` owns the parent initializer and inference implementation. Its package
+path extends across installed distributions, including separate editable
+checkouts. `mflux.web` is an implicit namespace package: Python combines the
+`mflux/web/` directories contributed by independently installed UI packages.
+No intermediate distribution is required; neither core nor UI packages need to
+depend on `mflux-web`. The [`mflux-web`](https://pypi.org/project/mflux-web/)
+distribution reserves the generic `mflux-web` name on PyPI; it does not provide
+the shared namespace and does not need to be installed. Its optional demo is
+just another child module, `mflux.web.demo`.
+
+Your UI distribution owns a unique child, for example
+`src/mflux/web/example_ui/__init__.py`. With `uv_build`, configure
+`module-name = "mflux.web.example_ui"`. Declare `mflux` and your chosen framework
+as dependencies with versions your UI supports. The minimum `mflux` version for
+split-directory installs must include this parent path extension.
+
+Do not ship `mflux/__init__.py`, which belongs to core, or
+`mflux/web/__init__.py`, which must remain absent for the implicit namespace.
+Choose a unique child name to avoid collisions. PyPI distribution names can use
+hyphens; Python child names must be valid identifiers, such as `example_ui`.
+Reserving a PyPI distribution name does not reserve a Python namespace.
+
+After installation in the same environment, consumers can use
+`import mflux.web.example_ui`. Installing a UI does not automatically launch it,
+discover applications, or mount routes. UI framework dependencies belong to the
+individual UI distributions; this namespace support adds none to `mflux`.
+
+#### Community applications
 
 - [MindCraft Studio](https://themindstudio.cc/mindcraft#models) — macOS app built on mflux by [@shaoju](https://github.com/shaoju)
 - [mflux-paint](https://github.com/Amo643/mflux-paint) — native macOS inpaint/edit app (pywebview), 16 models across edit/inpaint/text-to-image, mask painting, multi-seed batch, by [@Amo643](https://github.com/Amo643)

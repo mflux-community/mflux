@@ -15,3 +15,5 @@ thre = "thre"
 caf = "caf"
 mis = "mis"
 unparseable = "unparseable"
+# temperal = legacy config key in published Qwen/Diffusers VAE checkpoints
+temperal = "temperal"

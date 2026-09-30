@@ -2,7 +2,6 @@ from pathlib import Path
 
 import mlx.core as mx
 from mlx import nn
-from PIL import Image
 
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
@@ -19,6 +18,7 @@ from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightD
 from mflux.models.z_image.z_image_initializer import ZImageInitializer
 from mflux.utils.apple_silicon import AppleSiliconUtil
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
 
 
@@ -61,7 +61,7 @@ class ZImage(nn.Module):
         negative_prompt: str | None = None,
         pid_decode: bool = False,
         pid_degrade_sigma: float = 0.0,
-    ) -> Image.Image:
+    ) -> GeneratedImage:
         supports_guidance = bool(self.model_config.supports_guidance)
         if not supports_guidance:
             guidance = 0.0

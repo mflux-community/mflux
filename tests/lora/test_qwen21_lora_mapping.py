@@ -1,3 +1,4 @@
+import json
 import sys
 from unittest.mock import Mock
 
@@ -8,7 +9,7 @@ from mlx import nn
 from mflux.cli.capabilities import describe_command
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
-from mflux.models.qwen21.cli import qwen21_generate
+from mflux.models.qwen21.cli import qwen21_edit_generate, qwen21_generate
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_time_text_embed import Qwen21TimeTextEmbed
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
 from mflux.models.qwen21.weights.qwen21_lora_mapping import Qwen21LoRAMapping
@@ -139,7 +140,8 @@ def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, s
 
 @pytest.mark.fast
 @pytest.mark.parametrize("flags", [[], ["--no-bake-lora"]])
-def test_qwen21_cli_accepts_lora(monkeypatch, tmp_path, flags):
+@pytest.mark.parametrize("cli", [qwen21_generate, qwen21_edit_generate])
+def test_qwen21_cli_accepts_lora(monkeypatch, tmp_path, flags, cli):
     adapter = tmp_path / "a.safetensors"
     adapter.touch()
     monkeypatch.setattr(
@@ -147,27 +149,82 @@ def test_qwen21_cli_accepts_lora(monkeypatch, tmp_path, flags):
         "argv",
         ["mflux-generate-qwen-2.1", "--prompt", "test", "--lora", str(adapter), "0.9", *flags],
     )
-    args = qwen21_generate.build_parser().parse_args()
+    args = cli.build_parser().parse_args()
     assert args.lora_paths == [str(adapter)]
     assert args.lora_scales == [0.9]
     assert args.bake_lora is (not flags)
 
 
 @pytest.mark.fast
-def test_qwen21_cli_warns_for_lora_style(monkeypatch):
+@pytest.mark.parametrize(
+    "cli,model_name", [(qwen21_generate, "QwenImage21"), (qwen21_edit_generate, "QwenImage21Edit")]
+)
+def test_qwen21_cli_warns_for_lora_style(monkeypatch, cli, model_name):
     monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", "--lora-style", "storyboard"])
-    monkeypatch.setattr(qwen21_generate, "QwenImage21", Mock(side_effect=RuntimeError("stop before loading weights")))
+    monkeypatch.setattr(cli, model_name, Mock(side_effect=RuntimeError("stop before loading weights")))
     with (
         pytest.warns(UserWarning, match="--lora-style is ignored"),
         pytest.raises(RuntimeError, match="stop before loading weights"),
     ):
-        qwen21_generate.main()
+        cli.main()
 
 
 @pytest.mark.fast
-def test_qwen21_capabilities_report_lora_style_as_ignored():
-    command = describe_command("mflux-generate-qwen-2.1", qwen21_generate.__name__)
+@pytest.mark.parametrize(
+    "name,cli",
+    [("mflux-generate-qwen-2.1", qwen21_generate), ("mflux-generate-qwen-2.1-edit", qwen21_edit_generate)],
+)
+def test_qwen21_capabilities_report_lora_style_as_ignored(name, cli):
+    command = describe_command(name, cli.__name__)
     options = {option["flag"]: option for option in command["options"]}
     assert command["traits"]["lora"] is True
     assert options["--lora"]["status"] == "honored"
     assert options["--lora-style"]["status"] == "ignored"
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("value", ["0", "1", "-0.5", "abc"])
+def test_generate_cli_rejects_invalid_teacache_ratio_before_loading(monkeypatch, value):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--prompt", "x", "--teacache-ratio", value])
+    with pytest.raises(SystemExit) as exc:
+        qwen21_generate.build_parser().parse_args()
+    assert exc.value.code == 2
+
+
+@pytest.mark.fast
+def test_generate_cli_accepts_valid_teacache_ratio(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--prompt", "x", "--teacache-ratio", "0.25"])
+    assert qwen21_generate.build_parser().parse_args().teacache_ratio == 0.25
+
+
+@pytest.mark.fast
+def test_edit_cli_forwards_adapter_and_baking_policy(monkeypatch, tmp_path):
+    adapter = tmp_path / "adapter.safetensors"
+    adapter.touch()
+    monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "test", "--lora", str(adapter), "0.4", "--no-bake-lora"])
+    constructor = Mock(side_effect=RuntimeError("stop before loading weights"))
+    monkeypatch.setattr(qwen21_edit_generate, "QwenImage21Edit", constructor)
+    with pytest.raises(RuntimeError, match="stop before loading weights"):
+        qwen21_edit_generate.main()
+    assert constructor.call_args.kwargs["lora_paths"] == [str(adapter)]
+    assert constructor.call_args.kwargs["lora_scales"] == [0.4]
+    assert constructor.call_args.kwargs["bake_lora"] is False
+
+
+@pytest.mark.fast
+def test_edit_metadata_restores_lora_with_explicit_override(monkeypatch, tmp_path):
+    adapters = [tmp_path / "old.safetensors", tmp_path / "new.safetensors"]
+    for adapter in adapters:
+        adapter.touch()
+    sidecar = tmp_path / "image.json"
+    sidecar.write_text(json.dumps({"prompt": "test", "lora_paths": [str(adapters[0])], "lora_scales": [0.3]}))
+    monkeypatch.setattr(sys, "argv", ["prog", "--config-from-metadata", str(sidecar)])
+    args = qwen21_edit_generate.build_parser().parse_args()
+    assert args.lora_paths == [str(adapters[0])]
+    assert args.lora_scales == [0.3]
+    monkeypatch.setattr(
+        sys, "argv", ["prog", "--config-from-metadata", str(sidecar), "--lora", str(adapters[1]), "0.8"]
+    )
+    args = qwen21_edit_generate.build_parser().parse_args()
+    assert args.lora_paths == [str(adapters[1])]
+    assert args.lora_scales == [0.8]

@@ -1,3 +1,5 @@
+from argparse import Namespace
+
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
@@ -5,6 +7,7 @@ from mflux.models.z_image.latent_creator import ZImageLatentCreator
 from mflux.models.z_image.variants.z_image import ZImage
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.prompt_util import PromptUtil
 
 # The model this CLI runs. The parser needs it to key the --steps default off the right
@@ -31,51 +34,64 @@ def build_parser() -> CommandLineParser:
     return parser
 
 
+class ZImageTurboCommand:
+    latent_creator = ZImageLatentCreator
+
+    @staticmethod
+    def load(args: Namespace) -> ZImage:
+        # --model accepts only z-image-turbo aliases; the ControlNet entry shares this
+        # repo id but is a different model, so it is rejected too.
+        return ZImage(
+            model_config=ConfigResolution.resolve_restricted(
+                args.model, DEFAULT_MODEL, model_path=args.model_path, base_model=args.base_model
+            ),
+            quantize=args.quantize,
+            model_path=args.model_path,
+            **lora_init_kwargs_from_args(args),
+        )
+
+    @staticmethod
+    def generate(model: ZImage, args: Namespace, seed: int, prompt: str) -> GeneratedImage:
+        # ScaleFactor dims ("2x") need the reference image; resolved here so a caller of
+        # generate() gets them without going through main().
+        width, height = DimensionResolver.resolve(
+            width=args.width, height=args.height, reference_image_path=args.image_path
+        )
+        return model.generate_image(
+            seed=seed,
+            prompt=prompt,
+            width=width,
+            height=height,
+            guidance=args.guidance,
+            image_path=args.image_path,
+            num_inference_steps=args.steps,
+            image_strength=args.image_strength,
+            scheduler=args.scheduler,
+            negative_prompt=args.negative_prompt,
+            pid_decode=args.pid_decode,
+            pid_degrade_sigma=args.pid_degrade_sigma,
+        )
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
-    # 1. Load the model (--model accepts only z-image-turbo aliases; the ControlNet
-    # entry shares this repo id but is a different model, so it is rejected too)
-    model = ZImage(
-        model_config=ConfigResolution.resolve_restricted(args.model, "z-image-turbo", model_path=args.model_path),
-        quantize=args.quantize,
-        model_path=args.model_path,
-        **lora_init_kwargs_from_args(args),
-    )
+    # 1. Load the model
+    model = ZImageTurboCommand.load(args)
 
     # 2. Register callbacks
     memory_saver = CallbackManager.register_callbacks(
         args=args,
         model=model,
-        latent_creator=ZImageLatentCreator,
+        latent_creator=ZImageTurboCommand.latent_creator,
     )
 
     try:
-        # Resolve dimensions (supports ScaleFactor like "2x" when --image-path is provided)
-        width, height = DimensionResolver.resolve(
-            width=args.width,
-            height=args.height,
-            reference_image_path=args.image_path,
-        )
-
         for seed in args.seed:
             # 3. Generate an image for each seed value
-            image = model.generate_image(
-                seed=seed,
-                prompt=PromptUtil.read_prompt(args),
-                width=width,
-                height=height,
-                guidance=args.guidance,
-                image_path=args.image_path,
-                num_inference_steps=args.steps,
-                image_strength=args.image_strength,
-                scheduler=args.scheduler,
-                negative_prompt=args.negative_prompt,
-                pid_decode=args.pid_decode,
-                pid_degrade_sigma=args.pid_degrade_sigma,
-            )
+            image = ZImageTurboCommand.generate(model, args, seed, PromptUtil.read_prompt(args))
             # 4. Save the image
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:

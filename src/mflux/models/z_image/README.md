@@ -86,6 +86,49 @@ image = model.generate_image(
 )
 image.save("z_image_turbo.png")
 ```
+
+You can also call the two steps of `mflux-generate-z-image-turbo` from Python. `ZImageTurboCommand.load(args)` builds the model; `ZImageTurboCommand.generate(model, args, seed, prompt)` makes one image and returns it unsaved. A script or a UI reuses the command's flag handling (the `--model` check, LoRA options, sizes like `2x`) without copying it. The script below takes the command's own flags:
+
+```python
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["mflux"]
+# ///
+# Takes the same flags as mflux-generate-z-image-turbo, for example:
+#   uv run generate_turbo.py --prompt "A puffin standing on a cliff" --seed 42 43 -q 8
+import gc
+
+import mlx.core as mx
+
+from mflux.models.z_image.cli.z_image_turbo_generate import ZImageTurboCommand, build_parser
+from mflux.utils.prompt_util import PromptUtil
+
+
+class PrintProgress:
+    def call_in_loop(self, t, seed, prompt, latents, config, time_steps):
+        print(f"seed {seed}: step {t + 1}/{config.num_inference_steps}")
+
+
+args = build_parser().parse_args()
+model = ZImageTurboCommand.load(args)  # once per process
+model.callbacks.register(PrintProgress())  # once per loaded model
+for seed in args.seed:
+    prompt = PromptUtil.read_prompt(args)  # read per seed, as the command does
+    image = ZImageTurboCommand.generate(model, args, seed, prompt)
+    image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
+    gc.collect()
+    mx.clear_cache()
+```
+
+If you keep the model loaded, as a UI or a server does:
+
+- Register your callbacks once per loaded model; there is no unregister call.
+- Leave `CallbackManager.register_callbacks` to the command line. The memory saver it adds frees the text encoder during a single-seed run, and the transformer too when that run uses `--low-ram` or `--pid-decode`, so the model cannot be reused after it. Without it the text encoder stays loaded while the image is made, so memory peaks higher than with the command.
+- Flags that only `register_callbacks` applies do nothing in this script: `--low-ram`, `--mlx-cache-limit-gb`, `--vae-tiling`, `--vae-tile-size`, `--stepwise-image-output-dir` and `--battery-percentage-stop-limit`.
+- A new `--model`, `-q` or LoRA needs a new `load()`. Drop the old model and any of your objects that hold it first (`del model`, then `gc.collect()` and `mx.clear_cache()`), so two sets of weights are never in memory at once.
+- Handle one request at a time. The parser reads `sys.argv`, so set it to the request's flags before you call `parse_args()`.
+- Save each image before you parse the next request: parsing sets process-wide metadata state, and `--no-metadata` stays in effect for the rest of the process.
 </details>
 
 > [!WARNING]

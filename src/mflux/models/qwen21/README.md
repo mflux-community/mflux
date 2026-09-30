@@ -1,6 +1,6 @@
 # Qwen Image 2.1
 
-For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `uv run mflux-generate-qwen-2.1-edit`. The existing command below retains its text-to-image and strength-based img2img behavior.
+For instruction-based single/multiple-reference editing, prefix KV caching, and RGBA output, see [reference editing](reference/README.md) and `uv run mflux-generate-qwen-2.1-edit`. Both commands share the Transformer, component-loading mechanism, and LoRA mappings. The existing command below retains its text-to-image and strength-based img2img behavior.
 
 MFLUX’s MLX implementation of **Qwen-Image-2.1** (`Qwen/Qwen-Image-2.1`), the second-generation
 Qwen Image text-to-image model.
@@ -94,12 +94,21 @@ The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing
   not mapped or loaded.
 - The prompt template is a raw string (not `apply_chat_template`) with the system-role tokens
   dropped from the final hidden states, matching the reference pipeline exactly.
-- The text-to-image command recomputes the text prefix each step. Use
-  `uv run mflux-generate-qwen-2.1-edit` for prefix KV caching and instruction-based reference editing.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default` format) in the text-to-image command.
-- Not yet supported: PID decoding. The reference-editing command does not yet support LoRA mappings.
-- The text prefix KV cache (valid because `causal_condition` makes text activations
-  step-independent) is a planned optimization; the current port recomputes the prefix each step.
-- LoRA: `--lora adapter.safetensors 1.0` (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
-- Not yet supported: the edit/instruction variant (needs the Qwen3-VL vision tower)
-  and PID decoding.
+- The text prefix K/V is cached per (prompt, resolution) in the text-to-image command too:
+  `causal_condition` makes text activations step-independent, so each denoise step runs
+  image tokens only against the cached prefix. The cache holds at most the two most recent
+  embeddings (the positive and negative CFG prompts); padded prompts recompute the joint
+  sequence. Set `use_text_cache = False` on the transformer to force the recompute path.
+  The reference-editing command (`uv run mflux-generate-qwen-2.1-edit`) keeps its own prefix cache.
+- Q/K norm+rope runs as one fused custom Metal kernel when available (`head_dim` a multiple
+  of 64 and matching rope tables); `MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE=1` disables it.
+- TeaCache-style step reuse: `generate_image(..., teacache_ratio=0.25)` skips the transformer
+  on the ~25% of denoise steps whose timestep-embedding signal changes least (first/last 10%
+  of the run are never skipped) and reuses the previous noise prediction. Measured on M4,
+  512², 40 steps: 1.40× at ratio 0.25 (PSNR 27.5 dB, SSIM 0.943 vs uncached), 1.77× at 0.4
+  (PSNR 25.4 dB, SSIM 0.910). Exact skipping depends only on the sigma schedule, so it is
+  deterministic for a given (steps, resolution, ratio). The CLI flag is `--teacache-ratio`.
+  If the selector picks two or more steps in a row, all of them reuse the same noise prediction.
+- LoRA: `--lora adapter.safetensors 1.0` in either command (PEFT `.default`, `transformer.`, and `diffusion_model.` formats; DoRA and mixed full-weight files are not supported).
+- The VAE and text/vision encoder remain separate between the two commands; their consolidation is follow-up work.
+- Not yet supported: PID decoding.
