@@ -16,7 +16,7 @@ class ZImageLoRAMapping(LoRAMapping):
     @staticmethod
     def _split_qkv(weight: mx.array, index: int) -> mx.array:
         # Z-Image's fused projection stacks whole q, k and v blocks along the output axis.
-        if weight.shape[0] % 3:
+        if weight.ndim != 2 or weight.shape[0] % 3:
             raise ValueError(f"Fused attention.qkv LoRA up weight {weight.shape} does not split into three equal parts")
         return mx.split(weight, 3, axis=0)[index]
 

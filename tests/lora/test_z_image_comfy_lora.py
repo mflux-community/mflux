@@ -191,15 +191,17 @@ def test_direct_patch_rejects_broadcasting_and_missing_bias(tmp_path, suffix, sh
 
 
 @pytest.mark.fast
-def test_fused_qkv_rejects_unequal_chunks(tmp_path):
+@pytest.mark.parametrize("shape", [(193, 2), (), (192,), (192, 2, 1)])
+@pytest.mark.parametrize("bake_lora", [False, True])
+def test_fused_qkv_rejects_unequal_chunks(tmp_path, shape, bake_lora):
     model = ZImageTransformer(dim=64, n_layers=1, n_refiner_layers=1, n_heads=2, cap_feat_dim=64)
     adapter = tmp_path / "bad-qkv.safetensors"
     source = "diffusion_model.layers.0.attention.qkv"
     mx.save_safetensors(
-        str(adapter), {f"{source}.lora_down.weight": mx.ones((2, 64)), f"{source}.lora_up.weight": mx.ones((193, 2))}
+        str(adapter), {f"{source}.lora_down.weight": mx.ones((2, 64)), f"{source}.lora_up.weight": mx.ones(shape)}
     )
     with pytest.raises(ValueError, match="three equal parts"):
-        LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1])
+        LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [1], bake_lora=bake_lora)
 
 
 @pytest.mark.fast
