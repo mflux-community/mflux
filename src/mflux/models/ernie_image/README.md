@@ -58,6 +58,11 @@ image = model.generate_image(
 )
 image.save("ernie_owl.png")
 ```
+
+You can also call the steps of `mflux-generate-ernie-image-turbo` and `mflux-generate-ernie-image` from Python. `ErnieImageTurboCommand` (in `mflux.models.ernie_image.cli.ernie_image_turbo_generate`) and `ErnieImageCommand` (in `mflux.models.ernie_image.cli.ernie_image_generate`) each have `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. `validate()` checks `--model` and, on turbo, `--guidance`, without loading any weights. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded.
+
+On turbo, `generate()` runs at guidance 1.0 when `--guidance` is omitted, and raises `ValueError` for any other value. Pass a model only to the command that loaded it: both commands build the same class, and `generate()` does not check which one it was given. The model keeps each prompt's text embeddings in `model.prompt_cache`, which grows by one entry per distinct combination of prompt, negative prompt and guidance. A process that stays up should clear it from time to time with `model.prompt_cache.clear()`, then `gc.collect()` and `mx.clear_cache()`.
+
 </details>
 
 ## Image-to-image
