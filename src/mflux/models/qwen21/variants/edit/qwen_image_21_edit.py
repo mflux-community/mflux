@@ -329,8 +329,7 @@ class QwenImage21Edit(nn.Module):
         # Greedy chat reply from the in-memory Qwen3-VL over small copies of the images.
         # Greedy decoding is deterministic, so a multi-seed run grounds and rewrites once
         # (the cache lives in __dict__, off the nn.Module parameter tree).
-        digests = tuple(hashlib.sha1(image.tobytes()).hexdigest() + f"{image.size}{image.mode}" for image in images)
-        key = (instruction, max_new_tokens, digests)
+        key = (instruction, max_new_tokens, tuple(QwenImage21Edit._vision_digest(image) for image in images))
         cache = self.__dict__.setdefault("_vision_cache", {})
         if key in cache:
             return cache[key]
@@ -350,6 +349,14 @@ class QwenImage21Edit(nn.Module):
             cache.pop(next(iter(cache)))
         cache[key] = reply
         return reply
+
+    @staticmethod
+    def _vision_digest(image: Image.Image, budget: int = 512) -> str:
+        # Hash a feed-sized copy: the vision tower sees only ~512px, and hashing the full
+        # source would copy it in memory for every lookup.
+        size = QwenImage21LatentCreator.dimensions(budget, image.width / image.height)
+        small = image.resize(size, Image.Resampling.BOX)
+        return hashlib.sha1(small.tobytes()).hexdigest() + f"{image.size}{image.mode}"
 
     @staticmethod
     def _vision_feed(image: Image.Image, budget: int = 512) -> Image.Image:

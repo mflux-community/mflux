@@ -435,6 +435,13 @@ def test_grounding_parse_rewrite_and_verification():
         True,
     )
     assert QwenImage21Grounding.parse_verification("instruction_applied: false, unchanged: true") == (False, True)
+    # a field that only ends in applied or unchanged is not the verdict
+    for reply in (
+        "instruction_applied: false, partially_applied: true, outside_unchanged: true",
+        "instruction_applied: false, not_applied: true, outside_unchanged: true",
+    ):
+        assert QwenImage21Grounding.parse_verification(reply) == (False, True)
+    assert QwenImage21Grounding.parse_verification("instruction_applied: true, not_unchanged: true") == (True, False)
 
 
 def test_grounding_masks():
