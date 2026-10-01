@@ -122,9 +122,9 @@ class CompletionGenerator:
             # For store_true/store_false actions, no value spec needed
             is_flag = isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction))
 
-            if len(opts) == 2:
-                # Both short and long form - create exclusion group
-                opt_spec = f"'({opts[0]} {opts[1]})'{{{opts[0]},{opts[1]}}}"
+            if len(opts) >= 2:
+                # All spellings of one option (short form and renamed-flag aliases) - create exclusion group
+                opt_spec = f"'({' '.join(opts)})'{{{','.join(opts)}}}"
             else:
                 # Only one form
                 opt_spec = f"'{opts[0]}'"

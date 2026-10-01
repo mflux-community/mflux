@@ -123,3 +123,16 @@ def test_completion_generator_completes_base_model():
     for key in ConfigResolution.base_model_keys():
         assert f"'{key}[" in helper_body, key
     assert "black-forest-labs" not in helper_body
+
+
+@pytest.mark.fast
+def test_completion_generator_completes_every_spelling_of_a_renamed_flag():
+    generator = CompletionGenerator()
+    parser = generator.create_parser_for_command("mflux-generate")
+    script = generator.generate_command_function("mflux-generate", parser)
+
+    # The renamed flags (#703) keep their old names as aliases. Completion must offer all
+    # spellings, which includes the three spellings of the sidecar reader.
+    assert "{--config-from-conf,--config-from-metadata,-C}" in script
+    assert "{--make-conf,--metadata}" in script
+    assert "{--no-exif,--no-metadata}" in script
