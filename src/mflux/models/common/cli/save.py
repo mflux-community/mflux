@@ -20,6 +20,7 @@ from mflux.models.ming_image import MingImage
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
+from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 from mflux.models.z_image import ZImage, ZImageTurbo, ZImageTurboControlnet
 from mflux.utils.exceptions import ModelConfigError
 
@@ -62,18 +63,18 @@ MODEL_CLASSES: dict[str, type] = {
     "qwen-image-edit": QwenImageEdit,
     "schnell": Flux1,
     "schnell-controlnet-canny": Flux1Controlnet,
+    "seedvr2-3b": SeedVR2,
+    "seedvr2-7b": SeedVR2,
     "z-image": ZImage,
     "z-image-turbo": ZImageTurbo,
     "z-image-turbo-controlnet-union-2.1": ZImageTurboControlnet,
 }
 
-# Registry entries with no save path: LensImage and SeedVR2 implement no save_model(), so
+# Registry entries with no save path: LensImage implements no save_model(), so
 # there is nothing to dispatch to. Listed rather than left out so the drift test can tell
 # "not supported yet" from "someone added a model and forgot this table".
 UNSUPPORTED_MODELS = {
     "lens-turbo": "LensImage has no save_model(); its transformer is a single-file checkpoint",
-    "seedvr2-3b": "the SeedVR2 upscalers have no save_model()",
-    "seedvr2-7b": "the SeedVR2 upscalers have no save_model()",
 }
 
 

@@ -26,6 +26,7 @@ from mflux.models.flux.variants.redux.flux_redux import Flux1Redux
 from mflux.models.flux.variants.txt2img.flux import Flux1
 from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 from mflux.models.z_image import ZImageTurboControlnet
 
 ALL_NAMES = sorted({*AVAILABLE_MODELS, *(alias for c in AVAILABLE_MODELS.values() for alias in c.aliases)})
@@ -129,11 +130,31 @@ def test_reported_misclassifications(name, expected):
 
 
 @pytest.mark.fast
-@pytest.mark.parametrize("name", ["lens", "lens-turbo", "seedvr2", "seedvr2-7b"])
+@pytest.mark.parametrize("name", ["lens", "lens-turbo"])
 def test_unsaveable_models_are_rejected_not_saved_as_flux(name):
     with pytest.raises(SystemExit) as exit_info:
         run_save(name)
     assert exit_info.value.code == 2
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    ("name", "variant"), [("seedvr2", "seedvr2-3b"), ("seedvr2-3b", "seedvr2-3b"), ("seedvr2-7b", "seedvr2-7b")]
+)
+def test_seedvr2_saves_with_the_requested_variant(name, variant):
+    # Both variants share the numz/SeedVR2_comfyUI repo id, so the variant must come from
+    # the alias the user typed, not from a reverse lookup by model_name.
+    built = run_save(name)
+    assert built["class"] is SeedVR2
+    assert variant in built["kwargs"]["model_config"].aliases
+
+
+@pytest.mark.fast
+def test_seedvr2_custom_checkpoint_dispatches_on_its_base_model():
+    built = run_save("/models/my-seedvr2", base_model="seedvr2-7b")
+    assert built["class"] is SeedVR2
+    assert "seedvr2-7b" in built["kwargs"]["model_config"].aliases
+    assert built["kwargs"]["model_path"] == "/models/my-seedvr2"
 
 
 @pytest.mark.fast
@@ -177,7 +198,7 @@ def test_hint_lists_the_saveable_models_and_nothing_else():
 
 
 @pytest.mark.fast
-@pytest.mark.parametrize("name", ["some-org/an-unrecognizable-model", "lens", "seedvr2-7b"])
+@pytest.mark.parametrize("name", ["some-org/an-unrecognizable-model", "lens"])
 def test_every_rejection_names_the_saveable_models(name, capsys):
     # Whichever way the name fails — unresolvable, or resolved but unsaveable — the user
     # is told what would have worked, since --help lists models mflux-save cannot write.

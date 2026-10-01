@@ -12,6 +12,7 @@ from mflux.models.seedvr2.model.seedvr2_transformer.transformer import SeedVR2Tr
 from mflux.models.seedvr2.model.seedvr2_vae.vae import SeedVR2VAE
 from mflux.models.seedvr2.seedvr2_initializer import SeedVR2Initializer
 from mflux.models.seedvr2.variants.upscale.seedvr2_util import SeedVR2Util
+from mflux.models.seedvr2.weights.seedvr2_weight_definition import SeedVR2WeightDefinition
 from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
 from mflux.utils.metadata_reader import MetadataReader
@@ -111,4 +112,15 @@ class SeedVR2(nn.Module):
             decoded_latents=decoded,
             generation_time=config.time_steps.format_dict["elapsed"],
             init_metadata=init_metadata,
+        )
+
+    def save_model(self, base_path: str) -> None:
+        from mflux.models.common.weights.saving.model_saver import ModelSaver
+
+        # Resolve the 3B or 7B definition: the base class always describes the 3B layout.
+        ModelSaver.save_model(
+            model=self,
+            bits=self.bits,
+            base_path=base_path,
+            weight_definition=SeedVR2WeightDefinition.resolve(self.model_config),
         )

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
@@ -49,11 +50,28 @@ def _resolve_seedvr2_model(model_arg: str | None, model_path: str | None) -> tup
                 return ModelConfig.seedvr2_7b(), model_path
             if has_3b and not has_7b:
                 return ModelConfig.seedvr2_3b(), model_path
+            saved_config = _saved_checkpoint_config(path)
+            if saved_config is not None:
+                return saved_config, model_path
 
     source = (model_path or model_arg).lower()
     if "seedvr2_ema_7b" in source or "seedvr2-7b" in source:
         return ModelConfig.seedvr2_7b(), model_path
     return ModelConfig.seedvr2_3b(), model_path
+
+
+def _saved_checkpoint_config(path: Path) -> ModelConfig | None:
+    # An mflux-save checkpoint keeps no source file names, so the variant comes from the
+    # transformer's block count in its index: 32 blocks for 3B, 36 blocks for 7B.
+    index_path = path / "transformer" / "model.safetensors.index.json"
+    if not index_path.is_file():
+        return None
+    weight_map = json.loads(index_path.read_text()).get("weight_map", {})
+    num_blocks = len({key.split(".")[1] for key in weight_map if key.startswith("blocks.")})
+    for model_config in (ModelConfig.seedvr2_3b(), ModelConfig.seedvr2_7b()):
+        if num_blocks == (model_config.transformer_overrides or {}).get("num_layers", 32):
+            return model_config
+    return None
 
 
 def _expand_image_paths(image_paths: list[Path]) -> list[Path]:

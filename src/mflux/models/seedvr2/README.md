@@ -43,6 +43,17 @@ You can also adjust the `--softness` parameter (0.0 to 1.0) to control input pre
 > [!NOTE]
 > Upscaling to very large resolutions can require a lot of memory. If you run into memory pressure, try `--low-ram` or set an MLX cache limit with `--mlx-cache-limit-gb 16` (replace `16` with a value that fits your machine).
 
+## Save a Quantized Copy
+
+Use `mflux-save` to write a quantized copy of the 3B or the 7B model to disk. Then give that directory to `--model`.
+
+```sh
+mflux-save --model seedvr2-7b --quantize 8 --path ~/models/seedvr2-7b-q8
+mflux-upscale-seedvr2 --model ~/models/seedvr2-7b-q8 --image-path input.png --resolution 2160
+```
+
+The upscaler reads the variant (3B or 7B) from the saved weights. The name of the directory has no effect.
+
 ## Upscale a Directory
 
 Pass a directory to `--image-path` to upscale every image inside.
