@@ -134,6 +134,14 @@ class WeightLoader:
             # reads the hf_subdir layout (#621).
             mflux_path = root_path / save_subdir if save_subdir is not None else component_path
             weights, q_level, version = WeightLoader._try_load_mflux_format(mflux_path)
+            # The save subdir comes from the static definition, but a variant_selector can
+            # point the component elsewhere: Krea 2's static transformer sits at the repo
+            # root while its diffusers variant lives under transformer/, and checkpoints
+            # saved by earlier releases (and the first published krea-2-turbo-mflux-q8)
+            # keep their mflux shards there. Probing only the save subdir skipped them,
+            # and the diffusers mapping then matched nothing without a word (#784).
+            if weights is None and component_path.resolve() != mflux_path.resolve():
+                weights, q_level, version = WeightLoader._try_load_mflux_format(component_path)
             if weights is not None:
                 return weights, q_level, version
 

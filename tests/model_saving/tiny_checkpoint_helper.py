@@ -40,6 +40,7 @@ class TinyCheckpointRoundtrip:
         base_path: Path,
         bits: int = 8,
         tensors_per_shard: int | None = None,
+        after_save: Callable[[Path], None] | None = None,
     ) -> None:
         saved = make_components()
         # Many layers init deterministically (zeros/ones), which would let a
@@ -65,6 +66,10 @@ class TinyCheckpointRoundtrip:
                 f"expected multi-shard components, got {len(shard_files)} shards for {component_count} components"
             )
 
+        # after_save rearranges the written checkpoint before it is read back, to stand in
+        # for layouts older releases produced (Krea 2's transformer/ subdir, #784).
+        if after_save is not None:
+            after_save(base_path)
         loaded = WeightLoader.load(weight_definition=weight_definition, model_path=str(base_path))
         assert loaded.meta_data.quantization_level == bits
         assert loaded.meta_data.mflux_version == VersionUtil.get_mflux_version()
