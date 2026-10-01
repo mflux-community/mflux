@@ -6,11 +6,11 @@ from transformers import Qwen3VLConfig, Qwen3VLModel
 
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
-from mflux.models.qwen21.reference.model.qwen_image21_text_encoder.text_encoder import QwenImage21TextEncoder
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.layout import QwenImage21Layout
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.transformer import QwenImage21Transformer
-from mflux.models.qwen21.reference.model.qwen_image21_vae.vae import QwenImage21VAE
-from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
+from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
+from mflux.models.qwen21.model.qwen21_vae.vae import QwenImage21VAE
+from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
 pytestmark = pytest.mark.fast
 

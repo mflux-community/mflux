@@ -126,6 +126,8 @@ class Qwen21Initializer:
 
     @staticmethod
     def _normalize_vae_weights(supplied: dict[str, mx.array]) -> dict[str, mx.array]:
+        # Saved mflux exports bypass HF mappings. Text VAE exports from before the shared VAE
+        # use Qwen21CausalConv (".conv.") and Qwen21RMSNorm (".weight") parameter names.
         normalized = {}
         for key, value in supplied.items():
             target = key.replace(".downsampler.conv.", ".downsampler.resample.1.")

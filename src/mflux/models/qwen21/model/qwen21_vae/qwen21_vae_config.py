@@ -25,8 +25,6 @@ class Qwen21VAEConfig:
         3.8747, 3.7608, 3.5735, 3.149, 3.7662, 3.6746, 3.4563, 3.8161,
     ], dtype=np.float32)  # fmt: on
 
-    # fmt: on
-
     @staticmethod
     def resolve(config: dict | None = None) -> dict:
         defaults = dict(

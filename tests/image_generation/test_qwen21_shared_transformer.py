@@ -6,7 +6,7 @@ from mlx.utils import tree_flatten
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.transformer import QwenImage21Transformer
+from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 
 pytestmark = pytest.mark.fast
 

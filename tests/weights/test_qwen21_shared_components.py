@@ -176,3 +176,61 @@ def test_vae_variants_share_core_without_sharing_mutable_parameters():
     before = np.array(edit.encoder.conv_in.weight)
     text.encoder.conv_in.weight = mx.zeros_like(text.encoder.conv_in.weight)
     np.testing.assert_array_equal(np.array(edit.encoder.conv_in.weight), before)
+
+
+@pytest.mark.parametrize("dtype", [mx.float32, mx.bfloat16])
+def test_text_vae_hf_mapping_targets_the_shared_layout(tmp_path, dtype):
+    from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
+
+    class TextVAEOnly:
+        get_components = staticmethod(lambda: [replace(Qwen21WeightDefinition.get_components()[0], precision=dtype)])
+
+    # The mapping expects the real block layout: two encoder and three decoder resnets per block.
+    config = {**TinyComponents.VAE, "num_res_blocks": 2}
+    original = Qwen21VAE(config)
+    original.set_dtype(dtype)
+    supplied = dict(tree_flatten(original.parameters()))
+    hf = {}
+    for key, value in supplied.items():
+        if key.endswith(".gamma"):
+            hf[key] = value.reshape(-1, 1, 1)
+        elif value.ndim == 4:
+            hf[key] = value.transpose(0, 3, 1, 2)
+        else:
+            hf[key] = value
+    (tmp_path / "vae").mkdir()
+    mx.save_safetensors(str(tmp_path / "vae" / "diffusion_pytorch_model.safetensors"), hf)
+    restored = SimpleNamespace(vae=Qwen21VAE(config))
+    restored.vae.set_dtype(dtype)
+    Qwen21Initializer.load_components(restored, tmp_path, TextVAEOnly, None, validate=True)
+    actual = dict(tree_flatten(restored.vae.parameters()))
+    assert actual.keys() == supplied.keys()
+    for key, expected in supplied.items():
+        np.testing.assert_array_equal(np.array(actual[key].astype(mx.float32)), np.array(expected.astype(mx.float32)))
+
+
+@pytest.mark.parametrize(
+    "legacy,production",
+    [
+        ("reference.latent_creator.qwen_image21_latent_creator", "latent_creator.qwen_image21_latent_creator"),
+        ("reference.model.qwen_image21_text_encoder.processor", "model.qwen21_text_encoder.processor"),
+        ("reference.model.qwen_image21_text_encoder.prompt_encoder", "model.qwen21_text_encoder.prompt_encoder"),
+        ("reference.model.qwen_image21_text_encoder.text_encoder", "model.qwen21_text_encoder.text_encoder"),
+        ("reference.model.qwen_image21_text_encoder.text_encoder", "model.qwen21_text_encoder.language_model"),
+        ("reference.model.qwen_image21_transformer.layout", "model.qwen21_transformer.qwen21_layout"),
+        ("reference.model.qwen_image21_transformer.transformer", "model.qwen21_transformer.qwen_image21_transformer"),
+        ("reference.model.qwen_image21_vae.blocks", "model.qwen21_vae.blocks"),
+        ("reference.model.qwen_image21_vae.vae", "model.qwen21_vae.vae"),
+        ("reference.qwen_image21_initializer", "qwen_image21_initializer"),
+        ("reference.weights.qwen_image21_weight_definition", "weights.qwen_image21_weight_definition"),
+    ],
+)
+def test_reference_modules_reexport_the_production_objects(legacy, production):
+    import importlib
+
+    shim = importlib.import_module(f"mflux.models.qwen21.{legacy}")
+    module = importlib.import_module(f"mflux.models.qwen21.{production}")
+    exported = [name for name in shim.__all__ if hasattr(module, name)]
+    assert exported
+    for name in exported:
+        assert getattr(shim, name) is getattr(module, name)

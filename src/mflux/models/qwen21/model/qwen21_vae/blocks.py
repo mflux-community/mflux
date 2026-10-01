@@ -11,6 +11,8 @@ from mflux.models.qwen21.model.qwen21_vae.qwen21_dup_up import Qwen21DupUp
 class VAEOperations:
     @staticmethod
     def conv(layer: nn.Module, x: mx.array, text_mode: bool) -> mx.array:
+        if isinstance(layer, nn.Identity):
+            return x
         if text_mode:
             return layer(x.transpose(0, 2, 3, 1)).transpose(0, 3, 1, 2)
         return layer(x)
