@@ -169,7 +169,56 @@ See the [common README](src/mflux/models/common/README.md) for detailed usage an
 
 <img src="https://contrib.rocks/image?repo=mflux-community/mflux" />
 
-MFlux was originally created by [Filip Strand](https://github.com/filipstrand)
+MFlux was originally created by [Filip Strand](https://github.com/filipstrand) in August 2024 and moved to this organisation in August 2026. It is maintained by:
+
+<table>
+<tr>
+<td align="center" width="150"><a href="https://github.com/filipstrand"><img src="https://github.com/filipstrand.png?size=100" width="72" alt="filipstrand"><br><b>Filip Strand</b></a><br><sub>created mflux</sub></td>
+<td align="center" width="150"><a href="https://github.com/anthonywu"><img src="https://github.com/anthonywu.png?size=100" width="72" alt="anthonywu"><br><b>Anthony Wu</b></a><br><sub>toolchain, CI, releases, mflux.web</sub></td>
+<td align="center" width="150"><a href="https://github.com/plz12345"><img src="https://github.com/plz12345.png?size=100" width="72" alt="plz12345"><br><b>plz12345</b></a><br><sub>devops, Krea 2, Boogu</sub></td>
+<td align="center" width="150"><a href="https://github.com/fxd0h"><img src="https://github.com/fxd0h.png?size=100" width="72" alt="fxd0h"><br><b>Mariano Abad</b></a><br><sub>ControlNets, training, Lens</sub></td>
+<td align="center" width="150"><a href="https://github.com/ianscrivener"><img src="https://github.com/ianscrivener.png?size=100" width="72" alt="ianscrivener"><br><b>Ian Scrivener</b></a><br><sub>community, CUDA, model builds</sub></td>
+</tr>
+</table>
+
+Where the models and the main features came from, read from the merge history (`gh pr view <n> --json author,mergedAt`):
+
+| Model or feature | Contributor | PR |
+|--|--|--|
+| FLUX.1 | [@filipstrand](https://github.com/filipstrand) | initial release, 2024-08 |
+| Depth Pro | [@filipstrand](https://github.com/filipstrand) | [#159](https://github.com/mflux-community/mflux/pull/159) |
+| Qwen Image | [@filipstrand](https://github.com/filipstrand) | [#269](https://github.com/mflux-community/mflux/pull/269) |
+| FIBO | [@filipstrand](https://github.com/filipstrand) | [#279](https://github.com/mflux-community/mflux/pull/279) |
+| Z-Image | [@filipstrand](https://github.com/filipstrand) | [#284](https://github.com/mflux-community/mflux/pull/284) |
+| SeedVR2 | [@filipstrand](https://github.com/filipstrand) | [#297](https://github.com/mflux-community/mflux/pull/297) |
+| FLUX.2 Klein | [@filipstrand](https://github.com/filipstrand) | [#323](https://github.com/mflux-community/mflux/pull/323) |
+| FLUX.2 KV cache (klein-9b-kv) | [@michaeltrefry](https://github.com/michaeltrefry) | [#426](https://github.com/mflux-community/mflux/pull/426) |
+| ERNIE-Image | [@azrahello](https://github.com/azrahello) | [#417](https://github.com/mflux-community/mflux/pull/417) |
+| Ideogram 4 | [@omercelik](https://github.com/omercelik) | [#433](https://github.com/mflux-community/mflux/pull/433) |
+| Krea 2 | [@plz12345](https://github.com/plz12345) | [#453](https://github.com/mflux-community/mflux/pull/453) |
+| LyCORIS LoKr adapters | [@JanGrohn](https://github.com/JanGrohn) | [#422](https://github.com/mflux-community/mflux/pull/422) |
+| Fused-qkv LoRA loading | [@deadmansahil](https://github.com/deadmansahil) | [#459](https://github.com/mflux-community/mflux/pull/459) |
+| Boogu-Image | [@plz12345](https://github.com/plz12345) | [#446](https://github.com/mflux-community/mflux/pull/446) |
+| PiD pixel-diffusion decoder | [@azrahello](https://github.com/azrahello) | [#490](https://github.com/mflux-community/mflux/pull/490) |
+| Z-Image Union ControlNet | [@fxd0h](https://github.com/fxd0h) | [#482](https://github.com/mflux-community/mflux/pull/482) |
+| Krea 2 Raw, LoRA training, diffusers loading | [@fxd0h](https://github.com/fxd0h) | [#462](https://github.com/mflux-community/mflux/pull/462) |
+| Lens (Turbo) | [@fxd0h](https://github.com/fxd0h) | [#510](https://github.com/mflux-community/mflux/pull/510) |
+| mflux-capabilities, the machine-readable option contract | [@fxd0h](https://github.com/fxd0h) | [#499](https://github.com/mflux-community/mflux/pull/499) |
+| Gradient checkpointing for training | [@qruz-hq](https://github.com/qruz-hq) | [#711](https://github.com/mflux-community/mflux/pull/711) |
+| Denoised prediction for in-loop callbacks | [@IonDen](https://github.com/IonDen) | [#729](https://github.com/mflux-community/mflux/pull/729) |
+| Qwen-Image-2.1 | [@ivanfioravanti](https://github.com/ivanfioravanti) | [#736](https://github.com/mflux-community/mflux/pull/736) |
+| Qwen-Image-2.1 reference editing, RGBA, prefix cache | [@dreampuf](https://github.com/dreampuf) | [#741](https://github.com/mflux-community/mflux/pull/741), [#777](https://github.com/mflux-community/mflux/pull/777) |
+| Qwen-Image-2.1 masks, auto-mask, strength, verify | [@flyingtimes](https://github.com/flyingtimes) | [#749](https://github.com/mflux-community/mflux/pull/749), [#764](https://github.com/mflux-community/mflux/pull/764) |
+| PEFT and ComfyUI LoRA formats (Qwen 2.1, Z-Image) | [@phplego](https://github.com/phplego) | [#756](https://github.com/mflux-community/mflux/pull/756), [#768](https://github.com/mflux-community/mflux/pull/768), [#772](https://github.com/mflux-community/mflux/pull/772) |
+| Text-prefix KV cache, Metal kernel, step cache | [@murphymatt](https://github.com/murphymatt) | [#778](https://github.com/mflux-community/mflux/pull/778), [#779](https://github.com/mflux-community/mflux/pull/779) |
+| Ming-Image-0.1-Design | [@joeynyc](https://github.com/joeynyc) | [#765](https://github.com/mflux-community/mflux/pull/765) |
+| load and generate entry points for UIs | [@IonDen](https://github.com/IonDen) | [#780](https://github.com/mflux-community/mflux/pull/780), [#785](https://github.com/mflux-community/mflux/pull/785) |
+| mflux.web UI packages | [@anthonywu](https://github.com/anthonywu) | [#776](https://github.com/mflux-community/mflux/pull/776) |
+| CI gates, justfile, ty, the pypi environment | [@anthonywu](https://github.com/anthonywu) | [#576](https://github.com/mflux-community/mflux/pull/576), [#590](https://github.com/mflux-community/mflux/pull/590), [#646](https://github.com/mflux-community/mflux/pull/646) |
+| Release process and release notes | [@fxd0h](https://github.com/fxd0h) | [#685](https://github.com/mflux-community/mflux/pull/685) |
+| test_tiny fixtures for every model | [@ianscrivener](https://github.com/ianscrivener), [@anthonywu](https://github.com/anthonywu) | [#611](https://github.com/mflux-community/mflux/pull/611), [#620](https://github.com/mflux-community/mflux/pull/620), [#599](https://github.com/mflux-community/mflux/pull/599) |
+
+Everyone else who fixed, tested and reviewed is in the [contributor graph](https://github.com/mflux-community/mflux/graphs/contributors).
 
 ---
 
