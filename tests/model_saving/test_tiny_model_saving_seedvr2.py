@@ -72,3 +72,17 @@ class TestTinySeedVR2SavedVariant:
         model_config, model_path = _resolve_seedvr2_model(model_arg=str(saved), model_path=str(saved))
         assert variant in model_config.aliases
         assert model_path == str(saved)
+
+    @pytest.mark.fast
+    @pytest.mark.parametrize("index_text", ['{"weight_map": {"blocks.0.x', "[]", '{"weight_map": []}'])
+    def test_unreadable_saved_index_falls_back_to_3b(self, tmp_path, index_text):
+        # An interrupted save can leave complete shards beside a truncated index. The weight
+        # loader still loads those shards, so the variant check must not stop the upscale.
+        transformer_dir = tmp_path / "my-upscaler" / "transformer"
+        transformer_dir.mkdir(parents=True)
+        (transformer_dir / "model.safetensors.index.json").write_text(index_text)
+
+        model_config, _ = _resolve_seedvr2_model(
+            model_arg=str(tmp_path / "my-upscaler"), model_path=str(tmp_path / "my-upscaler")
+        )
+        assert "seedvr2-3b" in model_config.aliases

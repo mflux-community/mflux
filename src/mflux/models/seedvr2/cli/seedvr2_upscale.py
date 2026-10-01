@@ -66,7 +66,15 @@ def _saved_checkpoint_config(path: Path) -> ModelConfig | None:
     index_path = path / "transformer" / "model.safetensors.index.json"
     if not index_path.is_file():
         return None
-    weight_map = json.loads(index_path.read_text()).get("weight_map", {})
+    # An unreadable index is no variant hint. The weight loader ignores it and loads the
+    # shards, so this falls back to the 3B default and does not stop the upscale.
+    try:
+        index = json.loads(index_path.read_text())
+    except (OSError, ValueError):
+        return None
+    weight_map = index.get("weight_map") if isinstance(index, dict) else None
+    if not isinstance(weight_map, dict):
+        return None
     num_blocks = len({key.split(".")[1] for key in weight_map if key.startswith("blocks.")})
     for model_config in (ModelConfig.seedvr2_3b(), ModelConfig.seedvr2_7b()):
         if num_blocks == (model_config.transformer_overrides or {}).get("num_layers", 32):
