@@ -104,8 +104,9 @@ class QwenImage21Grounding:
         # tolerate a plain-language reply
         lowered = text.lower()
         if "instruction_applied" in lowered:
-            applied = '"instruction_applied": true' in lowered or "applied: true" in lowered
-            unchanged = '"outside_unchanged": true' in lowered or "unchanged: true" in lowered
+            # whole field names only, so not_applied or partially_applied cannot pass as a verdict
+            applied = re.search(r'\binstruction_applied"?\s*:\s*true', lowered) is not None
+            unchanged = re.search(r'\b(?:outside_)?unchanged"?\s*:\s*true', lowered) is not None
             return applied, unchanged
         return None
 

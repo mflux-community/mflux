@@ -182,6 +182,7 @@ def test_get_right_half_keeps_every_metadata_attribute():
         pid_decode=True,
         pid_degrade_sigma=0.2,
     )
+    original.verification = {"verified": True, "retries": 0}
 
     half = original.get_right_half()
 
