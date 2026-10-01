@@ -2,14 +2,15 @@
 # use "typos --dump-config" to disocver other configs to override
 
 [default]
-extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs"]
+extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs", "RGBa"]
 
 # False positives typos would otherwise "fix" (destructively, incl. file renames):
 # hed = Holistically-nested Edge Detection model; thre1/thre2 = upstream openpose
 # threshold names; caf = intentional latin-1 "café" bytes in a utf-8 test;
 # mis/unparseable = legitimate English; rewrited = "rewrited_prompt" key the
 # official Qwen-Image-2.1 rewriter can emit, matched deliberately; temperal = legacy
-# "temperal_downsample" key in published Qwen VAE configs and Diffusers.
+# "temperal_downsample" key in published Qwen VAE configs and Diffusers;
+# RGBa (in the identifier list above) = premultiplied Pillow image mode.
 [default.extend-words]
 hed = "hed"
 HED = "HED"

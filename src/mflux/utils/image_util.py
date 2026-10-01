@@ -159,11 +159,26 @@ class ImageUtil:
         return array
 
     @staticmethod
-    def load_image(image_or_path: PIL.Image.Image | StrOrBytesPath) -> PIL.Image.Image:
+    def load_image(
+        image_or_path: PIL.Image.Image | StrOrBytesPath,
+        composite_alpha: bool = True,
+    ) -> PIL.Image.Image:
         # Apply the EXIF Orientation tag before the model sees the pixels: most photos straight
         # off a phone carry a non-1 orientation, and without this the model is conditioned on a
         # sideways image, not merely shown one.
-        return open_oriented(image_or_path).convert("RGB")
+        image = open_oriented(image_or_path)
+        # convert("RGB") drops the alpha channel and exposes whatever RGB sits under fully
+        # transparent pixels, so two files that look identical on screen load as different
+        # arrays. Composite alpha-bearing sources over opaque white first. An opaque RGB source
+        # is unaffected: alpha==255 makes the composite the identity.
+        # Masks use composite_alpha=False: for a mask, white means "inpaint here", so a white
+        # background would change a transparent "keep" area into an "inpaint" area.
+        if composite_alpha and image.has_transparency_data:
+            # Pillow cannot convert premultiplied "La" to RGBA directly.
+            rgba = (image.convert("LA") if image.mode == "La" else image).convert("RGBA")
+            white = PIL.Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+            return PIL.Image.alpha_composite(white, rgba).convert("RGB")
+        return image.convert("RGB")
 
     @staticmethod
     def expand_image(

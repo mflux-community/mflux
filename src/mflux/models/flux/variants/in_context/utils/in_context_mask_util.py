@@ -48,7 +48,7 @@ class InContextMaskUtil:
         else:
             # Selective: use provided mask exactly
             mask_image = ImageUtil.scale_to_dimensions(
-                image=ImageUtil.load_image(mask_path).convert("RGB"),
+                image=ImageUtil.load_image(mask_path, composite_alpha=False).convert("RGB"),
                 target_width=original_width,
                 target_height=height,
             )
