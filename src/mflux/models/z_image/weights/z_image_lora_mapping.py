@@ -1,3 +1,5 @@
+import mlx.core as mx
+
 from mflux.models.common.lora.mapping.lora_mapping import LoRAMapping, LoRATarget
 
 
@@ -8,6 +10,83 @@ class ZImageLoRAMapping(LoRAMapping):
         for layer_type in ["layers", "noise_refiner", "context_refiner"]:
             targets.extend(ZImageLoRAMapping._get_layer_targets(layer_type))
         targets.extend(ZImageLoRAMapping._get_global_targets())
+        targets.extend(ZImageLoRAMapping._get_comfy_targets())
+        return targets
+
+    @staticmethod
+    def _split_qkv(weight: mx.array, index: int) -> mx.array:
+        # Z-Image's fused projection stacks whole q, k and v blocks along the output axis.
+        if weight.ndim != 2 or weight.shape[0] % 3:
+            raise ValueError(f"Fused attention.qkv LoRA up weight {weight.shape} does not split into three equal parts")
+        return mx.split(weight, 3, axis=0)[index]
+
+    @staticmethod
+    def _get_comfy_targets() -> list[LoRATarget]:
+        targets = []
+        for layer_type in ("layers", "noise_refiner", "context_refiner"):
+            block = f"{layer_type}.{{block}}"
+            source = f"diffusion_model.{block}"
+            for index, projection in enumerate(("to_q", "to_k", "to_v")):
+                targets.append(
+                    LoRATarget(
+                        model_path=f"{block}.attention.{projection}",
+                        possible_up_patterns=[f"{source}.attention.qkv.lora_up.weight"],
+                        possible_down_patterns=[f"{source}.attention.qkv.lora_down.weight"],
+                        possible_alpha_patterns=[f"{source}.attention.qkv.alpha"],
+                        up_transform=lambda weight, index=index: ZImageLoRAMapping._split_qkv(weight, index),
+                    )
+                )
+            for source_norm, target_norm in (
+                ("attention.q_norm", "attention.norm_q"),
+                ("attention.k_norm", "attention.norm_k"),
+                ("attention_norm1", "attention_norm1"),
+                ("attention_norm2", "attention_norm2"),
+                ("ffn_norm1", "ffn_norm1"),
+                ("ffn_norm2", "ffn_norm2"),
+            ):
+                targets.append(
+                    LoRATarget(
+                        model_path=f"{block}.{target_norm}",
+                        possible_up_patterns=[],
+                        possible_down_patterns=[],
+                        possible_diff_patterns=[f"{source}.{source_norm}.diff"],
+                    )
+                )
+            if layer_type != "context_refiner":
+                targets.append(
+                    LoRATarget(
+                        model_path=f"{block}.adaLN_modulation.0",
+                        possible_up_patterns=[],
+                        possible_down_patterns=[],
+                        possible_diff_b_patterns=[f"{source}.adaLN_modulation.0.diff_b"],
+                    )
+                )
+
+        for source, target in (
+            ("x_embedder", "all_x_embedder.2-1"),
+            ("final_layer.linear", "all_final_layer.2-1.linear"),
+            ("final_layer.adaLN_modulation.1", "all_final_layer.2-1.adaLN_modulation.0"),
+            ("cap_embedder.1", "cap_embedder.1"),
+            ("t_embedder.mlp.0", "t_embedder.linear1"),
+            ("t_embedder.mlp.2", "t_embedder.linear2"),
+        ):
+            targets.append(
+                LoRATarget(
+                    model_path=target,
+                    possible_up_patterns=[f"diffusion_model.{source}.lora_up.weight"],
+                    possible_down_patterns=[f"diffusion_model.{source}.lora_down.weight"],
+                    possible_alpha_patterns=[f"diffusion_model.{source}.alpha"],
+                    possible_diff_b_patterns=[f"diffusion_model.{source}.diff_b"],
+                )
+            )
+        targets.append(
+            LoRATarget(
+                model_path="cap_embedder.0",
+                possible_up_patterns=[],
+                possible_down_patterns=[],
+                possible_diff_patterns=["diffusion_model.cap_embedder.0.diff"],
+            )
+        )
         return targets
 
     @staticmethod

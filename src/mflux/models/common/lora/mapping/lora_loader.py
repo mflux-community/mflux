@@ -49,8 +49,21 @@ class LoRALoader:
 
         print(f"📦 Loading {len(resolved_paths)} LoRA file(s)...")
 
+        # Direct deltas from every file are held back until all files have loaded, so a
+        # later file failing cannot leave an earlier file's deltas in the base weights.
+        direct_deltas: list[tuple[str, dict, float]] = []
         for lora_file, scale in zip(resolved_paths, resolved_scales):
-            LoRALoader._apply_single_lora(transformer, lora_file, scale, lora_mapping, role=role)
+            LoRALoader._apply_single_lora(
+                transformer,
+                lora_file,
+                scale,
+                lora_mapping,
+                role=role,
+                bake_lora=bake_lora,
+                direct_deltas=direct_deltas,
+            )
+        for target_path, lora_data, scale in direct_deltas:
+            LoRALoader._apply_direct_deltas(transformer, target_path, lora_data, scale)
 
         print("✅ All LoRA weights applied successfully")
 
@@ -70,6 +83,8 @@ class LoRALoader:
         lora_mapping: list[LoRATarget],
         *,
         role: str | None,
+        bake_lora: bool = True,
+        direct_deltas: list[tuple[str, dict, float]] | None = None,
     ) -> None:
         # An unreadable file is fatal rather than skipped: the run would otherwise report
         # success and generate from the untouched base model.
@@ -102,7 +117,7 @@ class LoRALoader:
 
         # Apply LoRA using the mappings (allows multiple targets per source)
         applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
-            transformer, weights, scale, pattern_mappings, role=role
+            transformer, weights, scale, pattern_mappings, role=role, bake_lora=bake_lora, direct_deltas=direct_deltas
         )
 
         if failed_targets:
@@ -148,6 +163,12 @@ class LoRALoader:
         mappings = []
 
         for target in targets:
+            for name, patterns in (
+                ("diff", target.possible_diff_patterns),
+                ("diff_b", target.possible_diff_b_patterns),
+            ):
+                mappings.extend(PatternMatch(pattern, target.model_path, name, False) for pattern in patterns)
+
             # Add up weight patterns (lora_B)
             mappings.extend(
                 PatternMatch(
@@ -278,9 +299,12 @@ class LoRALoader:
         pattern_mappings: list[PatternMatch],
         *,
         role: str | None,
+        bake_lora: bool = True,
+        direct_deltas: list[tuple[str, dict, float]] | None = None,
     ) -> tuple[int, set, list[str]]:
         applied_count = 0
         lora_data_by_target: dict[str, dict] = {}
+        source_keys: dict[tuple[str, str], str] = {}
         matched_keys: set[str] = set()
         failed_targets: list[str] = []
 
@@ -313,16 +337,85 @@ class LoRALoader:
                 if target_path not in lora_data_by_target:
                     lora_data_by_target[target_path] = {}
 
+                # Two different keys filling one slot would silently drop one of them
+                # (e.g. a fused attention.qkv and a separate to_q in the same file).
+                slot = (target_path, mapping.matrix_name)
+                if source_keys.setdefault(slot, weight_key) != weight_key:
+                    raise ValueError(
+                        f"LoRA keys {source_keys[slot]} and {weight_key} both map to "
+                        f"{target_path}.{mapping.matrix_name}"
+                    )
                 lora_data_by_target[target_path][mapping.matrix_name] = transformed_value
+
+        # Direct deltas change base weights in place, which neither stripping nor a failed
+        # load can undo. Validate them all before touching the model, and write them only
+        # once every LoRA target has applied.
+        direct_targets = [path for path, data in lora_data_by_target.items() if "diff" in data or "diff_b" in data]
+        if direct_targets and (not bake_lora or role is not None):
+            raise ValueError("Direct .diff/.diff_b patches require bake_lora=True and no adapter role.")
+        for target_path in list(direct_targets):
+            if not LoRALoader._validate_direct_deltas(transformer, target_path, lora_data_by_target[target_path]):
+                failed_targets.append(target_path)
+                direct_targets.remove(target_path)
 
         # Apply LoRA to each target
         for target_path, lora_data in lora_data_by_target.items():
-            if LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
+            if target_path in failed_targets:
+                continue
+            if lora_data.keys() <= {"diff", "diff_b"}:
+                applied_count += 1
+            elif LoRALoader._apply_adapter_to_target(transformer, target_path, lora_data, scale, role=role):
                 applied_count += 1
             else:
                 failed_targets.append(target_path)
 
+        if not failed_targets:
+            # A caller passing a list applies the deltas itself, once its whole load succeeds.
+            for target_path in direct_targets:
+                if direct_deltas is None:
+                    LoRALoader._apply_direct_deltas(transformer, target_path, lora_data_by_target[target_path], scale)
+                else:
+                    direct_deltas.append((target_path, lora_data_by_target[target_path], scale))
+
         return applied_count, matched_keys, failed_targets
+
+    @staticmethod
+    def _direct_delta_module(transformer: nn.Module, target_path: str) -> nn.Module:
+        module = LoRALoader._get_target_module(transformer, target_path)
+        if isinstance(module, FusedLoRALinear):
+            return module.base_linear
+        if isinstance(module, (LoRALinear, LoKrLinear)):
+            return module.linear
+        return module
+
+    @staticmethod
+    def _validate_direct_deltas(transformer: nn.Module, target_path: str, lora_data: dict) -> bool:
+        try:
+            module = LoRALoader._direct_delta_module(transformer, target_path)
+        except (AttributeError, IndexError, KeyError):
+            print(f"❌ Could not find target path: {target_path}")
+            return False
+        for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+            if name not in lora_data:
+                continue
+            base = getattr(module, attribute, None)
+            if base is None:
+                raise ValueError(f"Direct patch {name} at {target_path}: the module has no {attribute} to patch")
+            if base.ndim != 1 or base.shape != lora_data[name].shape:
+                raise ValueError(
+                    f"Direct patch shape mismatch at {target_path}.{attribute}: expected an existing matching vector"
+                )
+        return True
+
+    @staticmethod
+    def _apply_direct_deltas(transformer: nn.Module, target_path: str, lora_data: dict, scale: float) -> None:
+        module = LoRALoader._direct_delta_module(transformer, target_path)
+        for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+            if name not in lora_data:
+                continue
+            base = getattr(module, attribute)
+            delta = lora_data[name]
+            setattr(module, attribute, (base.astype(mx.float32) + scale * delta.astype(mx.float32)).astype(base.dtype))
 
     @staticmethod
     def _apply_adapter_to_target(

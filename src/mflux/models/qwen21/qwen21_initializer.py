@@ -3,6 +3,7 @@ from pathlib import Path
 import mlx.core as mx
 from mlx.utils import tree_flatten, tree_unflatten
 
+import mflux.models.qwen21.model.qwen21_scheduler  # noqa: F401 — register the viggle_turbo scheduler
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader

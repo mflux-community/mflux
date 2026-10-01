@@ -4,7 +4,6 @@ from pathlib import Path
 
 import mlx.core as mx
 from mlx import nn
-from PIL import Image
 
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
@@ -20,6 +19,7 @@ from mflux.models.z_image.variants.controlnet.transformer_controlnet import ZIma
 from mflux.models.z_image.weights.z_image_controlnet_weight_definition import ZImageControlnetWeightDefinition
 from mflux.models.z_image.z_image_initializer import ZImageInitializer
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
 
 
@@ -58,7 +58,7 @@ class ZImageTurboControlnet(nn.Module):
         width: int = 1024,
         controlnet_strength: float = 0.8,
         scheduler: str = "linear",
-    ) -> Image.Image:
+    ) -> GeneratedImage:
         config = Config(
             width=width,
             height=height,

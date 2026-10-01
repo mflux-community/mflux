@@ -1,70 +1,27 @@
-import inspect
 import sys
 
 import PIL.Image
 import pytest
 
-from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.z_image.cli import z_image_turbo_generate as cli
 from mflux.models.z_image.variants.z_image import ZImage
-from mflux.utils.generated_image import GeneratedImage
-from mflux.utils.image_util import ImageUtil
+from tests.cli.helpers.command_fakes import FakeModel, reset_cli_globals
 
 # main() warns about --guidance and --negative-prompt (IGNORED_OPTIONS); one test pins the
 # warnings, the rest silence them.
 pytestmark = pytest.mark.filterwarnings("ignore:--(guidance|negative-prompt) is ignored:UserWarning")
 
-# Captured before any monkeypatching so the fakes reject a kwarg the real model does not take.
-REAL_INIT = inspect.signature(ZImage.__init__)
-REAL_GENERATE = inspect.signature(ZImage.generate_image)
-REAL_SAVE = inspect.signature(GeneratedImage.save)
 
-
-class FakeImage:
-    def __init__(self, seed: int):
-        self.seed = seed
-        self.saves: list[tuple[str, bool]] = []
-
-    def save(self, *args, **kwargs):
-        bound = REAL_SAVE.bind(self, *args, **kwargs)
-        bound.apply_defaults()
-        self.saves.append((str(bound.arguments["path"]), bound.arguments["export_json_metadata"]))
-
-
-class FakeZImage:
-    # Stands in for the model at the one boundary the CLI owns nothing behind: records how it
-    # was built and what it was asked to generate, never touches weights or Metal.
-    instances: list["FakeZImage"] = []
-
-    def __init__(self, **kwargs):
-        REAL_INIT.bind(self, **kwargs)
-        self.init_kwargs = kwargs
-        self.model_config = kwargs["model_config"]
-        self.callbacks = CallbackRegistry()
-        self.tiling_config = None
-        self.generate_calls: list[dict] = []
-        self.before_loop_count_at_generate: list[int] = []
-        self.images: list[FakeImage] = []
-        FakeZImage.instances.append(self)
-
-    def generate_image(self, **kwargs):
-        REAL_GENERATE.bind(self, **kwargs)
-        self.generate_calls.append(kwargs)
-        self.before_loop_count_at_generate.append(len(self.callbacks.before_loop))
-        image = FakeImage(kwargs["seed"])
-        self.images.append(image)
-        return image
+class FakeZImage(FakeModel):
+    real = ZImage
 
 
 @pytest.fixture(autouse=True)
 def isolated_cli(monkeypatch):
-    # parse_args sets GeneratedImage.model_path and can switch off ImageUtil.embed_metadata_enabled
-    # for the whole process; reset both so tests cannot leak into each other or the suite.
     FakeZImage.instances.clear()
     monkeypatch.setattr(cli, "ZImage", FakeZImage)
-    monkeypatch.setattr(GeneratedImage, "model_path", None)
-    monkeypatch.setattr(ImageUtil, "embed_metadata_enabled", True)
+    reset_cli_globals(monkeypatch)
     yield
     FakeZImage.instances.clear()
 
@@ -261,7 +218,7 @@ def test_main_prints_a_cancellation_and_still_reports_memory(monkeypatch, capsys
     # The real register_callbacks runs (BatterySaver + MemorySaver); the fake raises what a
     # cancelling in-loop callback would raise on the first seed.
     def cancel_first(self, **kwargs):
-        REAL_GENERATE.bind(self, **kwargs)
+        self.bind_generate(**kwargs)
         self.generate_calls.append(kwargs)
         raise StopImageGenerationException("Stopping image generation at step 1/3")
 
@@ -302,7 +259,7 @@ def test_main_lets_an_unexpected_generate_error_escape_and_still_reports_memory(
     monkeypatch.setattr(sys, "argv", ["mflux-generate-z-image-turbo", *full_argv])
 
     def boom(self, **kwargs):
-        REAL_GENERATE.bind(self, **kwargs)
+        self.bind_generate(**kwargs)
         raise RuntimeError("out of memory")
 
     monkeypatch.setattr(FakeZImage, "generate_image", boom)
@@ -310,3 +267,25 @@ def test_main_lets_an_unexpected_generate_error_escape_and_still_reports_memory(
     with pytest.raises(RuntimeError, match="out of memory"):
         cli.main()
     assert "Peak MLX memory: " in capsys.readouterr().out
+
+
+@pytest.mark.fast
+def test_validate_returns_the_turbo_config_without_building_a_model(monkeypatch, tmp_path):
+    # A UI checks a request before queuing it: no model, and no input file is opened, so a
+    # missing reference image or prompt file is still the generate step's problem.
+    args = args_for(
+        monkeypatch,
+        ["--prompt-file", str(tmp_path / "missing.txt"), "--image", str(tmp_path / "missing.png")],
+    )
+    assert cli.ZImageTurboCommand.validate(args) == AVAILABLE_MODELS["z-image-turbo"]
+    assert FakeZImage.instances == []
+
+
+@pytest.mark.fast
+def test_validate_rejects_a_foreign_model(monkeypatch):
+    from mflux.utils.exceptions import ModelConfigError
+
+    args = args_for(monkeypatch, ["--prompt", "x", "--model", "dev"])
+    with pytest.raises(ModelConfigError, match="only accepts the aliases"):
+        cli.ZImageTurboCommand.validate(args)
+    assert FakeZImage.instances == []

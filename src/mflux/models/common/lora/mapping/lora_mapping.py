@@ -18,6 +18,8 @@ class LoRATarget:
     down_transform: Callable[[mx.array], mx.array] | None = None
     lokr_w1_transform: Callable[[mx.array], mx.array] | None = None
     lokr_w2_transform: Callable[[mx.array], mx.array] | None = None
+    possible_diff_patterns: List[str] = field(default_factory=list)
+    possible_diff_b_patterns: List[str] = field(default_factory=list)
 
 
 class LoRAMapping(Protocol):
