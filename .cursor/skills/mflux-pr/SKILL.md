@@ -28,7 +28,7 @@ The `release-note` CI check fails the PR if the body has no complete release-not
    ```sh
    python3 - body.md <<'PY'
    import re, sys
-   body = open(sys.argv[1]).read()
+   body = open(sys.argv[1], newline="").read()
    m = re.search(r"^```release-note[ \t\r]*\n(.*?)^```[ \t\r]*$", body, re.DOTALL | re.IGNORECASE | re.MULTILINE)
    sys.exit(0 if m and m.group(1).strip() else "FAIL: no complete release-note block")
    PY
