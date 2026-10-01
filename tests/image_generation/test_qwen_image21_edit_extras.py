@@ -95,9 +95,9 @@ def _source(tmp_path):
     return str(path)
 
 
-def _generate(model, tmp_path, **kwargs):
+def _generate(model, tmp_path, seed=1, **kwargs):
     return model.generate_image(
-        seed=1,
+        seed=seed,
         prompt="edit",
         num_inference_steps=4,
         image_paths=[_source(tmp_path)],
@@ -385,6 +385,33 @@ def test_generation_head_stays_on_disk_until_first_use(tmp_path):
     assert mx.get_active_memory() - before >= 32e6
 
 
+def test_vision_replies_are_reused_across_seeds(tmp_path):
+    model = _stub_model()
+    calls = []
+    model.processor = type(
+        "Processor",
+        (),
+        {
+            "__call__": staticmethod(
+                lambda text, images, return_tensors: {
+                    "input_ids": np.zeros((1, 3), np.int32),
+                    "pixel_values": np.zeros((4, 8)),
+                    "image_grid_thw": [[1, 2, 2]],
+                }
+            ),
+            "tokenizer": SimpleNamespace(decode=lambda ids: '[{"bbox_2d": [0, 0, 500, 1000]}]'),
+            "image_processor": SimpleNamespace(size={"shortest_edge": 0, "longest_edge": 1e12}),
+        },
+    )()
+    model.text_encoder = SimpleNamespace(generate=lambda *a, **k: calls.append(1) or [1])
+    for seed in (1, 2):
+        _generate(model, tmp_path, auto_mask="the left half", seed=seed)
+    assert len(calls) == 1
+    other = Image.new("RGBA", (64, 64), (0, 0, 255, 255))
+    model._vision_reply("locate", [other], 64)
+    assert len(calls) == 2  # a different image is a new question
+
+
 def test_grounding_parse_bbox_reads_0_1000_coordinates():
     parse = QwenImage21Grounding.parse_bbox
     assert parse('```json\n[{"bbox_2d": [100, 200, 400, 500], "label": "x"}]\n```') == (0.1, 0.2, 0.4, 0.5)
@@ -402,6 +429,19 @@ def test_grounding_parse_rewrite_and_verification():
     verdict = '{"instruction_applied": true, "outside_unchanged": false}'
     assert QwenImage21Grounding.parse_verification(verdict) == (True, False)
     assert QwenImage21Grounding.parse_verification("no verdict") is None
+    # the plain-language fallback (no parseable JSON) ignores spacing
+    assert QwenImage21Grounding.parse_verification('"instruction_applied":true, "outside_unchanged" :true') == (
+        True,
+        True,
+    )
+    assert QwenImage21Grounding.parse_verification("instruction_applied: false, unchanged: true") == (False, True)
+    # a field that only ends in applied or unchanged is not the verdict
+    for reply in (
+        "instruction_applied: false, partially_applied: true, outside_unchanged: true",
+        "instruction_applied: false, not_applied: true, outside_unchanged: true",
+    ):
+        assert QwenImage21Grounding.parse_verification(reply) == (False, True)
+    assert QwenImage21Grounding.parse_verification("instruction_applied: true, not_unchanged: true") == (True, False)
 
 
 def test_grounding_masks():
