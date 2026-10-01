@@ -30,7 +30,7 @@ class MaskUtil:
 
         # 2. Get the mask
         scaled = ImageUtil.scale_to_dimensions(
-            image=ImageUtil.load_image(mask_path).convert("RGB"),
+            image=ImageUtil.load_image(mask_path, composite_alpha=False).convert("RGB"),
             target_width=width,
             target_height=height,
         )
