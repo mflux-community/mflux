@@ -77,3 +77,29 @@ def test_load_image_accepts_a_path(tmp_path):
     assert loaded.mode == "RGB"
     assert loaded.getpixel((0, 0)) == (255, 255, 255)
     assert loaded.getpixel((4, 4)) == (200, 60, 30)
+
+
+@pytest.mark.fast
+def test_load_image_keeps_mask_transparency_unchanged_when_compositing_is_off():
+    # A mask drawn as white strokes on a transparent background must keep its
+    # transparent area black ("keep"), not white ("inpaint").
+    mask = PIL.Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    mask.putpixel((1, 1), (255, 255, 255, 255))
+
+    loaded = ImageUtil.load_image(mask, composite_alpha=False)
+
+    assert loaded.mode == "RGB"
+    assert loaded.getpixel((0, 0)) == (0, 0, 0)
+    assert loaded.getpixel((1, 1)) == (255, 255, 255)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("mode", ["PA", "RGBa", "La"])
+def test_load_image_composites_other_alpha_modes(mode):
+    # Build "La" directly: Pillow's RGBA -> La conversion sets alpha to 255.
+    if mode == "La":
+        image = PIL.Image.new("La", (4, 4), (0, 0))
+    else:
+        image = PIL.Image.new("RGBA", (4, 4), (0, 0, 0, 0)).convert(mode)
+
+    assert ImageUtil.load_image(image).getpixel((0, 0)) == (255, 255, 255)
