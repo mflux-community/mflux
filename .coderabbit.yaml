@@ -11,6 +11,10 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    # CodeRabbit pauses itself after 5 reviewed commits on a branch. From then on its
+    # Change Stack page reviews a stale snapshot and refuses every approval submitted
+    # there ("This pull request changed while you were reviewing"). 0 disables the pause.
+    auto_pause_after_reviewed_commits: 0
     base_branches:
       - main
   # This repo's code style forbids docstrings (.cursor/rules/RULE.md, "Code style"), so
