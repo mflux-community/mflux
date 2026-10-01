@@ -89,7 +89,7 @@ class GeneratedImage:
         right_half = self.image.crop((width // 2, 0, width, height))
 
         # Create a new GeneratedImage with the right half and the same metadata
-        return GeneratedImage(
+        half = GeneratedImage(
             image=right_half,
             model_config=self.model_config,
             seed=self.seed,
@@ -119,6 +119,8 @@ class GeneratedImage:
             pid_degrade_sigma=self.pid_degrade_sigma,
             generation_parameters=self.generation_parameters,
         )
+        half.verification = self.verification
+        return half
 
     def save(
         self,
