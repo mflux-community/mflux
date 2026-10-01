@@ -53,7 +53,7 @@ class TestSeedVR2MetadataSidecar:
         # The CLI took --metadata and then called result.save(path) without forwarding it, so
         # the flag ran the whole upscale and wrote nothing. Two inputs, because forwarding it
         # on the first iteration only would pass a single-image test.
-        sources = TestSeedVR2MetadataSidecar._run(tmp_path, monkeypatch, ["--metadata"], images=2)
+        sources = TestSeedVR2MetadataSidecar._run(tmp_path, monkeypatch, ["--make-conf"], images=2)
 
         sidecars = [json.loads(path.read_text()) for path in sorted(tmp_path.glob("*.metadata.json"))]
 

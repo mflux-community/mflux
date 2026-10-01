@@ -521,7 +521,7 @@ mflux-generate-fibo-edit \
     --image-path tools_input_new_small.png \
     --output fibo_edit_rmbg_cutout.png \
     --matte-output fibo_edit_rmbg_matte.png \
-    --metadata \
+    --make-conf \
     --steps 10 \
     --guidance 1.0 \
     --seed 42

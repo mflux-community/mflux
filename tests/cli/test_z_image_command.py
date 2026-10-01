@@ -53,7 +53,7 @@ def full_argv(tmp_path, ref_png, lora_file):
         "--pid-decode", "--pid-degrade-sigma", "0.2",
         "--lora", str(lora_file), "0.5",
         "-q", "8",
-        "--metadata",
+        "--make-conf",
         "--output", str(tmp_path / "out.png"),
     ]  # fmt: skip
 

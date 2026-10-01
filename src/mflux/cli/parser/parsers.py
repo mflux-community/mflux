@@ -158,7 +158,7 @@ class CommandLineParser(argparse.ArgumentParser):
         lora_group = self.add_argument_group("LoRA configuration")
         lora_group.add_argument("--lora-style", type=str, choices=sorted(LORA_NAME_MAP.keys()), help="Style of the LoRA to use (e.g., 'storyboard' for film storyboard style)")
         lora_group.add_argument("--lora", dest="lora", action="append", nargs="+", default=None, metavar=("PATH", "SCALE"), help="Add a LoRA as an atomic PATH with optional SCALE (default 1.0). Repeatable: --lora A.safetensors 0.7 --lora B.safetensors. PATH accepts local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Preferred over --lora-paths/--lora-scales.")
-        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Pass it with no values to run without the LoRAs a --config-from-metadata sidecar would otherwise restore.")
+        self.add_argument("--lora-paths", type=str, nargs="*", default=None, help="[DEPRECATED: use --lora] LoRA paths: local files, HuggingFace repos (org/model), or collection format (repo:filename.safetensors). Pass it with no values to run without the LoRAs a --config-from-conf sidecar would otherwise restore.")
         self.add_argument("--lora-scales", type=float, nargs="*", default=None, help="[DEPRECATED: use --lora] Scaling factor to adjust the impact of LoRA weights on the model. A value of 1.0 applies the LoRA weights as they are.")
         lora_group.add_argument(
             "--bake-lora",
@@ -263,8 +263,9 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--pid-degrade-sigma", type=float, default=0.0, help="With --pid-decode, deliberately noise the latent to this flow-matching sigma before decoding (0.0-0.8). PiD's LQ gate was distilled on latents noised at sigma~U[0.0, 0.8]; a fully clean latent (the default, sigma=0.0) is the input it saw least during training, which can show up as over-textured detail invented on smooth areas like skin. Try 0.2 if you see that. Ignored without --pid-decode.")
 
     def add_output_arguments(self) -> None:
-        self.add_argument("--metadata", action="store_true", help="Export image metadata as a JSON file.")
-        self.add_argument("--no-metadata", action="store_true", help="Do not embed generation metadata (EXIF UserComment and friends) in the output image. Independent of --metadata, which additionally writes a JSON sidecar.")
+        # --metadata and --no-metadata are the first released names (#703). They stay as aliases.
+        self.add_argument("--make-conf", "--metadata", dest="metadata", action="store_true", help="Write the generation parameters to a JSON sidecar (<output>.metadata.json). Use it again with --config-from-conf/-C.")
+        self.add_argument("--no-exif", "--no-metadata", dest="no_metadata", action="store_true", help="Do not embed generation metadata (EXIF UserComment and friends) in the output image. Independent of --make-conf, which writes the JSON sidecar.")
         self.add_argument("--output", type=str, default="image.png", help="The filename for the output image. Default is \"image.png\".")
         self.add_argument('--stepwise-image-output-dir', type=str, default=None, help='[EXPERIMENTAL] Output dir to write step-wise images and their final composite image to. This feature may change in future versions.')
 
@@ -317,7 +318,8 @@ class CommandLineParser(argparse.ArgumentParser):
 
     def add_metadata_config(self) -> None:
         self.supports_metadata_config = True
-        self.add_argument("--config-from-metadata", "-C", type=Path, required=False, default=argparse.SUPPRESS, help="Re-use the parameters from prior metadata. Params from metadata are secondary to other args you provide.")
+        # --config-from-metadata is the first released name (#703). It stays as an alias.
+        self.add_argument("--config-from-conf", "--config-from-metadata", "-C", dest="config_from_metadata", type=Path, required=False, default=argparse.SUPPRESS, help="Use the parameters from a JSON sidecar that --make-conf wrote. Arguments that you give on the command line override the sidecar values.")
 
     def add_training_arguments(self) -> None:
         train_group = self.add_mutually_exclusive_group(required=True)
@@ -495,7 +497,7 @@ class CommandLineParser(argparse.ArgumentParser):
                 try:
                     namespace.step_cache_ratio = open_unit_float(str(prior_gen_metadata["step_cache_ratio"]))
                 except argparse.ArgumentTypeError as exc:
-                    self.error(f"step_cache_ratio in --config-from-metadata: {exc}")
+                    self.error(f"step_cache_ratio in --config-from-conf: {exc}")
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")
@@ -691,7 +693,7 @@ class CommandLineParser(argparse.ArgumentParser):
             namespace.model_path = None
 
         # Hand the weights source to the sidecar writer (#705). GeneratedImage cannot see
-        # the namespace, so this travels the way --no-metadata reaches ImageUtil; set on
+        # the namespace, so this travels the way --no-exif reaches ImageUtil; set on
         # every parse so one run's path cannot leak into the next.
         from mflux.utils.generated_image import GeneratedImage
 

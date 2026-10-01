@@ -445,13 +445,13 @@ for seed in seeds:
 
 ## Metadata reuse
 
-Run a generation with `--metadata` to emit a metadata sidecar next to the image, then reuse those parameters in a follow-up run. The sidecar filename uses the `.metadata.json` suffix:
+Run a generation with `--make-conf` to write a JSON sidecar of the generation parameters next to the image. Then use those parameters again in a subsequent run. The sidecar filename uses the `.metadata.json` suffix. To stop the image from holding embedded metadata (EXIF), add `--no-exif`. The old names `--metadata`, `--no-metadata` and `--config-from-metadata` continue to work as aliases:
 
 ```sh
 mflux-generate-z-image-turbo \
   --model z-image-turbo \
   --steps 9 \
-  --metadata \
+  --make-conf \
   --output ./image.png
 ```
 
@@ -459,11 +459,11 @@ mflux-generate-z-image-turbo \
 mflux-generate-z-image-turbo \
   --model z-image-turbo \
   --steps 9 \
-  --config-from-metadata ./image.metadata.json \
+  --config-from-conf ./image.metadata.json \
   --prompt "Same composition, warmer light"
 ```
 
-Anything the sidecar recorded is restored — model, prompt and negative prompt, seed, steps, guidance, quantization, dimensions, LoRAs, and the init images of the edit CLIs — and anything named on the command line wins over it, option by option. Since the sidecar can supply the init images, `mflux-generate-qwen-edit` and `mflux-generate-flux2-edit` accept `--config-from-metadata` on its own, without `--image-paths`.
+Anything the sidecar recorded is restored — model, prompt and negative prompt, seed, steps, guidance, quantization, dimensions, LoRAs, and the init images of the edit CLIs — and anything named on the command line wins over it, option by option. Since the sidecar can supply the init images, `mflux-generate-qwen-edit` and `mflux-generate-flux2-edit` accept `--config-from-conf` on its own, without `--image-paths`.
 
 <details>
 <summary>Python API</summary>
@@ -544,13 +544,13 @@ mflux-generate-z-image-turbo \
 
 **On Ideogram 4**, a plain-text prompt can trip the model's own safety filter and return a blank page. That happens on a normal VAE decode too — it is Ideogram's behaviour, not PiD's. Use a structured JSON caption.
 
-Metadata records the PiD flags, so `--config-from-metadata` reproduces a PiD run. `config.height/width` stay the *generation* dimensions, which is what reproduces the run — the file on disk is 4× larger.
+Metadata records the PiD flags, so `--config-from-conf` reproduces a PiD run. `config.height/width` stay the *generation* dimensions, which is what reproduces the run — the file on disk is 4× larger.
 
 ---
 
 ## Step reuse (step cache)
 
-Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-metadata`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`.
+Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-conf`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`.
 
 ```sh
 mflux-generate-qwen-2.1 --prompt "a lighthouse at dusk" --steps 40 --step-cache-ratio 0.25

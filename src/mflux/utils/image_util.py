@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 class ImageUtil:
     # Default on: generation metadata is embedded as EXIF UserComment (plus the
-    # MetadataBuilder formats). --no-metadata sets this to False for the process.
+    # MetadataBuilder formats). --no-exif sets this to False for the process.
     embed_metadata_enabled: bool = True
 
     @staticmethod
@@ -279,7 +279,7 @@ class ImageUtil:
                     json.dump(metadata, json_file, indent=4)
 
             # Embed metadata in multiple formats for maximum compatibility.
-            # embed_metadata_enabled is the --no-metadata opt-out: the parser flips it
+            # embed_metadata_enabled is the --no-exif opt-out: the parser flips it
             # once at parse time, so every save site honours the flag without each of
             # the ~25 CLIs having to thread a kwarg through (issue #437).
             if metadata is not None and ImageUtil.embed_metadata_enabled:

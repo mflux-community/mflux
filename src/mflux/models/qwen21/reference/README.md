@@ -134,12 +134,12 @@ Exports created before component consolidation remain loadable through their ori
 mflux-generate-qwen-2.1-edit \
   --model ./qwen21-8bit \
   --prompt "A red panda reading a book" \
-  --seed 42 --metadata \
+  --seed 42 --make-conf \
   --output saved-model.png
 
 mflux-generate-qwen-2.1-edit \
   --model ./qwen21-8bit \
-  --config-from-metadata saved-model.metadata.json \
+  --config-from-conf saved-model.metadata.json \
   --output replay.png
 ```
 

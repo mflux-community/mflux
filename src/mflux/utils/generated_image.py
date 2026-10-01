@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class GeneratedImage:
     # The weights source of the current CLI run: the --model value when it named a path or
     # third-party repo rather than a registry entry, None otherwise. Set by
-    # CommandLineParser.parse_args the way --no-metadata reaches ImageUtil: the parser is
+    # CommandLineParser.parse_args the way --no-exif reaches ImageUtil: the parser is
     # the only place that knows it, and threading it through every variant's to_image call
     # would touch thirty call sites to move one provenance string (#705).
     model_path: str | None = None

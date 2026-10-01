@@ -52,7 +52,7 @@ def full_argv(tmp_path, control_png, lora_file):
         "--scheduler", "flow_match_euler_discrete",
         "--lora", str(lora_file), "0.5",
         "-q", "8",
-        "--metadata",
+        "--make-conf",
         "--output", str(tmp_path / "out.png"),
     ]  # fmt: skip
 

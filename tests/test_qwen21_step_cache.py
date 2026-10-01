@@ -142,10 +142,12 @@ class TestQwen21StepCacheCli:
         assert options["--step-cache-ratio"]["status"] == "honored"
         assert options["--step-cache-ratio"]["aliases"] == ["--teacache-ratio"]
 
-    def test_config_from_metadata_replays_the_ratio(self, monkeypatch, tmp_path):
+    # --config-from-metadata and -C are aliases of --config-from-conf (#703).
+    @pytest.mark.parametrize("flag", ["--config-from-conf", "--config-from-metadata", "-C"])
+    def test_config_from_metadata_replays_the_ratio(self, monkeypatch, tmp_path, flag):
         sidecar = tmp_path / "image.json"
         sidecar.write_text('{"prompt": "x", "seed": 3, "steps": 40, "step_cache_ratio": 0.25}')
-        monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", "--config-from-metadata", str(sidecar)])
+        monkeypatch.setattr(sys, "argv", ["mflux-generate-qwen-2.1", flag, str(sidecar)])
         assert qwen21_generate.build_parser().parse_args().step_cache_ratio == 0.25
 
     @pytest.mark.parametrize("bad", ["5", "0", "-0.2", '"abc"'])

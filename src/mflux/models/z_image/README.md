@@ -128,7 +128,7 @@ If you keep the model loaded, as a UI or a server does:
 - Flags that only `register_callbacks` applies do nothing in this script: `--low-ram`, `--mlx-cache-limit-gb`, `--vae-tiling`, `--vae-tile-size`, `--stepwise-image-output-dir` and `--battery-percentage-stop-limit`.
 - A new `--model`, `-q` or LoRA needs a new `load()`. Drop the old model and any of your objects that hold it first (`del model`, then `gc.collect()` and `mx.clear_cache()`), so two sets of weights are never in memory at once.
 - Handle one request at a time. The parser reads `sys.argv`, so set it to the request's flags before you call `parse_args()`.
-- Save each image before you parse the next request: parsing sets process-wide metadata state, and `--no-metadata` stays in effect for the rest of the process.
+- Save each image before you parse the next request: parsing sets process-wide metadata state, and `--no-exif` stays in effect for the rest of the process.
 
 The other two Z-Image commands have the same steps. `mflux-generate-z-image` is `ZImageCommand` in `mflux.models.z_image.cli.z_image_generate`, and `mflux-generate-z-image-controlnet` is `ZImageTurboControlnetCommand` in `mflux.models.z_image.cli.z_image_turbo_generate_controlnet`. The rules above apply to both, with three differences:
 

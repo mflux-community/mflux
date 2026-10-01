@@ -40,11 +40,13 @@ def test_toggle_suppresses_the_embed(tmp_path):
     assert _user_comment(out) is None
 
 
-def test_flag_parses_and_flips_the_toggle(monkeypatch, tmp_path):
+@pytest.mark.parametrize("flag", ["--no-exif", "--no-metadata"])
+def test_flag_parses_and_flips_the_toggle(monkeypatch, tmp_path, flag):
+    # --no-metadata is the first released name (#703) and stays as an alias.
     parser = CommandLineParser(description="t")
     parser.add_image_generator_arguments()
     parser.add_output_arguments()
-    monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "x", "--no-metadata"])
+    monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "x", flag])
     args = parser.parse_args()
     assert args.no_metadata is True
     assert ImageUtil.embed_metadata_enabled is False
@@ -58,4 +60,17 @@ def test_without_the_flag_the_toggle_stays_on(monkeypatch):
     parser.add_output_arguments()
     monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "x"])
     parser.parse_args()
+    assert ImageUtil.embed_metadata_enabled is True
+
+
+@pytest.mark.parametrize("flag", ["--make-conf", "--metadata"])
+def test_sidecar_flag_and_its_alias_set_metadata(monkeypatch, flag):
+    # --metadata is the first released name (#703) and stays as an alias.
+    parser = CommandLineParser(description="t")
+    parser.add_image_generator_arguments()
+    parser.add_output_arguments()
+    monkeypatch.setattr(sys, "argv", ["prog", "--prompt", "x", flag])
+    args = parser.parse_args()
+    assert args.metadata is True
+    assert args.no_metadata is False
     assert ImageUtil.embed_metadata_enabled is True

@@ -51,7 +51,7 @@ def test_the_cli_writes_generation_parameters_to_the_sidecar(tmp_path, monkeypat
             "7",
             "--steps",
             "4",
-            "--metadata",
+            "--make-conf",
             "--output",
             str(output),
         ],

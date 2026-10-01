@@ -137,7 +137,15 @@ def test_the_upscale_commands_are_in_the_dump(caps):
         assert command_name in commands, sorted(commands)
         assert commands[command_name]["coverage"] == "full"
     seedvr2 = commands["mflux-upscale-seedvr2"]
-    assert next(o for o in seedvr2["options"] if o["flag"] == "--metadata")["status"] == "honored"
+    sidecar = next(o for o in seedvr2["options"] if o["flag"] == "--make-conf")
+    assert sidecar["status"] == "honored"
+    assert sidecar["aliases"] == ["--metadata"]
+    assert next(o for o in seedvr2["options"] if o["flag"] == "--no-exif")["aliases"] == ["--no-metadata"]
+    flux = commands["mflux-generate"]
+    assert next(o for o in flux["options"] if o["flag"] == "--config-from-conf")["aliases"] == [
+        "--config-from-metadata",
+        "-C",
+    ]
 
 
 @pytest.mark.fast
