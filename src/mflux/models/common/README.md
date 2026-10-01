@@ -18,6 +18,7 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 - [Metadata reuse](#metadata-reuse)
 - [Metadata inspection](#metadata-inspection)
 - [PiD pixel-diffusion decode](#pid-pixel-diffusion-decode)
+- [Step reuse (step cache)](#step-reuse-step-cache)
 - [Resource and inspection options](#resource-and-inspection-options)
 - [MLX cache limit](#mlx-cache-limit)
 - [Cache locations](#cache-locations)
@@ -544,6 +545,35 @@ mflux-generate-z-image-turbo \
 **On Ideogram 4**, a plain-text prompt can trip the model's own safety filter and return a blank page. That happens on a normal VAE decode too — it is Ideogram's behaviour, not PiD's. Use a structured JSON caption.
 
 Metadata records the PiD flags, so `--config-from-metadata` reproduces a PiD run. `config.height/width` stay the *generation* dimensions, which is what reproduces the run — the file on disk is 4× larger.
+
+---
+
+## Step reuse (step cache)
+
+Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-metadata`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`.
+
+```sh
+mflux-generate-qwen-2.1 --prompt "a lighthouse at dusk" --steps 40 --step-cache-ratio 0.25
+```
+
+<details>
+<summary>Adding step reuse to a model</summary>
+
+The selection and reuse logic lives in `mflux.models.common.step_cache.StepCache` and is model-agnostic. By default steps are scored by their sigma, which every flow-match scheduler exposes. A model can pass `signal_fn` to score with a richer signal, such as its timestep-embedding MLP (Qwen Image 2.1 does this). Wire it into the denoise loop and add `parser.add_step_cache_arguments()` to the CLI:
+
+```python
+step_cache = StepCache.for_run(config, ratio=step_cache_ratio, signal_fn=self.transformer.time_text_embed)
+for t in config.time_steps:
+    noise = step_cache.reuse(t)
+    if noise is None:
+        noise = ...  # the model call, including any guidance pass
+        step_cache.store(noise)
+    latents = config.scheduler.step(noise=noise, timestep=t, latents=latents)
+```
+
+Pass `generation_parameters=StepCache.generation_parameters(step_cache_ratio)` to `ImageUtil.to_image` so the ratio lands in metadata. Samplers that keep their own history across steps (multistep solvers) need a review before reuse is enabled, and each model should be quality-checked against its uncached output.
+
+</details>
 
 ---
 

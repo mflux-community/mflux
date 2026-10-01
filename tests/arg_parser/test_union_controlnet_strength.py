@@ -21,7 +21,7 @@ def test_union_controlnet_global_strength_defaults_to_one(monkeypatch):
 
     assert ui_defaults.UNION_CONTROLNET_STRENGTH == 1.0
     assert args.controlnet_strength == pytest.approx(1.0)
-    spec = z_image_turbo_generate_controlnet._parse_control_spec(args.control[0])
+    spec = z_image_turbo_generate_controlnet.ZImageTurboControlnetCommand.parse_control_spec(args.control[0])
     assert spec.strength == pytest.approx(0.85)
     assert args.controlnet_strength * spec.strength == pytest.approx(0.85)
 
@@ -31,7 +31,9 @@ def test_union_controlnet_global_strength_can_still_be_set(monkeypatch):
     args = _parse(monkeypatch, ["--control", "pose:a.png", "--controlnet-strength", "0.5"])
 
     assert args.controlnet_strength == pytest.approx(0.5)
-    assert z_image_turbo_generate_controlnet._parse_control_spec(args.control[0]).strength == pytest.approx(1.0)
+    assert z_image_turbo_generate_controlnet.ZImageTurboControlnetCommand.parse_control_spec(
+        args.control[0]
+    ).strength == pytest.approx(1.0)
 
 
 @pytest.mark.fast

@@ -87,7 +87,7 @@ image = model.generate_image(
 image.save("z_image_turbo.png")
 ```
 
-You can also call the two steps of `mflux-generate-z-image-turbo` from Python. `ZImageTurboCommand.load(args)` builds the model; `ZImageTurboCommand.generate(model, args, seed, prompt)` makes one image and returns it unsaved. A script or a UI reuses the command's flag handling (the `--model` check, LoRA options, sizes like `2x`) without copying it. The script below takes the command's own flags:
+You can also call the steps of `mflux-generate-z-image-turbo` from Python. `ZImageTurboCommand.load(args)` builds the model; `ZImageTurboCommand.generate(model, args, seed, prompt)` makes one image and returns it unsaved. A script or a UI reuses the command's flag handling (the `--model` check, LoRA options, sizes like `2x`) without copying it. `ZImageTurboCommand.validate(args)` checks a request without loading weights (it runs the `--model` check) and returns the model config; `load()` runs it too. `validate()` reads no files. LoRA names are resolved earlier, when the flags are parsed, so parsing can download a LoRA. The script below takes the command's own flags:
 
 ```python
 #!/usr/bin/env -S uv run --script
@@ -129,6 +129,12 @@ If you keep the model loaded, as a UI or a server does:
 - A new `--model`, `-q` or LoRA needs a new `load()`. Drop the old model and any of your objects that hold it first (`del model`, then `gc.collect()` and `mx.clear_cache()`), so two sets of weights are never in memory at once.
 - Handle one request at a time. The parser reads `sys.argv`, so set it to the request's flags before you call `parse_args()`.
 - Save each image before you parse the next request: parsing sets process-wide metadata state, and `--no-metadata` stays in effect for the rest of the process.
+
+The other two Z-Image commands have the same steps. `mflux-generate-z-image` is `ZImageCommand` in `mflux.models.z_image.cli.z_image_generate`, and `mflux-generate-z-image-controlnet` is `ZImageTurboControlnetCommand` in `mflux.models.z_image.cli.z_image_turbo_generate_controlnet`. The rules above apply to both, with three differences:
+
+- The base command runs `flow_match_euler_discrete` unless you pass `--scheduler`. Only the command line applies that default, so a script that calls `generate()` sets `args.scheduler` itself.
+- The controlnet command's `validate()` also checks the `--control` specs. It raises `ValueError` for a bad spec or for a `--model` without a ControlNet, and `ModelConfigError` (a `ValueError` too) for a `--model` it cannot place.
+- The controlnet command keeps the depth, HED and pose detectors loaded for the rest of the process once a control of that type has run. Dropping the model does not free them.
 </details>
 
 > [!WARNING]

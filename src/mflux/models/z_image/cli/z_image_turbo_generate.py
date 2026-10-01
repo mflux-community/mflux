@@ -2,6 +2,7 @@ from argparse import Namespace
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.z_image.latent_creator import ZImageLatentCreator
 from mflux.models.z_image.variants.z_image import ZImage
@@ -38,13 +39,18 @@ class ZImageTurboCommand:
     latent_creator = ZImageLatentCreator
 
     @staticmethod
+    def validate(args: Namespace) -> ModelConfig:
+        # Weight-free: resolves --model against the in-memory registry only. --model accepts
+        # only z-image-turbo aliases; the ControlNet entry shares this repo id but is a
+        # different model, so it is rejected too.
+        return ConfigResolution.resolve_restricted(
+            args.model, DEFAULT_MODEL, model_path=args.model_path, base_model=args.base_model
+        )
+
+    @staticmethod
     def load(args: Namespace) -> ZImage:
-        # --model accepts only z-image-turbo aliases; the ControlNet entry shares this
-        # repo id but is a different model, so it is rejected too.
         return ZImage(
-            model_config=ConfigResolution.resolve_restricted(
-                args.model, DEFAULT_MODEL, model_path=args.model_path, base_model=args.base_model
-            ),
+            model_config=ZImageTurboCommand.validate(args),
             quantize=args.quantize,
             model_path=args.model_path,
             **lora_init_kwargs_from_args(args),
