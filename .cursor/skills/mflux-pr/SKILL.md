@@ -17,6 +17,26 @@ description: Make a clean PR in mflux (inspect diff, quick verification, commit,
 - **Always ask for permission** before pushing to the remote repository.
 - If `gh` isn’t available, fall back to the GitHub web UI (or stop and ask).
 
+## PR body and release note (required)
+
+The `release-note` CI check fails the PR if the body has no complete release-note block. Do these steps for every PR:
+
+1. Start the PR body from `.github/pull_request_template.md`. Do not write the body from nothing.
+2. Fill in the `release-note` block. The opening fence must be exactly ` ```release-note `, on its own line. Put the note on the lines below the fence, not on the fence line.
+3. Write one or two sentences that a user can read. For changes that users do not see (CI, tests, docs), write `none`.
+4. Before you run `gh pr create`, run the same check as CI on the body file:
+   ```sh
+   python3 - body.md <<'PY'
+   import re, sys
+   body = open(sys.argv[1]).read()
+   m = re.search(r"^```release-note[ \t\r]*\n(.*?)^```[ \t\r]*$", body, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+   sys.exit(0 if m and m.group(1).strip() else "FAIL: no complete release-note block")
+   PY
+   ```
+5. If the check fails on an open PR, edit the PR body (`gh pr edit <n> --body-file body.md`). The check runs again on an edit. You do not need a new commit.
+
+Keep the regex the same as `.github/workflows/release-note.yml` and `_FENCE` in `src/mflux/release/release_notes.py`.
+
 ## Pre-merge checklist (model port PRs)
 
 Use after the core port lands and you are polishing for merge. For the full **integration surfaces** tick list (LoRA key formats, save routing, tokenizer edge cases, etc. learned from past closed PRs), see `mflux-model-porting` → *Integration surfaces checklist*.
