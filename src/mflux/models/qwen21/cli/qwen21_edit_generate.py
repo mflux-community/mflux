@@ -5,8 +5,9 @@ from pathlib import Path
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
-from mflux.models.qwen21.reference import QwenImage21Edit
-from mflux.models.qwen21.reference.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
+from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
@@ -15,7 +16,7 @@ from mflux.utils.scale_factor import ScaleFactor
 IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
 CONDITIONAL_OPTIONS = {
     "--scheduler": {
-        "condition": "linear Euler scheduler only",
+        "condition": "linear Euler or viggle_turbo scheduler only",
         "reason": "Other scheduler values exit with an error before model loading.",
     },
     "--negative-prompt": {
@@ -64,8 +65,9 @@ def main() -> None:
         )
     if Path(args.output).suffix.lower() not in (".png", ".webp", ".tif", ".tiff"):
         parser.error("Qwen-Image-2.1 outputs RGBA; use PNG, WebP or TIFF to retain transparency.")
-    if args.scheduler != "linear":
-        parser.error("Qwen-Image-2.1 currently supports the default linear Euler scheduler only.")
+    if args.scheduler not in ("linear", "viggle_turbo"):
+        parser.error("Qwen-Image-2.1 supports the default linear Euler scheduler or viggle_turbo only.")
+    ViggleTurboScheduler.check_args(parser, args)
     paths = args.image_paths or []
     if len(paths) > 10:
         parser.error("Qwen-Image-2.1 supports at most 10 reference images.")

@@ -2,6 +2,7 @@ from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
@@ -27,6 +28,7 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    ViggleTurboScheduler.check_args(parser, args)
 
     model_config = ConfigResolution.resolve_restricted(
         args.model,

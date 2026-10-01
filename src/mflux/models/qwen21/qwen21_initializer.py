@@ -3,6 +3,7 @@ from pathlib import Path
 import mlx.core as mx
 from mlx.utils import tree_flatten, tree_unflatten
 
+import mflux.models.qwen21.model.qwen21_scheduler  # noqa: F401 — register the viggle_turbo scheduler
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
@@ -48,6 +49,9 @@ class Qwen21Initializer:
             supplied = dict(tree_flatten(weights.components[component.name]))
             if component.name == "transformer":
                 supplied = Qwen21Initializer._normalize_transformer_weights(supplied)
+                weights.components[component.name] = tree_unflatten(list(supplied.items()))
+            elif component.name == "vae":
+                supplied = Qwen21Initializer._normalize_vae_weights(supplied)
                 weights.components[component.name] = tree_unflatten(list(supplied.items()))
             if validate and weights.meta_data.quantization_level is None:
                 Qwen21Initializer._validate_weights(component.name, module, supplied)
@@ -117,6 +121,24 @@ class Qwen21Initializer:
             target = key.replace("modulation.1.", "modulation.layers.1.", 1) if key.startswith("modulation.1.") else key
             if target in normalized:
                 raise ValueError(f"Duplicate transformer checkpoint key after normalization: {target}")
+            normalized[target] = value
+        return normalized
+
+    @staticmethod
+    def _normalize_vae_weights(supplied: dict[str, mx.array]) -> dict[str, mx.array]:
+        # Saved mflux exports bypass HF mappings. Text VAE exports from before the shared VAE
+        # use Qwen21CausalConv (".conv.") and Qwen21RMSNorm (".weight") parameter names.
+        normalized = {}
+        for key, value in supplied.items():
+            target = key.replace(".downsampler.conv.", ".downsampler.resample.1.")
+            target = target.replace(".upsampler.conv.", ".upsampler.resample.1.")
+            target = target.replace(".conv.", ".")
+            if target.endswith(".weight") and any(
+                part in {"norm", "norm1", "norm2", "norm_out"} for part in target.split(".")[:-1]
+            ):
+                target = target.removesuffix(".weight") + ".gamma"
+            if target in normalized:
+                raise ValueError(f"Duplicate VAE checkpoint key after normalization: {target}")
             normalized[target] = value
         return normalized
 

@@ -100,12 +100,12 @@ class Qwen21WeightMapping(WeightMapping):
         ]:
             targets.append(
                 WeightTarget(
-                    to_pattern=f"{conv}.conv.weight",
+                    to_pattern=f"{conv}.weight",
                     from_pattern=[f"{conv}.weight"],
                     transform=WeightTransforms.transpose_conv2d_weight,
                 )
             )
-            targets.append(WeightTarget(to_pattern=f"{conv}.conv.bias", from_pattern=[f"{conv}.bias"]))
+            targets.append(WeightTarget(to_pattern=f"{conv}.bias", from_pattern=[f"{conv}.bias"]))
 
         # encoder dims run [96, 96, 192, 384, 768, 768]: five residual down blocks where the
         # first four own a downsampler and only the middle three change channel count
@@ -120,14 +120,14 @@ class Qwen21WeightMapping(WeightMapping):
             if block < 4:
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"encoder.down_blocks.{block}.downsampler.conv.weight",
+                        to_pattern=f"encoder.down_blocks.{block}.downsampler.resample.1.weight",
                         from_pattern=[f"encoder.down_blocks.{block}.downsampler.resample.1.weight"],
                         transform=WeightTransforms.transpose_conv2d_weight,
                     )
                 )
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"encoder.down_blocks.{block}.downsampler.conv.bias",
+                        to_pattern=f"encoder.down_blocks.{block}.downsampler.resample.1.bias",
                         from_pattern=[f"encoder.down_blocks.{block}.downsampler.resample.1.bias"],
                     )
                 )
@@ -145,14 +145,14 @@ class Qwen21WeightMapping(WeightMapping):
             if block < 4:
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"decoder.up_blocks.{block}.upsampler.conv.weight",
+                        to_pattern=f"decoder.up_blocks.{block}.upsampler.resample.1.weight",
                         from_pattern=[f"decoder.up_blocks.{block}.upsampler.resample.1.weight"],
                         transform=WeightTransforms.transpose_conv2d_weight,
                     )
                 )
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"decoder.up_blocks.{block}.upsampler.conv.bias",
+                        to_pattern=f"decoder.up_blocks.{block}.upsampler.resample.1.bias",
                         from_pattern=[f"decoder.up_blocks.{block}.upsampler.resample.1.bias"],
                     )
                 )
@@ -167,7 +167,7 @@ class Qwen21WeightMapping(WeightMapping):
             )
             targets.append(
                 WeightTarget(
-                    to_pattern=f"{side}.mid_block.attentions.0.norm.weight",
+                    to_pattern=f"{side}.mid_block.attentions.0.norm.gamma",
                     from_pattern=[f"{side}.mid_block.attentions.0.norm.gamma"],
                     transform=WeightTransforms.reshape_gamma_to_1d,
                 )
@@ -188,7 +188,7 @@ class Qwen21WeightMapping(WeightMapping):
                 )
             targets.append(
                 WeightTarget(
-                    to_pattern=f"{side}.norm_out.weight",
+                    to_pattern=f"{side}.norm_out.gamma",
                     from_pattern=[f"{side}.norm_out.gamma"],
                     transform=WeightTransforms.reshape_gamma_to_1d,
                 )
@@ -201,7 +201,7 @@ class Qwen21WeightMapping(WeightMapping):
         for i in range(num_resnets):
             targets.extend(
                 WeightTarget(
-                    to_pattern=f"{prefix}.resnets.{i}.{norm}.weight",
+                    to_pattern=f"{prefix}.resnets.{i}.{norm}.gamma",
                     from_pattern=[f"{prefix}.resnets.{i}.{norm}.gamma"],
                     transform=WeightTransforms.reshape_gamma_to_1d,
                 )
@@ -210,14 +210,14 @@ class Qwen21WeightMapping(WeightMapping):
             for conv in ["conv1", "conv2"]:
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"{prefix}.resnets.{i}.{conv}.conv.weight",
+                        to_pattern=f"{prefix}.resnets.{i}.{conv}.weight",
                         from_pattern=[f"{prefix}.resnets.{i}.{conv}.weight"],
                         transform=WeightTransforms.transpose_conv2d_weight,
                     )
                 )
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"{prefix}.resnets.{i}.{conv}.conv.bias",
+                        to_pattern=f"{prefix}.resnets.{i}.{conv}.bias",
                         from_pattern=[f"{prefix}.resnets.{i}.{conv}.bias"],
                     )
                 )
@@ -225,14 +225,14 @@ class Qwen21WeightMapping(WeightMapping):
                 # only the first resnet changes channel count; later ones are out -> out
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"{prefix}.resnets.{i}.conv_shortcut.conv.weight",
+                        to_pattern=f"{prefix}.resnets.{i}.conv_shortcut.weight",
                         from_pattern=[f"{prefix}.resnets.{i}.conv_shortcut.weight"],
                         transform=WeightTransforms.transpose_conv2d_weight,
                     )
                 )
                 targets.append(
                     WeightTarget(
-                        to_pattern=f"{prefix}.resnets.{i}.conv_shortcut.conv.bias",
+                        to_pattern=f"{prefix}.resnets.{i}.conv_shortcut.bias",
                         from_pattern=[f"{prefix}.resnets.{i}.conv_shortcut.bias"],
                     )
                 )

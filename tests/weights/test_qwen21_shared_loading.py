@@ -11,14 +11,14 @@ from mlx.utils import tree_flatten
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.models.common.weights.saving.model_saver import ModelSaver
+from mflux.models.qwen21 import qwen_image21_initializer
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
+from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
-from mflux.models.qwen21.reference import qwen_image21_initializer
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.layout import QwenImage21Layout
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.transformer import QwenImage21Transformer
-from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
+from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
 pytestmark = pytest.mark.fast
 

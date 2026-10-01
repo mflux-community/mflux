@@ -1,12 +1,9 @@
 import mlx.core as mx
-from mlx import nn
 
-from mflux.models.common_models.qwen3_vl.qwen3_vl_decoder_layer import Qwen3VLDecoderLayer
-from mflux.models.common_models.qwen3_vl.qwen3_vl_rms_norm import Qwen3VLRMSNorm
-from mflux.models.common_models.qwen3_vl.qwen3_vl_rope import Qwen3VLRotaryEmbedding
+from mflux.models.qwen21.model.qwen21_text_encoder.language_model import LanguageModel
 
 
-class Qwen21TextEncoder(nn.Module):
+class Qwen21TextEncoder(LanguageModel):
     # Qwen3-VL text stack of Qwen-Image-2.1: interleaved mrope, but text-only inputs use
     # one shared position ladder replicated across the three mrope axes.
 
@@ -24,29 +21,22 @@ class Qwen21TextEncoder(nn.Module):
         head_dim: int = 128,
         mrope_section: list[int] | None = None,
     ):
-        super().__init__()
-        self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
-        self.layers = [
-            Qwen3VLDecoderLayer(
+        super().__init__(
+            dict(
+                vocab_size=vocab_size,
                 hidden_size=hidden_size,
+                num_hidden_layers=num_hidden_layers,
                 num_attention_heads=num_attention_heads,
                 num_key_value_heads=num_key_value_heads,
-                head_dim=head_dim,
+                intermediate_size=intermediate_size,
                 max_position_embeddings=max_position_embeddings,
                 rope_theta=rope_theta,
-                mrope_section=mrope_section,
-                attention_bias=False,
                 rms_norm_eps=rms_norm_eps,
-                intermediate_size=intermediate_size,
-            )
-            for _ in range(num_hidden_layers)
-        ]
-        self.norm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
-        self.rotary_emb = Qwen3VLRotaryEmbedding(
-            dim=head_dim,
-            max_position_embeddings=max_position_embeddings,
-            base=rope_theta,
-            mrope_section=mrope_section,
+                head_dim=head_dim,
+                attention_bias=False,
+                rope_scaling={"mrope_section": mrope_section},
+            ),
+            text_mode=True,
         )
 
     def __call__(self, input_ids: mx.array, attention_mask: mx.array | None = None) -> mx.array:
@@ -73,9 +63,4 @@ class Qwen21TextEncoder(nn.Module):
         attention_mask_4d = mx.broadcast_to(causal[None, None, :, :], (batch_size, 1, seq_len, seq_len)) + padding_mask
 
         position_ids = mx.broadcast_to(mx.arange(seq_len, dtype=mx.int32)[None, :], (batch_size, seq_len))
-        position_embeddings = self.rotary_emb(hidden_states, position_ids)
-
-        for layer in self.layers:
-            hidden_states, _ = layer(hidden_states, attention_mask_4d, position_embeddings)
-
-        return self.norm(hidden_states)
+        return super().__call__(hidden_states, position_ids, attention_mask=attention_mask_4d)

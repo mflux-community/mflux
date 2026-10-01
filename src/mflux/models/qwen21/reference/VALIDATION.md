@@ -1,6 +1,6 @@
 # Qwen-Image-2.1 validation
 
-Local verification on Apple Silicon with 128 GiB unified memory, 2026-09-21. These results describe the tested checkpoint and inputs; they are not a quality benchmark or a guarantee of PyTorch pixel parity.
+Initial local verification on Apple Silicon with 128 GiB unified memory, 2026-09-21. Dated follow-ups below distinguish later checks from that initial run. These results describe the tested checkpoint and inputs; they are not a quality benchmark or a guarantee of PyTorch pixel parity.
 
 - Checkpoint: `Qwen/Qwen-Image-2.1`, revision `b3179ad355be050328e483a9dfdd9e60cd62adfa`. All seven weight files were checked against the Hugging Face LFS SHA-256 hashes (33,115,613,408 bytes).
 - Reference Diffusers: `80c7ed262aeffbeb43ef13ae04baeb9b84515a69`.
@@ -46,7 +46,7 @@ All cases use seed 42, guidance 1, and prefix KV caching. Times include competin
 | Two-reference editing | 8-bit, 512x512 output/reference budget | Both red panda and puffin appear in the requested watercolor forest; about 365 seconds denoising with concurrent inference, 19.5 GB peak |
 | Two-reference clothing edit | 8-bit, 896x1152 output, 1024 reference budget, **25 steps**, seed 1070478148268574 | Person, pose, and background retained; dark pullover replaced with the second reference's light blue denim shirt; 446 seconds total, 31.5 GB peak |
 | Transparent PNG | 8-bit, 1024x1024 | Red panda sticker; alpha 0–255, 67.3% of pixels below 32 and 32.2% above 223; 503 seconds total |
-| 2048 generation | 8-bit, 2048x2048, VAE tiling, **4 steps** | Execution/shape smoke test passed, about 288 seconds; full-step quality unverified |
+| 2048 generation, initial check | 8-bit, 2048x2048, VAE tiling, **4 steps** | Execution/shape smoke test passed, about 288 seconds; see the 2026-09-30 follow-up below for full-step visual acceptance |
 | Quantized export/reload | 8-bit, 512x512, 8 steps | 17.8 GB local checkpoint; before/after reload pixels exactly equal |
 
 Single- and two-reference edits passed visual checks at 512x512, and a two-reference clothing edit passed at 896x1152. **The 1024x1024 panda edits did not pass visual acceptance.** Both dense bf16 and 8-bit single-reference snow edits retained the subject but showed excessive sharpening and did not clearly perform the requested seasonal change. The dense comparison completed 40 steps in about 706 seconds, confirming this observation is not specific to quantization. A two-reference 1024x1024 output also omitted the second subject. The follow-up controlled reference run below reproduces the same outcome with the official transformer, text encoder, and scheduler. This sample therefore does not establish an MLX-specific defect. The successful clothing edit does not resolve or replace those failing samples.
@@ -79,7 +79,7 @@ The [ComfyUI Qwen-Image-2.1 editing workflow](https://github.com/Comfy-Org/workf
 
 The output passes the stated visual check: the person keeps the original pose and background, and wears a light blue denim shirt with the reference collar, buttons, and chest pocket. Total generation time was 445.6 seconds; peak MLX allocation was 31.5 GB. Inputs are in `comfy-reference/`; the result, metadata, and timing are in `workflow-edit/denim.png` and adjacent files. This validates a real megapixel two-reference edit. It is not a pixel comparison with ComfyUI: the run uses mflux's RNG and the pinned Diffusers-compatible scheduler, rather than ComfyUI's sampler implementation.
 
-The port therefore has successful real-weight text generation, transparent output, single-reference editing, multi-reference editing, and quantized save/reload evidence. The panda examples remain input-specific instruction-following failures with an unresolved cause; the comparisons do not establish that all square edits fail or that megapixel editing is generally broken. Full-step 2048 visual quality remains unverified.
+The port therefore has successful real-weight text generation, transparent output, single-reference editing, multi-reference editing, and quantized save/reload evidence. The panda examples remain input-specific instruction-following failures with an unresolved cause; the comparisons do not establish that all square edits fail or that megapixel editing is generally broken. The later 2048 text-generation result below does not resolve those editing failures.
 
 ## PR integration checks
 
@@ -93,3 +93,49 @@ The PR branch `feat/qwen-image-2.1-reference-edit` is based directly on upstream
 - Installed editing CLI, 512-pixel snow edit, 40 steps, seed 42: output is also pixel-identical to the successful pre-migration reference edit.
 
 The independent worktree reuses the already installed dependency packages through a local site-packages path and installs its own editable mflux distribution. A fresh offline locked sync could not find the public-PyPI Torch wheel URL in cache, so the fast selector was run with `MFLUX_PRESERVE_TEST_OUTPUT=1 uv run --no-sync python -m pytest -m fast` instead of the recipe's mandatory sync. No dependency versions or lockfile were changed.
+
+## Follow-up: golden reproduction, 2026-09-30
+
+The original Qwen21 slow test was rerun on `618296e`, after the shared VAE and language-decoder refactor. The machine is an Apple M4 Max with 128 GiB unified memory, Python 3.13.2, MLX/MLX Metal 0.32.0, and the checkpoint revision listed above. The golden PNG was introduced in `8c00dab`; its embedded metadata matches the test's tiger prompt, seed 42, 40 steps, guidance 1, q8, BF16, and 512x320 dimensions.
+
+The first offline pytest invocation could not resolve the repository's `main` revision because the local Hugging Face cache contains a snapshot but no `refs/main`. A separate cache links that snapshot and pins its own `refs/main`. The unmodified pytest then runs to the image assertion. The shared Hugging Face cache did not change.
+
+| Comparison | Mismatched channel elements | Mean absolute channel difference (0–255) |
+| --- | --- | --- |
+| Introducing code `8c00dab` vs checked-in golden | 54.5274% | 27.2697 |
+| Current code `618296e` vs checked-in golden | 54.1870% | 27.2415 |
+| Current code vs introducing code, same local environment | 2.3378% | 1.5557 |
+| Current code with text cache and fused prologue disabled vs introducing code | 0%, pixel-identical | 0 |
+| Current code vs the shared-component refactor output before rebase | 0%, pixel-identical | 0 |
+
+These use the existing comparator unchanged: `rtol=0.1`, `atol=2`, and at most 15% mismatched channel elements. Both the introducing code and current code fail the checked-in golden. The old/current comparison passes that same threshold. Visual inspection finds coherent tiger portraits in both the golden and generated output; framing and facial/fur details differ.
+
+Disabling `model.transformer.use_text_cache` and setting `MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE=1` restores the introducing code's output exactly. This attributes the measured old/current difference to those optimization paths collectively, and reproduces the main golden discrepancy before the shared-component refactors. [PR #778](https://github.com/mflux-community/mflux/pull/778) documents reduced-precision output changes from its caching/fusion optimizations.
+
+[PR #736](https://github.com/mflux-community/mflux/pull/736) reports validation on M5 Max. This reproduction uses M4 Max. The image does not record a hardware identifier or full dependency manifest, so a specific hardware or dependency cause for its mismatch is not established. [MLX's precision documentation](https://ml-explore.github.io/mlx/build/html/usage/precision.html) describes hardware-dependent matrix-operation precision, and [MLX issue #3534](https://github.com/ml-explore/mlx/issues/3534) records M4/M5 differences resolved by disabling TF32 on M5. Those are relevant hypotheses, not a controlled reproduction of this golden on its original machine. They do not justify labeling the 54% discrepancy a regression from the shared-component refactors, replacing the golden without review, or increasing the threshold.
+
+The slow golden test remains failing. This investigation did not change the original reference or the comparator. The local directory `debug_artifacts/golden-2048-20260930/` (ignored by Git) holds the evidence and scripts, including `golden-analysis.json`, `current-golden-pinned-test.log`, the archived introducing source, and both generated PNGs. `current-golden-test.log` separately preserves the initial cache-resolution failure.
+
+A reviewed local-reference proposal exists, but nobody installed it. It keeps the upstream image. It adds the introducing code's locally generated image only for Apple M4 Max with MLX and MLX Metal 0.32.0. The current output passes the unchanged comparator against that independent baseline at 2.3378% mismatch. Five draft selection checks cover the matching environment, other hardware, differing package versions, and a custom reference path. Applying this golden change still requires explicit approval. The patch, candidate PNG, hashes, and provenance are in `GOLDEN-PROPOSAL.md` in that local directory.
+
+## Follow-up: full-step 2048 generation, 2026-09-30
+
+The RGBA/reference-capable command completed **2048x2048 text generation at 40 steps** on `618296e`, using the same pinned checkpoint, Apple M4 Max, and environment as the golden investigation. This run has no reference images. Its prompt is `A red panda reading a book under a cherry tree, watercolor illustration`.
+
+| Setting or check | Result |
+| --- | --- |
+| Sampling | Seed 42, q8, BF16, guidance 1, linear Euler, prefix KV cache enabled |
+| VAE decoding | Tiling enabled, 512-pixel tiles; MLX cache limit 2 GiB |
+| Output and metadata | 2048x2048 RGBA PNG; sidecar confirms 40 steps, dimensions, seed, guidance, and quantization |
+| Visual acceptance | Coherent red panda holding an open book beneath cherry blossoms, consistent watercolor style; no visible tile seams in the full image or inspected face/book and canopy detail crops |
+| Alpha | Range 226–255; this prompt does not request a transparent background |
+| Total elapsed time | 3828.82 seconds, about 63.8 minutes, including model load and save |
+| Recorded denoising time | 3814.33 seconds |
+| Peak MLX allocation | 20.1818 GB, decimal; not total system memory |
+| PNG SHA-256 | `a759e40d988596dc8221ef6df7949c32aa36c951b94279a0f286dd106804fb4e` |
+
+This closes the earlier four-step-only quality gap for this specific 2048 text-generation case. It is not a multi-seed quality benchmark, a 2048 reference-editing test, an untiled comparison, or a Diffusers pixel-parity claim. Step timings varied substantially, so the duration is an observed local run rather than a controlled performance benchmark.
+
+The first attempt was found interrupted at 4/40 with no final image or captured exit reason. The successful rerun used a detached process and a task-bounded idle-sleep guard; both exited after completion. The original attempt is retained separately and is not counted as a successful validation. Similarly, the first unoptimized golden diagnostic completed, while its optional repeat was interrupted and is not counted as another passing run.
+
+The local directory `debug_artifacts/golden-2048-20260930/rgba-2048-retry/` (ignored by Git) holds the successful run's image, metadata, execution report, visual-review notes, and detail crops. `run_cli.py`, `environment.json`, and `background-job.json` preserve the command, checkpoint, source hashes, dependencies, and run identity. The unchanged image-comparator unit tests also pass (4 tests). No production inference code, dependencies, golden images, or thresholds were changed for this investigation.

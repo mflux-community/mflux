@@ -12,11 +12,11 @@ from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
-from mflux.models.qwen21.reference.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
-from mflux.models.qwen21.reference.model.qwen_image21_text_encoder.prompt_encoder import QwenImage21PromptEncoder
-from mflux.models.qwen21.reference.model.qwen_image21_transformer.layout import QwenImage21Layout
-from mflux.models.qwen21.reference.qwen_image21_initializer import QwenImage21Initializer
-from mflux.models.qwen21.reference.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.model.qwen21_text_encoder.prompt_encoder import QwenImage21PromptEncoder
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
+from mflux.models.qwen21.qwen_image21_initializer import QwenImage21Initializer
+from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.generated_image import GeneratedImage
