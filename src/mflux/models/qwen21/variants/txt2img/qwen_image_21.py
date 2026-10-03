@@ -172,7 +172,10 @@ class QwenImage21(nn.Module):
             negative_prompt=negative_prompt,
             lora_paths=self.lora_paths,
             lora_scales=self.lora_scales,
-            generation_parameters=step_cache.generation_parameters(step_cache_ratio),
+            generation_parameters={
+                **step_cache.generation_parameters(step_cache_ratio),
+                **self.compute_precision.generation_parameters(),
+            },
         )
 
     def save_model(self, base_path: str) -> None:

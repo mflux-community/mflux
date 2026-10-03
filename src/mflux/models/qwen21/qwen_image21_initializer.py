@@ -58,6 +58,7 @@ class QwenImage21Initializer:
         model.text_encoder = QwenImage21TextEncoder(model._component_configs["text_encoder"])
         Qwen21Initializer.load_components(model, root, QwenImage21WeightDefinition, quantize, validate=True)
         Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
+        model.compute_precision = precision
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)

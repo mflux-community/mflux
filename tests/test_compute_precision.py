@@ -1,5 +1,6 @@
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import mlx.core as mx
@@ -9,6 +10,7 @@ import pytest
 from mlx import nn
 from mlx.utils import tree_flatten
 
+from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.cli.capabilities import build_capabilities
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
@@ -33,11 +35,13 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer impor
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
 from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
+from mflux.models.z_image.cli import z_image_generate, z_image_turbo_generate
 from mflux.models.z_image.model.z_image_transformer.attention import ZImageAttention
 from mflux.models.z_image.model.z_image_transformer.feed_forward import FeedForward
 from mflux.models.z_image.model.z_image_transformer.transformer import ZImageTransformer
 from mflux.models.z_image.variants.z_image import ZImage
 from mflux.models.z_image.z_image_initializer import ZImageInitializer
+from mflux.utils.generated_image import GeneratedImage
 from tests.cli.helpers.command_fakes import FakeModel, reset_cli_globals
 
 pytestmark = pytest.mark.fast
@@ -339,6 +343,118 @@ class TinyInit:
         TinyInit._load(model, None, quantize)
 
 
+class FakeTokenizer:
+    def tokenize(self, prompt, max_length=None):
+        input_ids = mx.arange(4, dtype=mx.int32)[None, :]
+        return SimpleNamespace(input_ids=input_ids, attention_mask=mx.ones_like(input_ids))
+
+
+class FakeTextEncoder:
+    def __call__(self, input_ids, attention_mask):
+        return mx.zeros((1, input_ids.shape[1], 8))
+
+    def get_prompt_embeds(self, input_ids, attention_mask, hidden_state_layers):
+        return mx.zeros((1, input_ids.shape[1], 8))
+
+
+class FakeTransformer:
+    # A zero prediction: the denoise loop, the decode and the metadata all still run.
+    time_text_embed = None
+
+    def __call__(self, **kwargs):
+        return mx.zeros_like(kwargs["x"] if "x" in kwargs else kwargs["hidden_states"])
+
+    def clear_text_cache(self) -> None:
+        pass
+
+
+class FakeQwen21EditTransformer:
+    axes = (4, 6, 6)
+
+    def __call__(self, hidden, text, timestep, layout, cache=None, step_cache=None):
+        return mx.zeros((1, layout.target_tokens, hidden.shape[-1]))
+
+
+class FakeVAE:
+    bn = SimpleNamespace(running_mean=mx.zeros((128,)), running_var=mx.ones((128,)), eps=1e-4)
+
+    def __init__(self, scale: int = 8, channels: int = 32, frames: bool = False):
+        self.scale = scale
+        self.channels = channels
+        self.frames = frames
+
+    def encode(self, pixels: mx.array) -> mx.array:
+        size = (pixels.shape[2] // self.scale, pixels.shape[3] // self.scale)
+        return mx.zeros((1, self.channels, 1, *size) if self.frames else (1, self.channels, *size))
+
+    def decode(self, latents: mx.array) -> mx.array:
+        return mx.zeros((1, 3, *latents.shape[2:-2], latents.shape[-2] * self.scale, latents.shape[-1] * self.scale))
+
+    def decode_packed_latents(self, packed_latents: mx.array, tiling_config=None) -> mx.array:
+        return mx.zeros((1, 3, packed_latents.shape[2] * 8, packed_latents.shape[3] * 8))
+
+
+class Generate:
+    # Runs the real generate_image of each model on fakes instead of weights, down to the GeneratedImage it returns.
+    @staticmethod
+    def flux2_klein(precision: ComputePrecision, reference: Path) -> GeneratedImage:
+        model = Generate._model(Flux2Klein, ModelConfig.flux2_klein_4b(), precision)
+        return model.generate_image(seed=1, prompt="x", num_inference_steps=1, height=64, width=64)
+
+    @staticmethod
+    def flux2_klein_edit(precision: ComputePrecision, reference: Path) -> GeneratedImage:
+        model = Generate._model(Flux2KleinEdit, ModelConfig.flux2_klein_4b(), precision)
+        return model.generate_image(
+            seed=1, prompt="x", num_inference_steps=1, height=64, width=64, image_paths=[reference]
+        )
+
+    @staticmethod
+    def z_image(precision: ComputePrecision, reference: Path) -> GeneratedImage:
+        model = Generate._model(ZImage, ModelConfig.z_image_turbo(), precision)
+        return model.generate_image(seed=1, prompt="x", num_inference_steps=1, height=64, width=64)
+
+    @staticmethod
+    def qwen21(precision: ComputePrecision, reference: Path) -> GeneratedImage:
+        model = Generate._model(QwenImage21, ModelConfig.qwen_image_21(), precision)
+        model.prompt_cache = {"x": (mx.zeros((1, 4, 64), dtype=ModelConfig.precision), mx.ones((1, 4)))}
+        return model.generate_image(seed=1, prompt="x", num_inference_steps=1, height=64, width=64)
+
+    @staticmethod
+    def qwen21_edit(precision: ComputePrecision, reference: Path) -> GeneratedImage:
+        model = Generate._model(QwenImage21Edit, ModelConfig.qwen_image_21(), precision)
+        model.transformer = FakeQwen21EditTransformer()
+        model.vae = FakeVAE(scale=16, channels=64, frames=True)
+        model.processor = SimpleNamespace(
+            image_processor=SimpleNamespace(size={"shortest_edge": 0, "longest_edge": 1e12})
+        )
+        model._encode_prompt = lambda prompt, images: (
+            mx.zeros((1, 6, 8)),
+            mx.array([False, True, True, True, True, False]),
+        )
+        return model.generate_image(
+            seed=1, prompt="x", num_inference_steps=4, image_paths=[reference], output_resolution=64
+        )
+
+    @staticmethod
+    def _model(model_class: type, model_config: ModelConfig, precision: ComputePrecision):
+        model = model_class.__new__(model_class)
+        model.__dict__.update(
+            model_config=model_config,
+            tokenizers={"qwen3": FakeTokenizer(), "z_image": FakeTokenizer(), "qwen21": FakeTokenizer()},
+            text_encoder=FakeTextEncoder(),
+            transformer=FakeTransformer(),
+            vae=FakeVAE(),
+            prompt_cache={},
+            callbacks=CallbackRegistry(),
+            tiling_config=None,
+            bits=None,
+            lora_paths=None,
+            lora_scales=None,
+            compute_precision=precision,
+        )
+        return model
+
+
 class FakeFlux2Klein(FakeModel):
     real = Flux2Klein
 
@@ -383,6 +499,10 @@ class TestComputePrecision:
     def test_to_compute_leaves_non_float_arrays_alone(self):
         mask = mx.array([True, False])
         assert FLOAT16.to_compute(mask) is mask
+
+    def test_metadata_names_the_option_only_when_it_is_on(self):
+        assert FLOAT16.generation_parameters() == {"compute_precision": "float16"}
+        assert ComputePrecision().generation_parameters() == {}
 
 
 class TestDefaultPath:
@@ -594,6 +714,75 @@ class TestInitializerOrder:
         with pytest.raises(ValueError, match="Unsupported compute precision"):
             model_class(compute_precision=mx.bfloat16)
 
+    @pytest.mark.parametrize(("precision", "expected"), [(mx.float16, {"compute_precision": "float16"}), (None, {})])
+    @pytest.mark.parametrize(("model_class", "stub", "module_types"), FAMILIES)
+    def test_the_model_keeps_the_setting_for_its_image_metadata(
+        self, monkeypatch, tmp_path, model_class, stub, module_types, precision, expected
+    ):
+        stub(monkeypatch, tmp_path)
+
+        model = model_class(quantize=4, compute_precision=precision)
+
+        assert model.compute_precision.generation_parameters() == expected
+
+
+class TestImageMetadata:
+    # An image made with the option records it, and --config-from-conf on that image's sidecar restores it.
+    CASES = [
+        (Generate.flux2_klein, flux2_generate),
+        (Generate.flux2_klein_edit, flux2_edit_generate),
+        (Generate.z_image, z_image_turbo_generate),
+        (Generate.qwen21, qwen21_generate),
+        (Generate.qwen21_edit, qwen21_edit_generate),
+    ]
+
+    @pytest.mark.parametrize(("precision", "expected"), [(FLOAT16, "float16"), (ComputePrecision(), None)])
+    @pytest.mark.parametrize(("generate", "command"), CASES)
+    def test_a_saved_image_replays_with_the_precision_it_was_made_with(
+        self, monkeypatch, tmp_path, generate, command, precision, expected
+    ):
+        reset_cli_globals(monkeypatch)
+        reference = tmp_path / "reference.png"
+        PIL.Image.new("RGB", (64, 64), (128, 128, 128)).save(reference)
+
+        generate(precision, reference).save(tmp_path / "image.png", export_json_metadata=True)
+        sidecar = tmp_path / "image.metadata.json"
+        monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar)])
+
+        assert json.loads(sidecar.read_text()).get("compute_precision") == expected
+        assert command.build_parser().parse_args().compute_precision == expected
+
+
+class TestSaving:
+    SAVABLE = [
+        (Flux2Klein, TinyInit.flux2),
+        (ZImage, TinyInit.z_image),
+        (QwenImage21, TinyInit.qwen21),
+        (QwenImage21Edit, TinyInit.qwen21_edit),
+    ]
+
+    @pytest.mark.parametrize(("model_class", "stub"), SAVABLE)
+    def test_a_float16_compute_model_refuses_to_save_before_writing_anything(
+        self, monkeypatch, tmp_path, model_class, stub
+    ):
+        stub(monkeypatch, tmp_path)
+        model = model_class(quantize=4, compute_precision=mx.float16)
+
+        with pytest.raises(ValueError, match="Build the model without compute_precision to save it"):
+            model.save_model(str(tmp_path / "saved"))
+
+        assert not (tmp_path / "saved").exists()
+
+    # The edit model also writes its processor, which the stub does not have.
+    @pytest.mark.parametrize(("model_class", "stub"), SAVABLE[:3])
+    def test_without_the_option_the_model_still_saves(self, monkeypatch, tmp_path, model_class, stub):
+        stub(monkeypatch, tmp_path)
+        model = model_class(quantize=4)
+
+        model.save_model(str(tmp_path / "saved"))
+
+        assert list((tmp_path / "saved" / "transformer").glob("*.safetensors"))
+
 
 class TestCommandLine:
     COMMANDS = [
@@ -620,6 +809,33 @@ class TestCommandLine:
         assert len(fake.instances) == 1
         assert fake.instances[0].init_kwargs["compute_precision"] is expected
 
+    @pytest.mark.parametrize(
+        "module",
+        [
+            flux2_generate,
+            flux2_edit_generate,
+            z_image_generate,
+            z_image_turbo_generate,
+            qwen21_generate,
+            qwen21_edit_generate,
+        ],
+    )
+    def test_config_from_conf_restores_the_option(self, monkeypatch, tmp_path, module):
+        TestCommandLine._replay(monkeypatch, tmp_path, compute_precision="float16")
+        assert module.build_parser().parse_args().compute_precision == "float16"
+
+    def test_the_command_line_wins_over_the_sidecar(self, monkeypatch, tmp_path):
+        # With the flag given, the sidecar's value is never read, so even a bad one goes unnoticed.
+        TestCommandLine._replay(monkeypatch, tmp_path, "--compute-precision", "float16", compute_precision="bfloat16")
+        assert flux2_generate.build_parser().parse_args().compute_precision == "float16"
+
+    @pytest.mark.parametrize("recorded", ["bfloat16", 16, ["float16"]])
+    def test_a_bad_value_in_the_sidecar_fails_while_parsing(self, monkeypatch, tmp_path, recorded):
+        TestCommandLine._replay(monkeypatch, tmp_path, compute_precision=recorded)
+        with pytest.raises(SystemExit) as exc:
+            flux2_generate.build_parser().parse_args()
+        assert exc.value.code == 2
+
     def test_an_unsupported_value_is_rejected_by_the_parser(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["mflux-generate-flux2", "--prompt", "x", "--compute-precision", "bfloat16"])
         with pytest.raises(SystemExit):
@@ -640,3 +856,13 @@ class TestCommandLine:
             "mflux-generate-qwen-2.1-edit",
         }
         assert {flags[name]["--compute-precision"] for name in supporting} == {"honored"}
+
+    @staticmethod
+    def _replay(monkeypatch, tmp_path, *flags: str, **recorded) -> None:
+        reset_cli_globals(monkeypatch)
+        PIL.Image.new("RGB", (64, 64)).save(tmp_path / "ref.png")
+        sidecar = tmp_path / "image.metadata.json"
+        sidecar.write_text(
+            json.dumps({"prompt": "x", "seed": 1, "image_paths": [str(tmp_path / "ref.png")], **recorded})
+        )
+        monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), *flags])

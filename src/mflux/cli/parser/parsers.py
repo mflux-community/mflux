@@ -502,6 +502,17 @@ class CommandLineParser(argparse.ArgumentParser):
                     namespace.step_cache_ratio = open_unit_float(str(prior_gen_metadata["step_cache_ratio"]))
                 except argparse.ArgumentTypeError as exc:
                     self.error(f"step_cache_ratio in --config-from-conf: {exc}")
+            # Float16 compute changes the image too, so a sidecar that recorded it replays it.
+            if (
+                hasattr(namespace, "compute_precision")
+                and prior_gen_metadata.get("compute_precision") is not None
+                and not self._option_was_provided("--compute-precision")
+            ):
+                # Same choices as the flag, so a bad sidecar fails here instead of after the model loads.
+                recorded_precision = prior_gen_metadata["compute_precision"]
+                if not isinstance(recorded_precision, str) or recorded_precision not in ComputePrecision.CHOICES:
+                    self.error(f"compute_precision in --config-from-conf: invalid choice {recorded_precision!r} (choose from {', '.join(sorted(ComputePrecision.CHOICES))})")  # fmt: off
+                namespace.compute_precision = recorded_precision
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")

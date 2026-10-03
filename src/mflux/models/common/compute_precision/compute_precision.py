@@ -16,12 +16,22 @@ class ComputePrecision:
         self.dtype = dtype
         self._limit = None if dtype is None else float(mx.finfo(dtype).max)
 
+    @property
+    def name(self) -> str | None:
+        if self.dtype is None:
+            return None
+        return next(name for name, choice in ComputePrecision.CHOICES.items() if choice == self.dtype)
+
     @staticmethod
     def dtype_for(name: str | None) -> mx.Dtype | None:
         return None if name is None else ComputePrecision.CHOICES[name]
 
     def dtype_or(self, default: mx.Dtype) -> mx.Dtype:
         return default if self.dtype is None else self.dtype
+
+    def generation_parameters(self) -> dict:
+        # The option changes the image, so a run that used it records it and --config-from-conf replays it.
+        return {} if self.name is None else {"compute_precision": self.name}
 
     def to_compute(self, x: mx.array) -> mx.array:
         if self.dtype is None or x.dtype == self.dtype or not mx.issubdtype(x.dtype, mx.floating):
@@ -50,6 +60,18 @@ class ComputePrecision:
             if isinstance(module, module_types):
                 module.update(tree_map(self._cast_parameter, module.parameters()))
                 module.compute_precision = self
+
+    @staticmethod
+    def ensure_savable(root: nn.Module) -> None:
+        # apply() cast these parameters in place and did not keep the originals. Saved, they would load back as the
+        # model's own weights, in float16 and without float16 compute.
+        for _, module in root.named_modules():
+            precision = getattr(module, "compute_precision", None)
+            if isinstance(precision, ComputePrecision) and precision.dtype is not None:
+                raise ValueError(
+                    f"Cannot save a model built with compute_precision=mx.{precision.name}: its attention and "
+                    "feed-forward weights were cast in place. Build the model without compute_precision to save it."
+                )
 
     def _cast_parameter(self, value):
         if isinstance(value, mx.array) and mx.issubdtype(value.dtype, mx.floating) and value.dtype != self.dtype:

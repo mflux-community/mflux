@@ -164,6 +164,7 @@ class ZImage(nn.Module):
             negative_prompt=negative_prompt,
             pid_decode=pid_decode,
             pid_degrade_sigma=pid_degrade_sigma,
+            generation_parameters=self.compute_precision.generation_parameters(),
         )
 
     def _encode_prompts(

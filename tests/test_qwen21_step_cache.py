@@ -6,6 +6,7 @@ import pytest
 
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.cli.capabilities import describe_command
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.step_cache.step_cache import StepCache
 from mflux.models.qwen21.cli import qwen21_generate
@@ -45,6 +46,7 @@ def _stub_model() -> QwenImage21:
         bits=None,
         lora_paths=None,
         lora_scales=None,
+        compute_precision=ComputePrecision(),
     )
     return model
 

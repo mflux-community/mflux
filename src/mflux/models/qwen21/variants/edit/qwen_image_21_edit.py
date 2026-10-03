@@ -210,7 +210,11 @@ class QwenImage21Edit(nn.Module):
             original = np.asarray(blend_image).astype(np.float32).transpose(2, 0, 1) / 127.5 - 1
             original = mx.array(original[: decoded.shape[1]]).reshape(decoded.shape)
             decoded = keep * decoded.astype(mx.float32) + (1 - keep) * original
-        parameters = {"use_kv_cache": use_kv_cache, "output_resolution": output_resolution}
+        parameters = {
+            "use_kv_cache": use_kv_cache,
+            "output_resolution": output_resolution,
+            **self.compute_precision.generation_parameters(),
+        }
         if strength < 1:
             parameters["strength"] = strength
         if auto_mask is not None:

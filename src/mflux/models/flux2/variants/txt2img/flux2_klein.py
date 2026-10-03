@@ -145,6 +145,7 @@ class Flux2Klein(nn.Module):
             generation_time=config.time_steps.format_dict["elapsed"],
             pid_decode=pid_decode,
             pid_degrade_sigma=pid_degrade_sigma,
+            generation_parameters=self.compute_precision.generation_parameters(),
         )
 
     def _encode_prompt_pair(

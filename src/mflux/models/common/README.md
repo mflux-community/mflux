@@ -580,7 +580,7 @@ Pass `generation_parameters=StepCache.generation_parameters(step_cache_ratio)` t
 
 ## Float16 compute (Apple M1 family)
 
-`--compute-precision float16` runs the inside of the attention and feed-forward layers in float16. The residual stream, the AdaLN modulation, the norms between those layers, the text encoder and the VAE keep the model's own precision. It is meant for GPUs without native bfloat16, the Apple M1 family, where MLX's matmul and attention kernels are fastest in float16. Without the flag nothing changes. With it the image changes slightly for the same seed. Commands that support it: `mflux-generate-flux2`, `mflux-generate-flux2-edit`, `mflux-generate-z-image`, `mflux-generate-z-image-turbo`, `mflux-generate-qwen-2.1` and `mflux-generate-qwen-2.1-edit` (`mflux-capabilities` lists them).
+`--compute-precision float16` runs the inside of the attention and feed-forward layers in float16. The residual stream, the AdaLN modulation, the norms between those layers, the text encoder and the VAE keep the model's own precision. It is meant for GPUs without native bfloat16, the Apple M1 family, where MLX's matmul and attention kernels are fastest in float16. Without the flag nothing changes. With it the image changes slightly for the same seed, so the image metadata records the flag and `--config-from-conf` replays it. Commands that support it: `mflux-generate-flux2`, `mflux-generate-flux2-edit`, `mflux-generate-z-image`, `mflux-generate-z-image-turbo`, `mflux-generate-qwen-2.1` and `mflux-generate-qwen-2.1-edit` (`mflux-capabilities` lists them).
 
 ```sh
 mflux-generate-z-image-turbo --prompt "A puffin standing on a cliff" --steps 9 -q 4 --compute-precision float16
@@ -614,13 +614,13 @@ image = model.generate_image(
 image.save("puffin.png")
 ```
 
-`Flux2Klein`, `Flux2KleinEdit`, `QwenImage21` and `QwenImage21Edit` take the same `compute_precision` argument. The weights of those layers are cast in place when the model loads, after quantization and LoRA.
+`Flux2Klein`, `Flux2KleinEdit`, `QwenImage21` and `QwenImage21Edit` take the same `compute_precision` argument. The weights of those layers are cast in place when the model loads, after quantization and LoRA. For that reason `save_model()` raises an error on a model built with `compute_precision`: build the model without it to save it.
 </details>
 
 <details>
 <summary>Adding it to a model</summary>
 
-The logic lives in `mflux.models.common.compute_precision.ComputePrecision`. Give each attention and feed-forward module a `self.compute_precision = ComputePrecision()`, pass its input through `to_compute` and its output through `to_stream` together with the input dtype, and add a transformer method that calls `precision.apply(self, (YourAttention, YourFeedForward))`. The initializer calls that method after weights and LoRA are applied, so quantization scales and LoRA factors are cast too. If the activations inside a module exceed the float16 range, as in Z-Image, scale them with `shrink(x, headroom)` and pass the same headroom to `to_stream`. Then add `parser.add_compute_precision_arguments()` to the command.
+The logic lives in `mflux.models.common.compute_precision.ComputePrecision`. Give each attention and feed-forward module a `self.compute_precision = ComputePrecision()`, pass its input through `to_compute` and its output through `to_stream` together with the input dtype, and add a transformer method that calls `precision.apply(self, (YourAttention, YourFeedForward))`. The initializer calls that method after weights and LoRA are applied, so quantization scales and LoRA factors are cast too. It also stores the precision as `model.compute_precision`, and `generate_image` passes `generation_parameters=self.compute_precision.generation_parameters()` to `ImageUtil.to_image` so the image metadata records it. If the activations inside a module exceed the float16 range, as in Z-Image, scale them with `shrink(x, headroom)` and pass the same headroom to `to_stream`. Then add `parser.add_compute_precision_arguments()` to the command.
 
 </details>
 
