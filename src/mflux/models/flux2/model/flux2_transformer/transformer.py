@@ -1,10 +1,14 @@
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.flux.model.flux_transformer.ada_layer_norm_continuous import AdaLayerNormContinuous
+from mflux.models.flux2.model.flux2_transformer.attention import Flux2Attention
+from mflux.models.flux2.model.flux2_transformer.feed_forward import Flux2FeedForward
 from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 from mflux.models.flux2.model.flux2_transformer.modulation import Flux2Modulation
+from mflux.models.flux2.model.flux2_transformer.parallel_self_attention import Flux2ParallelSelfAttention
 from mflux.models.flux2.model.flux2_transformer.pos_embed import Flux2PosEmbed
 from mflux.models.flux2.model.flux2_transformer.single_transformer_block import Flux2SingleTransformerBlock
 from mflux.models.flux2.model.flux2_transformer.timestep_guidance_embeddings import Flux2TimestepGuidanceEmbeddings
@@ -168,6 +172,9 @@ class Flux2Transformer(nn.Module):
         hidden_states = self.norm_out(hidden_states, temb)
         hidden_states = self.proj_out(hidden_states)
         return hidden_states
+
+    def apply_compute_precision(self, precision: ComputePrecision) -> None:
+        precision.apply(self, (Flux2Attention, Flux2FeedForward, Flux2ParallelSelfAttention))
 
     @staticmethod
     def _blend_trailing_ref_mod_params(

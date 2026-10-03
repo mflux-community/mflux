@@ -9,6 +9,7 @@ import warnings
 from pathlib import Path
 
 from mflux.cli.defaults import defaults as ui_defaults
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
@@ -152,6 +153,9 @@ class CommandLineParser(argparse.ArgumentParser):
         # sidecar are checked by the same rule as values typed on the command line.
         self.add_argument("--base-model", type=str, required=False, metavar="MODEL", help="When using a third-party HuggingFace model or local path, explicitly name the built-in model it is based on (e.g. dev, schnell, qwen-image).")
         self.add_argument("--quantize",  "-q", type=int, choices=ui_defaults.QUANTIZE_CHOICES, default=None, help=f"Quantize the model ({' or '.join(map(str, ui_defaults.QUANTIZE_CHOICES))}, Default is None)")
+
+    def add_compute_precision_arguments(self) -> None:
+        self.add_argument("--compute-precision", type=str, choices=sorted(ComputePrecision.CHOICES), default=None, help="Run the inside of the attention and feed-forward layers in this precision; the residual stream, norms, text encoder and VAE keep the model's own. float16 targets GPUs without native bfloat16 (Apple M1 family), where it was measured faster on an M1 Max; the image changes slightly for the same seed. Unmeasured on M2 and later. Default: off.")
 
     def add_lora_arguments(self) -> None:
         self.supports_lora = True
@@ -498,6 +502,17 @@ class CommandLineParser(argparse.ArgumentParser):
                     namespace.step_cache_ratio = open_unit_float(str(prior_gen_metadata["step_cache_ratio"]))
                 except argparse.ArgumentTypeError as exc:
                     self.error(f"step_cache_ratio in --config-from-conf: {exc}")
+            # Float16 compute changes the image too, so a sidecar that recorded it replays it.
+            if (
+                hasattr(namespace, "compute_precision")
+                and prior_gen_metadata.get("compute_precision") is not None
+                and not self._option_was_provided("--compute-precision")
+            ):
+                # Same choices as the flag, so a bad sidecar fails here instead of after the model loads.
+                recorded_precision = prior_gen_metadata["compute_precision"]
+                if not isinstance(recorded_precision, str) or recorded_precision not in ComputePrecision.CHOICES:
+                    self.error(f"compute_precision in --config-from-conf: invalid choice {recorded_precision!r} (choose from {', '.join(sorted(ComputePrecision.CHOICES))})")  # fmt: off
+                namespace.compute_precision = recorded_precision
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")

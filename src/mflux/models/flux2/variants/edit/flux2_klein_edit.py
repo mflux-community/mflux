@@ -30,6 +30,7 @@ class Flux2KleinEdit(nn.Module):
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
         model_config: ModelConfig | None = None,
+        compute_precision: mx.Dtype | None = None,
     ):
         super().__init__()
         Flux2Initializer.init(
@@ -40,6 +41,7 @@ class Flux2KleinEdit(nn.Module):
             lora_scales=lora_scales,
             bake_lora=bake_lora,
             model_config=model_config or ModelConfig.flux2_klein_4b(),
+            compute_precision=compute_precision,
         )
 
     def generate_image(
@@ -195,6 +197,7 @@ class Flux2KleinEdit(nn.Module):
             image_paths=image_paths,
             image_path=config.image_path,
             generation_time=config.time_steps.format_dict["elapsed"],
+            generation_parameters=self.compute_precision.generation_parameters(),
         )
 
     def _create_kv_caches(

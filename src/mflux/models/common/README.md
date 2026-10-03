@@ -19,6 +19,7 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 - [Metadata inspection](#metadata-inspection)
 - [PiD pixel-diffusion decode](#pid-pixel-diffusion-decode)
 - [Step reuse (step cache)](#step-reuse-step-cache)
+- [Float16 compute (Apple M1 family)](#float16-compute-apple-m1-family)
 - [Resource and inspection options](#resource-and-inspection-options)
 - [MLX cache limit](#mlx-cache-limit)
 - [Cache locations](#cache-locations)
@@ -572,6 +573,54 @@ for t in config.time_steps:
 ```
 
 Pass `generation_parameters=StepCache.generation_parameters(step_cache_ratio)` to `ImageUtil.to_image` so the ratio lands in metadata. Samplers that keep their own history across steps (multistep solvers) need a review before reuse is enabled, and each model should be quality-checked against its uncached output.
+
+</details>
+
+---
+
+## Float16 compute (Apple M1 family)
+
+`--compute-precision float16` runs the inside of the attention and feed-forward layers in float16. The residual stream, the AdaLN modulation, the norms between those layers, the text encoder and the VAE keep the model's own precision. It is meant for GPUs without native bfloat16, the Apple M1 family, where MLX's matmul and attention kernels are fastest in float16. Without the flag nothing changes. With it the image changes slightly for the same seed, so the image metadata records the flag and `--config-from-conf` replays it. Commands that support it: `mflux-generate-flux2`, `mflux-generate-flux2-edit`, `mflux-generate-z-image`, `mflux-generate-z-image-turbo`, `mflux-generate-qwen-2.1` and `mflux-generate-qwen-2.1-edit` (`mflux-capabilities` lists them).
+
+```sh
+mflux-generate-z-image-turbo --prompt "A puffin standing on a cliff" --steps 9 -q 4 --compute-precision float16
+```
+
+Measured on an M1 Max (64 GB) at 1024×1024. PSNR compares each image with the one the same seed gives without the flag (three seeds; two for Qwen-Image 2.1):
+
+| model | s/step, without → with | total time | PSNR |
+|---|---|---:|---|
+| FLUX.2 klein 4B, `-q 4` | 6.8 → 5.0 | −22% | 38–48 dB |
+| Z-Image Turbo, `-q 4` | 10.7 → 7.5 | −27% | 36–37 dB |
+| FLUX.2 klein 9B, unquantized | 11.6 → 10.5 | −4% to −12% | 30–43 dB |
+| Qwen-Image 2.1 edit, 6-step LoRA, unquantized | 12.6 → 10.8 | −12% | 44–48 dB |
+
+M2 and later GPUs have native bfloat16, so the gain there is likely smaller. It has not been measured.
+
+<details>
+<summary>Python API</summary>
+
+```python
+import mlx.core as mx
+
+from mflux.models.z_image import ZImageTurbo
+
+model = ZImageTurbo(quantize=4, compute_precision=mx.float16)
+image = model.generate_image(
+    seed=42,
+    prompt="A puffin standing on a cliff",
+    num_inference_steps=9,
+)
+image.save("puffin.png")
+```
+
+`Flux2Klein`, `Flux2KleinEdit`, `QwenImage21` and `QwenImage21Edit` take the same `compute_precision` argument. The weights of those layers are cast in place when the model loads, after quantization and LoRA. For that reason `save_model()` raises an error on a model built with `compute_precision`: build the model without it to save it.
+</details>
+
+<details>
+<summary>Adding it to a model</summary>
+
+The logic lives in `mflux.models.common.compute_precision.ComputePrecision`. Give each attention and feed-forward module a `self.compute_precision = ComputePrecision()`, pass its input through `to_compute` and its output through `to_stream` together with the input dtype, and add a transformer method that calls `precision.apply(self, (YourAttention, YourFeedForward))`. The initializer calls that method after weights and LoRA are applied, so quantization scales and LoRA factors are cast too. It also stores the precision as `model.compute_precision`, and `generate_image` passes `generation_parameters=self.compute_precision.generation_parameters()` to `ImageUtil.to_image` so the image metadata records it. If the activations inside a module exceed the float16 range, as in Z-Image, scale them with `shrink(x, headroom)` and pass the same headroom to `to_stream`. Then add `parser.add_compute_precision_arguments()` to the command.
 
 </details>
 

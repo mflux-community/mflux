@@ -1,6 +1,7 @@
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.flux.model.flux_transformer.common.attention_utils import AttentionUtils
 from mflux.models.flux2.model.flux2_transformer.feed_forward import Flux2SwiGLU
@@ -19,6 +20,7 @@ class Flux2ParallelSelfAttention(nn.Module):
         self.norm_k = nn.RMSNorm(dim_head, eps=1e-5)
         self.mlp_act = Flux2SwiGLU()
         self.to_out = nn.Linear(self.inner_dim + self.mlp_hidden_dim, dim, bias=False)
+        self.compute_precision = ComputePrecision()
 
     def __call__(
         self,
@@ -27,7 +29,8 @@ class Flux2ParallelSelfAttention(nn.Module):
         kv_cache: Flux2KVCache | None = None,
         kv_cache_layer_idx: int | None = None,
     ):
-        proj = self.to_qkv_mlp_proj(hidden_states)
+        dtype = hidden_states.dtype
+        proj = self.to_qkv_mlp_proj(self.compute_precision.to_compute(hidden_states))
         qkv, mlp_hidden = mx.split(proj, [self.inner_dim * 3], axis=-1)
         query, key, value = mx.split(qkv, 3, axis=-1)
 
@@ -36,8 +39,9 @@ class Flux2ParallelSelfAttention(nn.Module):
         key = mx.transpose(mx.reshape(key, (batch, seq_len, self.heads, self.dim_head)), (0, 2, 1, 3))
         value = mx.transpose(mx.reshape(value, (batch, seq_len, self.heads, self.dim_head)), (0, 2, 1, 3))
 
-        query = self.norm_q(query.astype(mx.float32)).astype(ModelConfig.precision)
-        key = self.norm_k(key.astype(mx.float32)).astype(ModelConfig.precision)
+        qk_dtype = self.compute_precision.dtype_or(ModelConfig.precision)
+        query = self.norm_q(query.astype(mx.float32)).astype(qk_dtype)
+        key = self.norm_k(key.astype(mx.float32)).astype(qk_dtype)
 
         if image_rotary_emb is not None:
             cos, sin = image_rotary_emb
@@ -67,4 +71,4 @@ class Flux2ParallelSelfAttention(nn.Module):
         mlp_hidden = self.mlp_act(mlp_hidden)
         hidden_states = mx.concatenate([hidden_states, mlp_hidden], axis=-1)
         hidden_states = self.to_out(hidden_states)
-        return hidden_states
+        return self.compute_precision.to_stream(hidden_states, dtype)

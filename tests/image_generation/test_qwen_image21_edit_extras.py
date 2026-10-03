@@ -11,6 +11,7 @@ from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.callbacks.callback_registry import CallbackRegistry
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.qwen21.cli import qwen21_edit_generate as cli
 from mflux.models.qwen21.model.qwen21_text_encoder.grounding import QwenImage21Grounding
@@ -78,6 +79,7 @@ def _stub_model(prompts=None):
     model.bits = None
     model.lora_paths = None
     model.lora_scales = None
+    model.compute_precision = ComputePrecision()
 
     def encode(prompt, images):
         if prompts is not None:

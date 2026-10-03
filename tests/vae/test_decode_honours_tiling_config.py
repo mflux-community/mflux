@@ -8,6 +8,7 @@ from mlx import nn
 
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.boogu.variants import BooguImage
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.vae.tiling_config import TilingConfig
@@ -68,6 +69,7 @@ class _PackedModelFixtures:
         model.bits = None
         model.lora_paths = None
         model.lora_scales = None
+        model.compute_precision = ComputePrecision()
         model.tiling_config = tiling_config
         return model
 
@@ -83,6 +85,7 @@ class _PackedModelFixtures:
         model.bits = None
         model.lora_paths = None
         model.lora_scales = None
+        model.compute_precision = ComputePrecision()
         model.tiling_config = tiling_config
         return model
 

@@ -1,6 +1,7 @@
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.flux.model.flux_transformer.common.attention_utils import AttentionUtils
 from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import Flux2KVCache
 
@@ -26,6 +27,7 @@ class Flux2Attention(nn.Module):
             self.add_k_proj = nn.Linear(added_kv_proj_dim, self.inner_dim, bias=False)
             self.add_v_proj = nn.Linear(added_kv_proj_dim, self.inner_dim, bias=False)
             self.to_add_out = nn.Linear(self.inner_dim, dim, bias=False)
+        self.compute_precision = ComputePrecision()
 
     def __call__(
         self,
@@ -35,6 +37,8 @@ class Flux2Attention(nn.Module):
         kv_cache: Flux2KVCache | None = None,
         kv_cache_layer_idx: int | None = None,
     ):
+        dtype = hidden_states.dtype
+        hidden_states = self.compute_precision.to_compute(hidden_states)
         query, key, value = AttentionUtils.process_qkv(
             hidden_states=hidden_states,
             to_q=self.to_q,
@@ -49,7 +53,7 @@ class Flux2Attention(nn.Module):
         enc_query = enc_key = enc_value = None
         if encoder_hidden_states is not None and self.added_kv_proj_dim is not None:
             enc_query, enc_key, enc_value = AttentionUtils.process_qkv(
-                hidden_states=encoder_hidden_states,
+                hidden_states=self.compute_precision.to_compute(encoder_hidden_states),
                 to_q=self.add_q_proj,
                 to_k=self.add_k_proj,
                 to_v=self.add_v_proj,
@@ -88,11 +92,13 @@ class Flux2Attention(nn.Module):
             )
 
         if encoder_hidden_states is not None and self.added_kv_proj_dim is not None:
+            context_dtype = encoder_hidden_states.dtype
             encoder_hidden_states, hidden_states = (
                 hidden_states[:, : encoder_hidden_states.shape[1]],
                 hidden_states[:, encoder_hidden_states.shape[1] :],
             )
             encoder_hidden_states = self.to_add_out(encoder_hidden_states)
+            encoder_hidden_states = self.compute_precision.to_stream(encoder_hidden_states, context_dtype)
 
         hidden_states = self.to_out(hidden_states)
-        return hidden_states, encoder_hidden_states
+        return self.compute_precision.to_stream(hidden_states, dtype), encoder_hidden_states
