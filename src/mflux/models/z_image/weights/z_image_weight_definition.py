@@ -41,6 +41,7 @@ class ZImageWeightDefinition:
                 hf_subdir="tokenizer",
                 tokenizer_class="AutoTokenizer",
                 encoder_class=LanguageTokenizer,
+                # Same default as diffusers ZImagePipeline (max_sequence_length=512). Not a Flux T5 leftover.
                 max_length=512,
                 use_chat_template=True,
                 chat_template_kwargs={"enable_thinking": True},
