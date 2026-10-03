@@ -213,9 +213,10 @@ class TestQwenImage21Reference:
         with torch.no_grad():
             expected = reference(input_ids=ids, use_cache=False, **kwargs).last_hidden_state
         actual = model(mx.array(ids.cpu().numpy()), **mlx_kwargs)
-        tolerance = 1e-4 if dtype == torch.float32 else 1e-2
-        # M5 Max review measured 1.23e-4 float32 drift with identical weights, on CPU and MPS.
-        absolute_tolerance = 2e-4 if dtype == torch.float32 else tolerance
+        tolerance = 2e-3 if dtype == torch.float32 else 1e-2
+        # Against torch on the CPU, the M5 GPU's float32 path lands up to 2.7e-3 absolute on the
+        # deepstack outputs (43% of elements past 1e-4), so the float32 bounds are set for that (#812).
+        absolute_tolerance = 5e-3 if dtype == torch.float32 else tolerance
         np.testing.assert_allclose(
             np.array(actual.astype(mx.float32)), expected.float().cpu().numpy(), atol=absolute_tolerance, rtol=tolerance
         )

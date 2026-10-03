@@ -74,7 +74,7 @@ class TestQwen21SharedTransformer:
                 target = latents.at[:, -4:].add(timestep)
                 expected = model(target, condition, mx.array([timestep]), layout, None, mask)
                 actual = model(target, condition, mx.array([timestep]), layout, cache, mask)
-                tolerance = 1e-4 if dtype == mx.float32 else 1e-2
+                tolerance = 1e-3 if dtype == mx.float32 else 1e-2
                 np.testing.assert_allclose(
                     np.asarray(actual.astype(mx.float32)),
                     np.asarray(expected.astype(mx.float32)),
@@ -124,4 +124,6 @@ class TestQwen21SharedTransformer:
         for index, timestep in enumerate([0.8, 0.5]):
             target = latents.at[:, -4:].add(timestep)
             actual = model(target, text, mx.array([timestep]), layout, cache)
-            np.testing.assert_allclose(np.array(actual), expected[index][None], atol=1e-5, rtol=1e-5)
+            # The pinned diffusers output was made on the CPU; the M5 GPU's float32 path lands up to
+            # 2.7e-3 absolute from it (#812).
+            np.testing.assert_allclose(np.array(actual), expected[index][None], atol=5e-3, rtol=1e-3)

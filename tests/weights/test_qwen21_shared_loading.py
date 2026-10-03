@@ -277,7 +277,8 @@ def test_edit_lora_save_reload_preserves_adapter_once(tmp_path, monkeypatch, bit
 
     np.testing.assert_array_equal(TinyEdit.output(restored), after_save)
     if bits is None:
-        np.testing.assert_allclose(after_save, adapted, atol=1e-5, rtol=1e-5)
+        # A save and reload round trip on the M5 GPU moves the output by up to 8e-5 (#812).
+        np.testing.assert_allclose(after_save, adapted, atol=2e-4, rtol=1e-4)
     assert not np.allclose(after_save, before, atol=1e-5)
     assert restored.lora_paths == []
     assert restored.lora_scales == []
