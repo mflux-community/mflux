@@ -6,13 +6,23 @@ from mflux.models.depth_pro.model.dino_v2.transformer_block import TransformerBl
 
 
 class DinoVisionTransformer(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        embed_dim: int = 1024,
+        num_heads: int = 16,
+        mlp_hidden_dim: int = 4096,
+        num_blocks: int = 24,
+        hook_block_ids: tuple[int, int] = (5, 11),
+    ):
         super().__init__()
-        self.cls_token = mx.random.normal(shape=(1, 1, 1024))
-        self.pos_embed = mx.random.normal(shape=(1, 577, 1024))
-        self.patch_embed = PatchEmbed()
-        self.blocks = [TransformerBlock() for i in range(24)]
-        self.norm = nn.LayerNorm(dims=1024, eps=1e-6, bias=True)
+        self.embed_dim = embed_dim
+        self.hook_block_ids = hook_block_ids
+        self.cls_token = mx.random.normal(shape=(1, 1, embed_dim))
+        # 577 = a 24x24 patch grid plus the cls token. DepthProUtil.split always gives 384 px patches.
+        self.pos_embed = mx.random.normal(shape=(1, 577, embed_dim))
+        self.patch_embed = PatchEmbed(embed_dim=embed_dim)
+        self.blocks = [TransformerBlock(dim=embed_dim, num_heads=num_heads, mlp_hidden_dim=mlp_hidden_dim) for i in range(num_blocks)]  # fmt: off
+        self.norm = nn.LayerNorm(dims=embed_dim, eps=1e-6, bias=True)
 
     def __call__(self, x: mx.array) -> tuple[mx.array, mx.array, mx.array]:
         backbone_highres_hook0 = None
@@ -24,9 +34,9 @@ class DinoVisionTransformer(nn.Module):
             x = block(x)
 
             # Save intermediary results for later
-            if i == 5:
+            if i == self.hook_block_ids[0]:
                 backbone_highres_hook0 = x
-            if i == 11:
+            if i == self.hook_block_ids[1]:
                 backbone_highres_hook1 = x
 
         x = self.norm(x)
@@ -34,7 +44,7 @@ class DinoVisionTransformer(nn.Module):
 
     def _pos_embed(self, x: mx.array) -> mx.array:
         B, H, W, C = x.shape
-        x = x.reshape((B, -1, 1024))
+        x = x.reshape((B, -1, self.embed_dim))
         to_cat = [mx.broadcast_to(self.cls_token, (B,) + self.cls_token.shape[1:])]
         x = mx.concatenate(to_cat + [x], axis=1)
         x = x + self.pos_embed
