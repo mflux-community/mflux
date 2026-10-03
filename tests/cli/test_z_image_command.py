@@ -1,5 +1,6 @@
 import sys
 
+import mlx.core as mx
 import PIL.Image
 import pytest
 
@@ -53,6 +54,7 @@ def full_argv(tmp_path, ref_png, lora_file):
         "--pid-decode", "--pid-degrade-sigma", "0.2",
         "--lora", str(lora_file), "0.5",
         "-q", "8",
+        "--compute-precision", "float16",
         "--make-conf",
         "--output", str(tmp_path / "out.png"),
     ]  # fmt: skip
@@ -98,6 +100,7 @@ def test_main_call_sequence_is_pinned(monkeypatch, tmp_path, ref_png, lora_file,
         "lora_paths": [str(lora_file)],
         "lora_scales": [0.5],
         "bake_lora": True,
+        "compute_precision": mx.float16,
     }
     assert model.generate_calls == [expected_generate_call(7, ref_png), expected_generate_call(8, ref_png)]
     assert [img.saves for img in model.images] == [

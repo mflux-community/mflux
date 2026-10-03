@@ -34,6 +34,7 @@ class QwenImage21(nn.Module):
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
+        compute_precision: mx.Dtype | None = None,
     ):
         super().__init__()
         Qwen21Initializer.init(
@@ -44,6 +45,7 @@ class QwenImage21(nn.Module):
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+            compute_precision=compute_precision,
         )
 
     def generate_image(

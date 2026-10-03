@@ -2,8 +2,14 @@ import mlx.core as mx
 from mlx import nn
 from mlx.core.fast import scaled_dot_product_attention
 
+from mflux.models.common.compute_precision import ComputePrecision
+
 
 class ZImageAttention(nn.Module):
+    # In float16 the output reaches ~1.4e5, so V is taken this many times smaller and the output scaled back
+    # in the stream dtype. Attention is linear in V and there are no biases: exact up to rounding.
+    FLOAT16_HEADROOM = 4.0
+
     def __init__(
         self,
         dim: int,
@@ -30,6 +36,7 @@ class ZImageAttention(nn.Module):
         else:
             self.norm_q = None
             self.norm_k = None
+        self.compute_precision = ComputePrecision()
 
     def __call__(
         self,
@@ -37,12 +44,15 @@ class ZImageAttention(nn.Module):
         attention_mask: mx.array | None = None,
         freqs_cis: mx.array | None = None,
     ) -> mx.array:
+        precision = self.compute_precision
+        dtype = hidden_states.dtype
+        hidden_states = precision.to_compute(hidden_states)
         batch_size, seq_len, _ = hidden_states.shape
 
         # Project to Q, K, V
         query = self.to_q(hidden_states)
         key = self.to_k(hidden_states)
-        value = self.to_v(hidden_states)
+        value = precision.shrink(self.to_v(hidden_states), ZImageAttention.FLOAT16_HEADROOM)
 
         # Reshape to (batch, seq_len, heads, head_dim)
         query = query.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
@@ -57,8 +67,8 @@ class ZImageAttention(nn.Module):
 
         # Apply RoPE
         if freqs_cis is not None:
-            query = ZImageAttention._apply_rotary_emb(query, freqs_cis)
-            key = ZImageAttention._apply_rotary_emb(key, freqs_cis)
+            query = precision.to_compute(ZImageAttention._apply_rotary_emb(query, freqs_cis))
+            key = precision.to_compute(ZImageAttention._apply_rotary_emb(key, freqs_cis))
 
         # Transpose for attention: (batch, heads, seq_len, head_dim)
         query = mx.transpose(query, axes=(0, 2, 1, 3))
@@ -68,13 +78,17 @@ class ZImageAttention(nn.Module):
         # Convert boolean mask to additive mask for SDPA
         mask = None
         if attention_mask is not None:
-            mask = mx.where(attention_mask[:, None, None, :], mx.array(0.0), mx.array(float("-inf")))
+            mask = mx.where(
+                attention_mask[:, None, None, :],
+                mx.array(0.0, dtype=query.dtype),
+                mx.array(float("-inf"), dtype=query.dtype),
+            )
 
         hidden_states = scaled_dot_product_attention(query, key, value, scale=self.scale, mask=mask)
         hidden_states = mx.transpose(hidden_states, axes=(0, 2, 1, 3))
         hidden_states = hidden_states.reshape(batch_size, seq_len, self.dim)
         hidden_states = self.to_out[0](hidden_states)
-        return hidden_states
+        return precision.to_stream(hidden_states, dtype, ZImageAttention.FLOAT16_HEADROOM)
 
     @staticmethod
     def _apply_rotary_emb(x: mx.array, freqs_cis: mx.array) -> mx.array:

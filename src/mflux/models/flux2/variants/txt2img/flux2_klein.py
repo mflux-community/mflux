@@ -35,6 +35,7 @@ class Flux2Klein(nn.Module):
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
         model_config: ModelConfig | None = None,
+        compute_precision: mx.Dtype | None = None,
     ):
         super().__init__()
         Flux2Initializer.init(
@@ -45,6 +46,7 @@ class Flux2Klein(nn.Module):
             lora_scales=lora_scales,
             bake_lora=bake_lora,
             model_config=model_config or ModelConfig.flux2_klein_4b(),
+            compute_precision=compute_precision,
         )
 
     def generate_image(

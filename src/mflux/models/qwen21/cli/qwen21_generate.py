@@ -1,5 +1,6 @@
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
@@ -16,6 +17,7 @@ def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Qwen Image 2.1 model.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
+    parser.add_compute_precision_arguments()
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
@@ -41,6 +43,7 @@ def main():
         quantize=args.quantize,
         model_path=args.model_path,
         model_config=model_config,
+        compute_precision=ComputePrecision.dtype_for(args.compute_precision),
         **lora_init_kwargs_from_args(args),
     )
 

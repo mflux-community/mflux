@@ -9,8 +9,11 @@ import mlx.core as mx
 import numpy as np
 from mlx import nn
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_feed_forward import Qwen21SwiGLUFeedForward
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_norm_out import Qwen21AdaLayerNormContinuous
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_rope import Qwen21Rope
@@ -116,6 +119,13 @@ class Qwen21Transformer(nn.Module):
     def clear_text_cache(self) -> None:
         """Release the cached text-prefix K/V and the prompt embeddings they reference."""
         self._text_caches.clear()
+
+    def apply_compute_precision(self, precision: ComputePrecision) -> None:
+        precision.apply(self, (Qwen21Attention, Qwen21SwiGLUFeedForward))
+        # Compiled steps and cached text K/V from an earlier call hold the previous precision.
+        self._step_fn = None
+        self._image_step_fn = None
+        self.clear_text_cache()
 
     def _build_text_cache(
         self,

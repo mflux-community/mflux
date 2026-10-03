@@ -7,6 +7,7 @@ import mlx.core as mx
 from mlx import nn
 from mlx.core.fast import scaled_dot_product_attention
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
     fused_qk_norm_rope,
     fused_qk_norm_rope_available,
@@ -27,6 +28,7 @@ class Qwen21Attention(nn.Module):
         self.norm_k = nn.RMSNorm(head_dim, eps=eps)
         # the fused kernel hard-codes eps = 1e-6. Other eps values use the composed path.
         self.use_fused_prologue = fused_qk_norm_rope_available(head_dim) and eps == 1e-6
+        self.compute_precision = ComputePrecision()
 
     def __call__(
         self,
@@ -36,7 +38,9 @@ class Qwen21Attention(nn.Module):
         attn_mask: mx.array | None,
         text_len: int | None = None,
     ) -> mx.array:
-        query, key, value = self._project(hidden_states, rope_cos, rope_sin)
+        precision = self.compute_precision
+        dtype = hidden_states.dtype
+        query, key, value = self._project(precision.to_compute(hidden_states), rope_cos, rope_sin)
 
         if text_len is not None and attn_mask is None:
             # block-causal, segmented like the reference processor: causal text attention
@@ -54,15 +58,15 @@ class Qwen21Attention(nn.Module):
                 value,
                 scale=self.head_dim**-0.5,
             )
-            return self._unproject(mx.concatenate([text_out, target_out], axis=2))
+            return precision.to_stream(self._unproject(mx.concatenate([text_out, target_out], axis=2)), dtype)
         hidden_states = scaled_dot_product_attention(
             query,
             key,
             value,
             scale=self.head_dim**-0.5,
-            mask=attn_mask,
+            mask=attn_mask if attn_mask is None else precision.to_compute(attn_mask),
         )
-        return self._unproject(hidden_states)
+        return precision.to_stream(self._unproject(hidden_states), dtype)
 
     def forward_reference(
         self,
@@ -73,6 +77,8 @@ class Qwen21Attention(nn.Module):
         extract: bool = False,
         key_valid: mx.array | None = None,
     ) -> tuple[mx.array, tuple[mx.array, mx.array] | None]:
+        dtype = x.dtype
+        x = self.compute_precision.to_compute(x)
         batch, length, dim = x.shape
         q, k, v = [
             layer(x).reshape(batch, length, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
@@ -104,7 +110,8 @@ class Qwen21Attention(nn.Module):
                     )
                 )
             output = mx.concatenate(outputs, axis=2)
-        return self.to_out[0](output.transpose(0, 2, 1, 3).reshape(batch, length, dim)), stored
+        output = self.to_out[0](output.transpose(0, 2, 1, 3).reshape(batch, length, dim))
+        return self.compute_precision.to_stream(output, dtype), stored
 
     def _project(
         self,
@@ -165,9 +172,11 @@ class Qwen21Attention(nn.Module):
         every denoise step (and independent of the image stream) — compute them
         once per prompt and reuse them for the image-only steps.
         """
-        query, key, value = self._project(hidden_states, rope_cos, rope_sin)
+        dtype = hidden_states.dtype
+        query, key, value = self._project(self.compute_precision.to_compute(hidden_states), rope_cos, rope_sin)
         hidden_states = scaled_dot_product_attention(query, key, value, scale=self.head_dim**-0.5, mask="causal")
-        return self._unproject(hidden_states), mx.contiguous(key), mx.contiguous(value)
+        hidden_states = self.compute_precision.to_stream(self._unproject(hidden_states), dtype)
+        return hidden_states, mx.contiguous(key), mx.contiguous(value)
 
     def image_attention(
         self,
@@ -178,11 +187,12 @@ class Qwen21Attention(nn.Module):
         rope_sin: mx.array,
     ) -> mx.array:
         """Image-block attention over the full [cached text | image] sequence."""
-        query, key, value = self._project(hidden_states, rope_cos, rope_sin)
+        dtype = hidden_states.dtype
+        query, key, value = self._project(self.compute_precision.to_compute(hidden_states), rope_cos, rope_sin)
         key = mx.concatenate([key_text, key], axis=2)
         value = mx.concatenate([value_text, value], axis=2)
         hidden_states = scaled_dot_product_attention(query, key, value, scale=self.head_dim**-0.5)
-        return self._unproject(hidden_states)
+        return self.compute_precision.to_stream(self._unproject(hidden_states), dtype)
 
     @staticmethod
     def _apply_rope(x: mx.array, cos_vals: mx.array, sin_vals: mx.array) -> mx.array:

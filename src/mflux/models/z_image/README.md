@@ -126,7 +126,7 @@ If you keep the model loaded, as a UI or a server does:
 - Register your callbacks once per loaded model; there is no unregister call.
 - Leave `CallbackManager.register_callbacks` to the command line. The memory saver it adds frees the text encoder during a single-seed run, and the transformer too when that run uses `--low-ram` or `--pid-decode`, so the model cannot be reused after it. Without it the text encoder stays loaded while the image is made, so memory peaks higher than with the command.
 - Flags that only `register_callbacks` applies do nothing in this script: `--low-ram`, `--mlx-cache-limit-gb`, `--vae-tiling`, `--vae-tile-size`, `--stepwise-image-output-dir` and `--battery-percentage-stop-limit`.
-- A new `--model`, `-q` or LoRA needs a new `load()`. Drop the old model and any of your objects that hold it first (`del model`, then `gc.collect()` and `mx.clear_cache()`), so two sets of weights are never in memory at once.
+- A new `--model`, `-q`, `--compute-precision` or LoRA needs a new `load()`. Drop the old model and any of your objects that hold it first (`del model`, then `gc.collect()` and `mx.clear_cache()`), so two sets of weights are never in memory at once.
 - Handle one request at a time. The parser reads `sys.argv`, so set it to the request's flags before you call `parse_args()`.
 - Save each image before you parse the next request: parsing sets process-wide metadata state, and `--no-exif` stays in effect for the rest of the process.
 

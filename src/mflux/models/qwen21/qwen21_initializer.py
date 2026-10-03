@@ -5,6 +5,7 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 import mflux.models.qwen21.model.qwen21_scheduler  # noqa: F401 — register the viggle_turbo scheduler
 from mflux.callbacks.callback_registry import CallbackRegistry
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
@@ -28,7 +29,9 @@ class Qwen21Initializer:
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
+        compute_precision: mx.Dtype | None = None,
     ) -> None:
+        precision = ComputePrecision(compute_precision)
         path = model_path if model_path else model_config.model_name
         Qwen21Initializer.init_config(model, model_config)
         root = PathResolution.resolve(path, Qwen21WeightDefinition.get_download_patterns())
@@ -38,6 +41,9 @@ class Qwen21Initializer:
         Qwen21Initializer._init_models(model)
         Qwen21Initializer.load_components(model, root, Qwen21WeightDefinition, quantize, validate=True)
         Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
+        if compute_precision is not None:
+            # Last, so it casts the final parameters, whatever quantization and LoRA produced.
+            model.transformer.apply_compute_precision(precision)
 
     @staticmethod
     def load_components(model, root: Path, weight_definition, quantize: int | None, *, validate: bool = False) -> None:
