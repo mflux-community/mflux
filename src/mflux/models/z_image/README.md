@@ -140,6 +140,9 @@ The other two Z-Image commands have the same steps. `mflux-generate-z-image` is 
 > [!WARNING]
 > Note: Z-Image weights are large (~31GB). Use quantization for smaller sizes.
 
+> [!NOTE]
+> The transformer runs in bfloat16, the precision of the loaded weights. mflux 0.20 and earlier ran it in float32. On an M5, bfloat16 cuts the denoising time by about 30%. The two streams give slightly different images for the same seed. To reproduce an image from an older release, add `--float32` to any of the three Z-Image commands. An image made with `--float32` records it in its metadata. With `mflux-generate-z-image` and `mflux-generate-z-image-turbo`, `--config-from-metadata` replays that image with the same stream. The ControlNet command does not read metadata, so give it `--float32` yourself.
+
 ## Z-Image Turbo ControlNet (Union 2.1)
 
 `mflux-generate-z-image-controlnet` runs Z-Image-Turbo with the [Fun ControlNet Union 2.1](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1) from Alibaba PAI. One checkpoint takes five kinds of hint, and every hint is computed locally from an ordinary picture: `canny` and `mlsd` with OpenCV, `depth` with DepthPro, `hed` and `pose` with native MLX detectors (the detector weights download on first use). Give the picture, not a pre-drawn edge map:

@@ -44,6 +44,13 @@ def mflux_generate_pid_parser() -> CommandLineParser:
 
 
 @pytest.fixture
+def mflux_generate_float32_parser() -> CommandLineParser:
+    parser = _create_mflux_generate_parser(with_controlnet=False, require_model_arg=False)
+    parser.add_float32_arguments()
+    return parser
+
+
+@pytest.fixture
 def mflux_save_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Save a quantized version of Flux.1 to disk.")  # fmt: off
     parser.add_general_arguments()
@@ -712,6 +719,32 @@ def test_pid_decode_args_restore_from_metadata(mflux_generate_pid_parser, mflux_
     ):
         args = mflux_generate_pid_parser.parse_args()
         assert args.pid_decode is True
+
+
+@pytest.mark.fast
+def test_float32_arg_restores_from_metadata(mflux_generate_float32_parser, mflux_generate_minimal_argv, base_metadata_dict, temp_dir):  # fmt: off
+    metadata_file = temp_dir / "float32.json"
+
+    # without --config-from-metadata, --float32 is off
+    with patch("sys.argv", mflux_generate_minimal_argv + ["-m", "dev"]):
+        assert mflux_generate_float32_parser.parse_args().float32 is False
+
+    # a bf16-stream image has no float32 key, so the replay stays on the default stream
+    with metadata_file.open("wt") as m:
+        json.dump(base_metadata_dict, m, indent=4)
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        assert mflux_generate_float32_parser.parse_args().float32 is False
+
+    # an image made with --float32 replays with --float32
+    base_metadata_dict["float32"] = True
+    with metadata_file.open("wt") as m:
+        json.dump(base_metadata_dict, m, indent=4)
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--config-from-metadata", metadata_file.as_posix()]):
+        assert mflux_generate_float32_parser.parse_args().float32 is True
+
+    # explicit --no-float32 on the CLI wins over metadata saying float32: true
+    with patch("sys.argv", mflux_generate_minimal_argv + ["--no-float32", "--config-from-metadata", metadata_file.as_posix()]):  # fmt: off
+        assert mflux_generate_float32_parser.parse_args().float32 is False
 
 
 @pytest.mark.fast

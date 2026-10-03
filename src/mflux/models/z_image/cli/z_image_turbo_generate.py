@@ -31,6 +31,7 @@ def build_parser() -> CommandLineParser:
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
     parser.add_pid_decode_arguments()
+    parser.add_float32_arguments()
     parser.add_output_arguments()
     return parser
 
@@ -53,6 +54,7 @@ class ZImageTurboCommand:
             model_config=ZImageTurboCommand.validate(args),
             quantize=args.quantize,
             model_path=args.model_path,
+            float32=args.float32,
             **lora_init_kwargs_from_args(args),
         )
 

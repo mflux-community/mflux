@@ -22,6 +22,7 @@ class ImageGeneratorZImageTestHelper:
         lora_scales: list[float] | None = None,
         mismatch_threshold: float | None = None,
         clear_lora_cache_pattern: str | None = None,
+        float32: bool = False,
     ):
         reference_image_path = ImageGeneratorZImageTestHelper.resolve_path(reference_image_path)
         output_image_path = ImageGeneratorZImageTestHelper.resolve_path(output_image_path)
@@ -35,6 +36,7 @@ class ImageGeneratorZImageTestHelper:
                 quantize=quantize,
                 lora_paths=lora_paths,
                 lora_scales=lora_scales,
+                float32=float32,
             )
 
             image = model.generate_image(

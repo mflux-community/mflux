@@ -3,6 +3,8 @@ import math
 import mlx.core as mx
 from mlx import nn
 
+from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.z_image.model.z_image_transformer.attention import ZImageAttention
 from mflux.models.z_image.model.z_image_transformer.context_block import ZImageContextBlock
 from mflux.models.z_image.model.z_image_transformer.final_layer import FinalLayer
 from mflux.models.z_image.model.z_image_transformer.rope_embedder import RopeEmbedder
@@ -55,6 +57,17 @@ class ZImageTransformer(nn.Module):
         self.context_refiner = [ZImageContextBlock(dim, n_heads, norm_eps, qk_norm) for _ in range(n_refiner_layers)]  # fmt: off
         self.layers = [ZImageTransformerBlock(dim, n_heads, norm_eps, qk_norm) for _ in range(n_layers)]  # fmt: off
         self.rope_embedder = RopeEmbedder(theta=rope_theta, axes_dims=axes_dims, axes_lens=axes_lens)
+        self.float32 = False
+
+    def set_float32(self, enabled: bool) -> None:
+        # The --float32 option: keep the float32 hidden stream that mflux used before #761.
+        self.float32 = enabled
+        ZImageAttention.set_float32(self, enabled)
+
+    @staticmethod
+    def stream_t_emb(t_emb: mx.array, float32: bool) -> mx.array:
+        # The sinusoidal embedding is float32. Cast it, or the adaLN modulation promotes every block to float32.
+        return t_emb if float32 else t_emb.astype(ModelConfig.precision)
 
     def __call__(
         self,
@@ -76,6 +89,7 @@ class ZImageTransformer(nn.Module):
         if timestep.ndim == 0:
             timestep = timestep.reshape((1,))
         t_emb = self.t_embedder(timestep.astype(mx.float32) * self.t_scale)
+        t_emb = ZImageTransformer.stream_t_emb(t_emb, self.float32)
 
         # Patchify image and caption
         x_emb, cap_emb, x_size, x_pos_ids, cap_pos_ids, x_pad_mask, cap_pad_mask = ZImageTransformer._patchify(
