@@ -31,11 +31,15 @@ class TestModelSavingLora:
             modelA.save_model(PATH)
             del modelA
 
-            # ...and given an 'on-the-fly' quantized model which we generate an image from
+            # ...and given an 'on-the-fly' quantized model which we generate an image from.
+            # The adapters stay live on both models: baking folds them into the dense weights on
+            # this load and onto the saved q4 grid on the next one, so only live adapters compare
+            # the two quantized bases (#814).
             modelB = ZImageTurbo(
                 quantize=4,
                 lora_paths=lora_paths,
                 lora_scales=TestModelSavingLora.LORA_SCALES,
+                bake_lora=False,
             )
             image1 = modelB.generate_image(
                 seed=44,
@@ -51,6 +55,7 @@ class TestModelSavingLora:
                 model_path=PATH,
                 lora_paths=lora_paths,
                 lora_scales=TestModelSavingLora.LORA_SCALES,
+                bake_lora=False,
             )
 
             # ...and generating the identical image

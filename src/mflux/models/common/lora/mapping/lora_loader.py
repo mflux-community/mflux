@@ -36,6 +36,7 @@ class LoRALoader:
         lora_scales: list[float] | None = None,
         role: str | None = None,
         bake_lora: bool = True,
+        dense_weights: dict | None = None,
     ) -> tuple[list[str], list[float]]:
         resolved_paths = LoraResolution.resolve_paths(lora_paths)
         if not resolved_paths:
@@ -69,7 +70,7 @@ class LoRALoader:
 
         if bake_lora:
             print("Baking LoRA weights into the base model for faster inference...")
-            LoRASaver.bake_and_strip_lora(transformer)
+            LoRASaver.bake_and_strip_lora(transformer, dense_weights=dense_weights)
             mx.eval(transformer.parameters())
             print("✅ LoRA weights baked successfully")
 

@@ -33,7 +33,7 @@ class QwenImageInitializer:
         QwenImageInitializer._init_tokenizers(model, path)
         QwenImageInitializer._init_models(model)
         QwenImageInitializer._apply_weights(model, weights, quantize)
-        QwenImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
+        QwenImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
 
     @staticmethod
     def init_edit(
@@ -52,7 +52,7 @@ class QwenImageInitializer:
         QwenImageInitializer._init_tokenizers(model, path)
         QwenImageInitializer._init_edit_models(model)
         QwenImageInitializer._apply_weights(model, weights, quantize)
-        QwenImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
+        QwenImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
 
         # Add vision-language tokenizer
         raw_tokenizer = model.tokenizers["qwen"].tokenizer
@@ -117,6 +117,7 @@ class QwenImageInitializer:
         lora_paths: list[str] | None,
         lora_scales: list[float] | None,
         bake_lora: bool,
+        weights: LoadedWeights | None = None,
     ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=QwenLoRAMapping.get_mapping(),
@@ -124,4 +125,5 @@ class QwenImageInitializer:
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+            dense_weights=weights.dense_component("transformer") if weights is not None else None,
         )
