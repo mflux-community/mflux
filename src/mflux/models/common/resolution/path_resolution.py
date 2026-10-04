@@ -57,7 +57,10 @@ class PathResolution:
                 has_matching_files = any(list(local_path.glob(p)) for p in patterns)
                 # mflux-save writes each component's shards to its save subdir, under names the
                 # HuggingFace patterns never list (SeedVR2 keeps both parts flat at repo root, #823).
-                has_saved_checkpoint = any(any((local_path / d).glob("*.safetensors")) for d in saved_subdirs or [])
+                # Every component needs its shards there, so a half-copied save still warns.
+                has_saved_checkpoint = bool(saved_subdirs) and all(
+                    any((local_path / d).glob("*.safetensors")) for d in saved_subdirs
+                )
                 if not has_matching_files and not has_saved_checkpoint:
                     print(
                         f"⚠️  Directory '{path}' exists but contains no files matching {patterns}. "

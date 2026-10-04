@@ -211,6 +211,22 @@ class TestPathResolutionEmptyDirectory:
         assert "contains no files matching" in capsys.readouterr().out
 
     @pytest.mark.fast
+    def test_half_copied_saved_checkpoint_still_warns(self, tmp_path, capsys):
+        # The loader needs every part, so a save missing one of them is worth the warning.
+        model_dir = tmp_path / "seedvr2-half"
+        (model_dir / "transformer").mkdir(parents=True)
+        (model_dir / "transformer" / "0.safetensors").touch()
+        (model_dir / "vae").mkdir()
+
+        PathResolution.resolve(
+            path=str(model_dir),
+            patterns=["seedvr2_ema_3b_fp16.safetensors", "ema_vae_fp16.safetensors"],
+            saved_subdirs=["transformer", "vae"],
+        )
+
+        assert "contains no files matching" in capsys.readouterr().out
+
+    @pytest.mark.fast
     def test_empty_directory_with_custom_patterns(self, tmp_path, capsys):
         # Create a directory with .bin file but looking for .json
         model_dir = tmp_path / "model"
