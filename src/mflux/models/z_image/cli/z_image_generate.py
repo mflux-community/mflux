@@ -4,6 +4,7 @@ from argparse import Namespace
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.z_image.latent_creator import ZImageLatentCreator
@@ -40,6 +41,7 @@ def build_parser() -> CommandLineParser:
     parser = CommandLineParser(description="Generate an image using Z-Image.")
     parser.add_general_arguments()
     parser.add_model_arguments(require_model_arg=False, default_model=DEFAULT_MODEL)
+    parser.add_compute_precision_arguments()
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_image_to_image_arguments()
@@ -70,6 +72,7 @@ class ZImageCommand:
             quantize=args.quantize,
             model_path=args.model_path,
             float32=args.float32,
+            compute_precision=ComputePrecision.dtype_for(args.compute_precision),
             **lora_init_kwargs_from_args(args),
         )
 

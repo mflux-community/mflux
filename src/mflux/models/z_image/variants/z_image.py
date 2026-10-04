@@ -36,6 +36,7 @@ class ZImage(nn.Module):
         bake_lora: bool = True,
         model_config: ModelConfig = ModelConfig.z_image_turbo(),
         float32: bool = False,
+        compute_precision: mx.Dtype | None = None,
     ):
         super().__init__()
         ZImageInitializer.init(
@@ -47,6 +48,7 @@ class ZImage(nn.Module):
             bake_lora=bake_lora,
             model_config=model_config,
             float32=float32,
+            compute_precision=compute_precision,
         )
 
     def generate_image(
@@ -164,7 +166,10 @@ class ZImage(nn.Module):
             negative_prompt=negative_prompt,
             pid_decode=pid_decode,
             pid_degrade_sigma=pid_degrade_sigma,
-            generation_parameters={"float32": True} if self.float32 else None,
+            generation_parameters={
+                **({"float32": True} if self.float32 else {}),
+                **self.compute_precision.generation_parameters(),
+            },
         )
 
     def _encode_prompts(

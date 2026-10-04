@@ -144,6 +144,7 @@ MFLUX supports the following model families. They have different strengths and w
 - Quantization and local model loading
 - LoRA support (multi-LoRA, scales, library lookup), including LyCORIS LoKr on FLUX.1 and FLUX.2
 - Metadata export + reuse, plus prompt file support
+- Float16 compute for Apple M1-family GPUs on FLUX.2, Z-Image and Qwen-Image 2.1 (`--compute-precision float16`, see the [common README](src/mflux/models/common/README.md#float16-compute-apple-m1-family))
 
 **Model-specific highlights**
 - Text-to-image and image-to-image generation.

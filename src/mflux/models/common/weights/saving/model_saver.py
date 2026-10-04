@@ -8,6 +8,7 @@ from mlx.utils import tree_flatten
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
+from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.lora.mapping.lora_saver import LoRASaver
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.utils.version_util import VersionUtil
@@ -24,6 +25,13 @@ class ModelSaver:
         base_path: str,
         weight_definition: "WeightDefinitionType",
     ) -> None:
+        # Refused before anything is baked or written: a model built with compute_precision holds float16
+        # casts of its attention and feed-forward parameters, not the weights it loaded.
+        for component_def in weight_definition.get_components():
+            component = getattr(model, component_def.model_attr or component_def.name, None)
+            if component is not None:
+                ComputePrecision.ensure_savable(component)
+
         # Bake and strip any LoRA wrappers (to avoid duplicating shared weights) across
         # every component before writing a single file: baking raises when an adapter does
         # not fit, and that must abort before part of a checkpoint is on disk.
