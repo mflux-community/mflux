@@ -89,6 +89,22 @@ def test_fold_keeps_the_whole_adapter_where_the_grid_fold_loses_part():
     assert _strength(on_grid, base, lora) < 0.7
 
 
+def test_fold_multiplies_low_precision_factors_in_float32():
+    # A float16 file: the product of these factors sits in float16's subnormal range, where a
+    # float16 matmul keeps only a few bits of it. The weight's q8 step is about as small.
+    mx.random.seed(5)
+    weight = (mx.random.normal((OUT, IN)) * 1e-5).astype(mx.bfloat16)
+    base = _quantized(weight, 8)
+    lora = LoRALinear.from_linear(base, r=8)
+    lora.lora_A = (mx.random.normal((IN, 8)) * 3e-4).astype(mx.float16)
+    lora.lora_B = (mx.random.normal((8, OUT)) * 3e-4).astype(mx.float16)
+    exact = mx.transpose(mx.matmul(lora.lora_A.astype(mx.float32), lora.lora_B.astype(mx.float32)))
+
+    folded = LoRASaver._fold_before_quantizing(base, [lora], weight)
+
+    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + lora.scale * exact, 8))
+
+
 def test_fold_sums_stacked_adapters():
     weight = _dense_weight()
     base = _quantized(weight, 8)
