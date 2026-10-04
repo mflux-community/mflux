@@ -1,8 +1,12 @@
+from argparse import Namespace
+
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser
 from mflux.models.boogu.variants import BooguImage
+from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.prompt_util import PromptUtil
 
 # The model this CLI runs when --model is omitted. The parser needs it too, to key the
@@ -32,32 +36,52 @@ def build_parser() -> CommandLineParser:
     return parser
 
 
+class BooguImageCommand:
+    # Boogu builds its own noise latents (no LatentCreator); stepwise output is unsupported.
+    latent_creator = None
+
+    @staticmethod
+    def validate(args: Namespace) -> ModelConfig:
+        # Weight-free: resolves --model against the in-memory registry only.
+        return ConfigResolution.resolve_restricted(args.model, DEFAULT_MODEL, model_path=args.model_path)
+
+    @staticmethod
+    def load(args: Namespace) -> BooguImage:
+        return BooguImage(
+            model_config=BooguImageCommand.validate(args),
+            quantize=args.quantize,
+            model_path=args.model_path,
+        )
+
+    @staticmethod
+    def generate(model: BooguImage, args: Namespace, seed: int, prompt: str) -> GeneratedImage:
+        # The parser takes plain ints for sizes here, so they go to the model unchanged.
+        return model.generate_image(
+            seed=seed,
+            prompt=prompt,
+            width=args.width,
+            height=args.height,
+            num_inference_steps=args.steps,
+        )
+
+
 def main():
     # 0. Parse command line arguments
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
 
-    model_config = ConfigResolution.resolve_restricted(args.model, DEFAULT_MODEL, model_path=args.model_path)
+    model = BooguImageCommand.load(args)
 
-    model = BooguImage(
-        model_config=model_config,
-        quantize=args.quantize,
-        model_path=args.model_path,
+    memory_saver = CallbackManager.register_callbacks(
+        args=args,
+        model=model,
+        latent_creator=BooguImageCommand.latent_creator,
     )
-
-    # Boogu builds its own noise latents (no LatentCreator); stepwise output is unsupported.
-    memory_saver = CallbackManager.register_callbacks(args=args, model=model, latent_creator=None)
 
     try:
         for seed in args.seed:
-            image = model.generate_image(
-                seed=seed,
-                prompt=PromptUtil.read_prompt(args),
-                width=args.width,
-                height=args.height,
-                num_inference_steps=args.steps,
-            )
+            image = BooguImageCommand.generate(model, args, seed, PromptUtil.read_prompt(args))
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:
         print(exc)

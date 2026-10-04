@@ -17,25 +17,36 @@ FROG_LORA_PROMPT = (
 )
 
 
+# The references without a suffix come from the float32 hidden stream that mflux used before #761.
+# The --float32 option keeps that stream, so those references pin it. The _bf16 references pin the default.
+STREAMS = [
+    pytest.param(True, "", id="float32"),
+    pytest.param(False, "_bf16", id="bf16"),
+]
+
+
 class TestImageGeneratorZImage:
     @pytest.mark.slow
-    def test_image_generation_z_image_turbo(self):
+    @pytest.mark.parametrize(("float32", "suffix"), STREAMS)
+    def test_image_generation_z_image_turbo(self, float32, suffix):
         ImageGeneratorZImageTestHelper.assert_matches_reference_image(
-            reference_image_path="reference_z_image_turbo.png",
-            output_image_path="output_z_image_turbo.png",
+            reference_image_path=f"reference_z_image_turbo{suffix}.png",
+            output_image_path=f"output_z_image_turbo{suffix}.png",
             prompt=ASTRONAUT_CAT_PROMPT,
             steps=9,
             seed=42,
             height=368,
             width=640,
             quantize=8,
+            float32=float32,
         )
 
     @pytest.mark.slow
-    def test_image_generation_z_image_turbo_lora(self):
+    @pytest.mark.parametrize(("float32", "suffix"), STREAMS)
+    def test_image_generation_z_image_turbo_lora(self, float32, suffix):
         ImageGeneratorZImageTestHelper.assert_matches_reference_image(
-            reference_image_path="reference_z_image_turbo_lora.png",
-            output_image_path="output_z_image_turbo_lora.png",
+            reference_image_path=f"reference_z_image_turbo_lora{suffix}.png",
+            output_image_path=f"output_z_image_turbo_lora{suffix}.png",
             prompt=FROG_LORA_PROMPT,
             steps=9,
             seed=42,
@@ -46,4 +57,5 @@ class TestImageGeneratorZImage:
             lora_scales=[0.5],
             clear_lora_cache_pattern="Technically-Color",  # Test fresh LoRA download works
             mismatch_threshold=0.35,  # LoRA tests have higher variance
+            float32=float32,
         )

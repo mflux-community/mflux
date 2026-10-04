@@ -9,17 +9,33 @@ from mflux.models.depth_pro.model.encoder.upsample_block import UpSampleBlock
 
 
 class DepthProEncoder(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        embed_dim: int = 1024,
+        num_heads: int = 16,
+        mlp_hidden_dim: int = 4096,
+        num_blocks: int = 24,
+        hook_block_ids: tuple[int, int] = (5, 11),
+        encoder_feature_dims: tuple[int, int, int, int] = (256, 512, 1024, 1024),
+        decoder_features: int = 256,
+    ):
         super().__init__()
-        self.patch_encoder = DinoVisionTransformer()
-        self.image_encoder = DinoVisionTransformer()
-        self.upsample_latent0 = UpSampleBlock(dim_in=1024, dim_int=256, dim_out=256, upsample_layers=3)
-        self.upsample_latent1 = UpSampleBlock(dim_in=1024, dim_out=256, upsample_layers=2)
-        self.upsample0 = UpSampleBlock(dim_in=1024, dim_out=512, upsample_layers=1)
-        self.upsample1 = UpSampleBlock(dim_in=1024, dim_out=1024, upsample_layers=1)
-        self.upsample2 = UpSampleBlock(dim_in=1024, dim_out=1024, upsample_layers=1)
-        self.upsample_lowres = nn.ConvTranspose2d(in_channels=1024, out_channels=1024, kernel_size=2, stride=2, padding=0, bias=True)  # fmt: off
-        self.fuse_lowres = nn.Conv2d(in_channels=1024 * 2, out_channels=1024, kernel_size=1, stride=1, padding=0, bias=True)  # fmt: off
+        vit_kwargs = dict(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            mlp_hidden_dim=mlp_hidden_dim,
+            num_blocks=num_blocks,
+            hook_block_ids=hook_block_ids,
+        )
+        self.patch_encoder = DinoVisionTransformer(**vit_kwargs)
+        self.image_encoder = DinoVisionTransformer(**vit_kwargs)
+        self.upsample_latent0 = UpSampleBlock(dim_in=embed_dim, dim_int=decoder_features, dim_out=decoder_features, upsample_layers=3)  # fmt: off
+        self.upsample_latent1 = UpSampleBlock(dim_in=embed_dim, dim_out=encoder_feature_dims[0], upsample_layers=2)
+        self.upsample0 = UpSampleBlock(dim_in=embed_dim, dim_out=encoder_feature_dims[1], upsample_layers=1)
+        self.upsample1 = UpSampleBlock(dim_in=embed_dim, dim_out=encoder_feature_dims[2], upsample_layers=1)
+        self.upsample2 = UpSampleBlock(dim_in=embed_dim, dim_out=encoder_feature_dims[3], upsample_layers=1)
+        self.upsample_lowres = nn.ConvTranspose2d(in_channels=embed_dim, out_channels=encoder_feature_dims[3], kernel_size=2, stride=2, padding=0, bias=True)  # fmt: off
+        self.fuse_lowres = nn.Conv2d(in_channels=encoder_feature_dims[3] * 2, out_channels=encoder_feature_dims[3], kernel_size=1, stride=1, padding=0, bias=True)  # fmt: off
 
     def __call__(
         self,

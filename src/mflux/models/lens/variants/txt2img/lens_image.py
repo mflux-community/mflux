@@ -27,6 +27,7 @@ from mflux.models.lens.model.text_encoder.lens_gpt_oss_encoder import (
 from mflux.models.lens.model.transformer.lens_transformer import LensTransformer
 from mflux.models.lens.weights.lens_weight_definition import TURBO_WEIGHTS_PATTERN, LensWeightDefinition
 from mflux.utils.exceptions import StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.image_util import ImageUtil
 
 VAE_REPO = "black-forest-labs/FLUX.2-klein-4B"
@@ -85,7 +86,7 @@ class LensImage:
         width: int = 1024,
         height: int = 1024,
         num_inference_steps: int = 4,
-    ):
+    ) -> GeneratedImage:
         start = time.time()
         config = Config(
             model_config=self.model_config,

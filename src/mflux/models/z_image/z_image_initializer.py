@@ -26,6 +26,7 @@ class ZImageInitializer:
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
+        float32: bool = False,
     ) -> None:
         path = model_path if model_path else model_config.model_name
         ZImageInitializer._init_config(model, model_config)
@@ -34,6 +35,8 @@ class ZImageInitializer:
         ZImageInitializer._init_models(model)
         ZImageInitializer._apply_weights(model, weights, quantize)
         ZImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
+        model.float32 = float32
+        model.transformer.set_float32(float32)
 
     @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:
@@ -82,6 +85,7 @@ class ZImageInitializer:
         model_path: str | None = None,
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
+        float32: bool = False,
     ) -> None:
         """
         Initialize Z-Image Turbo and attach a ControlNet module loaded from `model_config.controlnet_model`.
@@ -97,6 +101,7 @@ class ZImageInitializer:
             model_path=model_path,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
+            float32=float32,
         )
 
         # Load ControlNet config (best-effort) + weights. A model saved with mflux-save carries
@@ -123,6 +128,7 @@ class ZImageInitializer:
 
         model.controlnet = ZImageControlNet(config=controlnet_cfg)
         model.controlnet = ZImageControlNet.from_transformer(model.controlnet, model.transformer)
+        model.controlnet.set_float32(float32)
 
         WeightApplier.apply_and_quantize_single(
             weights=controlnet_weights,

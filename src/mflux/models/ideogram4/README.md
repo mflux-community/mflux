@@ -296,6 +296,9 @@ image = model.generate_image(
 )
 image.save("ideogram4.png")
 ```
+
+You can also call the steps of `mflux-generate-ideogram4` from Python. `Ideogram4Command` in `mflux.models.ideogram4.cli.ideogram4_generate` has `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded. The preset still sets the steps and the guidance, so `generate()` does not read `--steps` or `--guidance`. The model keeps the text features in `model.prompt_cache`, one entry per distinct combination of prompt and size. Each entry covers the whole token sequence, image positions included, so it is large and grows with the image size. Clear it whenever the prompt or the size changes: `model.prompt_cache.clear()`, then `gc.collect()` and `mx.clear_cache()`.
+
 </details>
 
 > [!WARNING]

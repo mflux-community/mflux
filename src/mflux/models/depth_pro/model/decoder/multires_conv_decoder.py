@@ -6,22 +6,18 @@ from mflux.models.depth_pro.model.depth_pro_util import DepthProUtil
 
 
 class MultiresConvDecoder(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        encoder_feature_dims: tuple[int, int, int, int] = (256, 512, 1024, 1024),
+        decoder_features: int = 256,
+    ):
         super().__init__()
-        self.convs = [
-            nn.Identity(),
-            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.Conv2d(in_channels=512, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.Conv2d(in_channels=1024, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.Conv2d(in_channels=1024, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
+        # Level 0 is upsample_latent0, which the encoder already projects to decoder_features.
+        self.convs = [nn.Identity()] + [
+            nn.Conv2d(in_channels=dim, out_channels=decoder_features, kernel_size=3, stride=1, padding=1, bias=False)
+            for dim in encoder_feature_dims
         ]
-        self.fusions = [
-            FeatureFusionBlock2d(num_features=256, deconv=False),
-            FeatureFusionBlock2d(num_features=256, deconv=True),
-            FeatureFusionBlock2d(num_features=256, deconv=True),
-            FeatureFusionBlock2d(num_features=256, deconv=True),
-            FeatureFusionBlock2d(num_features=256, deconv=True),
-        ]
+        self.fusions = [FeatureFusionBlock2d(num_features=decoder_features, deconv=i > 0) for i in range(len(encoder_feature_dims) + 1)]  # fmt: off
 
     def __call__(
         self,

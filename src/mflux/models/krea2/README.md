@@ -57,6 +57,9 @@ image = model.generate_image(
 )
 image.save("krea2_fox.png")
 ```
+
+You can also call the steps of `mflux-generate-krea2` from Python. `Krea2Command` in `mflux.models.krea2.cli.krea2_generate` has `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded. `generate()` uses guidance 1.0 when `--guidance` is not set. Only the command line warns that `--negative-prompt` has no effect at that guidance. The model keeps each prompt's text features in `model.prompt_cache`, which grows by one entry per distinct combination of prompt, negative prompt and guidance. A process that stays up should clear it from time to time with `model.prompt_cache.clear()`, then `gc.collect()` and `mx.clear_cache()`.
+
 </details>
 
 ## Image-to-image

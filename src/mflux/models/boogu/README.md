@@ -45,4 +45,6 @@ image = model.generate_image(
 image.save(path="boogu.png")
 ```
 
+You can also call the steps of `mflux-generate-boogu` from Python. `BooguImageCommand` in `mflux.models.boogu.cli.boogu_image_generate` has `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded.
+
 </details>

@@ -30,6 +30,7 @@ def build_parser() -> CommandLineParser:
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=False)
     parser.add_union_controlnet_arguments(require_controls=True)
+    parser.add_float32_arguments()
     parser.add_output_arguments()
     # Default to the Union ControlNet model so step-count normalization resolves to its 8 steps
     # instead of the generic fallback when --model is omitted.
@@ -60,6 +61,7 @@ class ZImageTurboControlnetCommand:
             model_config=ZImageTurboControlnetCommand.validate(args),
             quantize=args.quantize,
             model_path=args.model_path,
+            float32=args.float32,
             lora_paths=args.lora_paths,
             lora_scales=args.lora_scales,
         )

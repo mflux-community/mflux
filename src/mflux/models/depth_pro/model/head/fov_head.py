@@ -5,12 +5,19 @@ from mflux.models.depth_pro.model.depth_pro_util import DepthProUtil
 
 
 class FOVHead(nn.Module):
-    def __init__(self):
+    def __init__(self, dim_decoder: int = 256):
         super().__init__()
         self.convs = [
-            nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
-            nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=2, padding=0, bias=True),
-            nn.Conv2d(in_channels=128, out_channels=32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=dim_decoder, out_channels=dim_decoder // 2, kernel_size=3, stride=1, padding=1),
+            nn.ConvTranspose2d(
+                in_channels=dim_decoder // 2,
+                out_channels=dim_decoder // 2,
+                kernel_size=2,
+                stride=2,
+                padding=0,
+                bias=True,
+            ),  # fmt: off
+            nn.Conv2d(in_channels=dim_decoder // 2, out_channels=32, kernel_size=3, stride=1, padding=1),
             nn.Identity(),
             nn.Conv2d(in_channels=32, out_channels=1, kernel_size=1, stride=1, padding=0),
         ]

@@ -1,11 +1,15 @@
+from argparse import Namespace
+
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.ideogram4.latent_creator import Ideogram4LatentCreator
 from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
 from mflux.models.ideogram4.variants.txt2img.ideogram4 import Ideogram4
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
+from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.prompt_util import PromptUtil
 
 # The model this CLI runs when --model is omitted. --steps is ignored at generation time
@@ -52,50 +56,68 @@ def build_parser() -> CommandLineParser:
     return parser
 
 
-def main():
-    parser = build_parser()
-    args = parser.parse_args()
+class Ideogram4Command:
+    latent_creator = Ideogram4LatentCreator
 
-    # "ideogram-4-fp8" is the registry key behind DEFAULT_MODEL's alias. The old
-    # is_builtin_name gate sent every foreign builtin name ("dev", "qwen-image") down
-    # the custom-checkpoint branch with model_path=None, which silently ran the default
-    # Ideogram checkpoint; now those names error.
-    model_config = ConfigResolution.resolve_restricted(args.model, "ideogram-4-fp8", model_path=args.model_path)
-    model_path = args.model_path
-    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    @staticmethod
+    def validate(args: Namespace) -> ModelConfig:
+        # Weight-free: resolves --model against the in-memory registry only. "ideogram-4-fp8"
+        # is the registry key behind DEFAULT_MODEL's alias. The old is_builtin_name gate sent
+        # every foreign builtin name ("dev", "qwen-image") down the custom-checkpoint branch
+        # with model_path=None, which silently ran the default Ideogram checkpoint; now those
+        # names error.
+        return ConfigResolution.resolve_restricted(args.model, "ideogram-4-fp8", model_path=args.model_path)
 
-    model = Ideogram4(
-        model_config=model_config,
-        quantize=args.quantize,
-        model_path=model_path,
-        **lora_init_kwargs_from_args(args),
-    )
+    @staticmethod
+    def load(args: Namespace) -> Ideogram4:
+        return Ideogram4(
+            model_config=Ideogram4Command.validate(args),
+            quantize=args.quantize,
+            model_path=args.model_path,
+            **lora_init_kwargs_from_args(args),
+        )
 
-    memory_saver = CallbackManager.register_callbacks(
-        args=args,
-        model=model,
-        latent_creator=Ideogram4LatentCreator,
-    )
-
-    try:
+    @staticmethod
+    def generate(model: Ideogram4, args: Namespace, seed: int, prompt: str) -> GeneratedImage:
+        # No steps and no guidance: the preset owns both.
         width, height = DimensionResolver.resolve(
             width=args.width,
             height=args.height,
             reference_image_path=None,
         )
+        return model.generate_image(
+            seed=seed,
+            prompt=prompt,
+            width=width,
+            height=height,
+            preset=args.preset,
+            strict_caption_validation=args.strict_caption_validation,
+            cfg_end=args.cfg_end,
+            pid_decode=args.pid_decode,
+            pid_degrade_sigma=args.pid_degrade_sigma,
+        )
 
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    # --model is checked before the ignored-option warnings, so a bad name fails without
+    # them. load() checks it again; the check is cheap and pure.
+    Ideogram4Command.validate(args)
+    CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+
+    model = Ideogram4Command.load(args)
+
+    memory_saver = CallbackManager.register_callbacks(
+        args=args,
+        model=model,
+        latent_creator=Ideogram4Command.latent_creator,
+    )
+
+    try:
         for seed in args.seed:
-            image = model.generate_image(
-                seed=seed,
-                prompt=PromptUtil.read_prompt(args),
-                width=width,
-                height=height,
-                preset=args.preset,
-                strict_caption_validation=args.strict_caption_validation,
-                cfg_end=args.cfg_end,
-                pid_decode=args.pid_decode,
-                pid_degrade_sigma=args.pid_degrade_sigma,
-            )
+            image = Ideogram4Command.generate(model, args, seed, PromptUtil.read_prompt(args))
             image.save(path=args.output.format(seed=seed), export_json_metadata=args.metadata)
     except (StopImageGenerationException, PromptFileReadError) as exc:
         print(exc)

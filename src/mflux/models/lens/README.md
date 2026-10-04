@@ -50,4 +50,6 @@ image = model.generate_image(
 image.save(path="lens.png")
 ```
 
+You can also call the steps of `mflux-generate-lens` from Python. `LensCommand` in `mflux.models.lens.cli.lens_generate` has `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded.
+
 </details>

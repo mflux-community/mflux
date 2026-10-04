@@ -36,6 +36,7 @@ class ZImageTurboControlnet(nn.Module):
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         model_config: ModelConfig = ModelConfig.z_image_turbo_controlnet_union_2_1(),
+        float32: bool = False,
     ):
         super().__init__()
         ZImageInitializer.init_controlnet(
@@ -45,6 +46,7 @@ class ZImageTurboControlnet(nn.Module):
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             model_config=model_config,
+            float32=float32,
         )
 
     def generate_image(
@@ -151,6 +153,7 @@ class ZImageTurboControlnet(nn.Module):
             lora_scales=self.lora_scales,
             controlnet_image_path=first_control_path,
             generation_time=config.time_steps.format_dict["elapsed"],
+            generation_parameters={"float32": True} if self.float32 else None,
         )
 
     def save_model(self, base_path: str) -> None:

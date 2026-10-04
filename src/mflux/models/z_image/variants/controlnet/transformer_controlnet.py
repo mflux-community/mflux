@@ -17,6 +17,7 @@ except ImportError:  # httpx rides in with huggingface_hub 1.x; degrade graceful
         pass
 
 
+from mflux.models.z_image.model.z_image_transformer.attention import ZImageAttention
 from mflux.models.z_image.model.z_image_transformer.transformer import ZImageTransformer
 from mflux.models.z_image.model.z_image_transformer.transformer_block import ZImageTransformerBlock
 
@@ -119,7 +120,6 @@ class ZImageControlTransformerBlock(nn.Module):
 
     def __init__(self, *, dim: int, n_heads: int, norm_eps: float, qk_norm: bool, block_id: int):
         super().__init__()
-        from mflux.models.z_image.model.z_image_transformer.attention import ZImageAttention
         from mflux.models.z_image.model.z_image_transformer.feed_forward import FeedForward
 
         self.dim = dim
@@ -237,6 +237,12 @@ class ZImageControlNet(nn.Module):
         self.context_refiner = None
         self.x_pad_token = None
         self.cap_pad_token = None
+        self.float32 = False
+
+    def set_float32(self, enabled: bool) -> None:
+        # Same switch as ZImageTransformer.set_float32, for the control blocks.
+        self.float32 = enabled
+        ZImageAttention.set_float32(self, enabled)
 
     @classmethod
     def from_transformer(cls, controlnet: "ZImageControlNet", transformer: ZImageTransformer) -> "ZImageControlNet":
@@ -313,6 +319,7 @@ class ZImageControlNet(nn.Module):
         # Time embedding (match ZImageTransformer)
         t_value = mx.array([1.0 - sigmas[t].item()])
         t_emb = self.t_embedder(t_value * self.t_scale)
+        t_emb = ZImageTransformer.stream_t_emb(t_emb, self.float32)
 
         # Patchify image + caption (reuse transformer helper)
         x_patches, cap_padded, _x_size, x_pos_ids, cap_pos_ids, x_pad_mask, cap_pad_mask = ZImageTransformer._patchify(  # noqa: SLF001

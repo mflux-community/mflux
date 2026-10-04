@@ -52,6 +52,7 @@ def full_argv(tmp_path, control_png, lora_file):
         "--scheduler", "flow_match_euler_discrete",
         "--lora", str(lora_file), "0.5",
         "-q", "8",
+        "--float32",
         "--make-conf",
         "--output", str(tmp_path / "out.png"),
     ]  # fmt: skip
@@ -89,6 +90,7 @@ def test_main_call_sequence_is_pinned(monkeypatch, tmp_path, control_png, lora_f
         "model_config": AVAILABLE_MODELS["z-image-turbo-controlnet-union-2.1"],
         "quantize": 8,
         "model_path": None,
+        "float32": True,
         "lora_paths": [str(lora_file)],
         "lora_scales": [0.5],
     }

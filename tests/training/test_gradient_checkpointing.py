@@ -87,7 +87,10 @@ class _TinyFlux2:
     def _inject_lora(module: nn.Module) -> None:
         for key, value in list(module.items()):
             if isinstance(value, nn.Linear) and not isinstance(value, LoRALinear):
-                module[key] = LoRALinear.from_linear(value, r=4, scale=1.0)
+                wrapped = LoRALinear.from_linear(value, r=4, scale=1.0)
+                # A zero B gives zero lora_A gradients. Make B non-zero so that the test compares real values.
+                wrapped.lora_B = mx.random.normal(wrapped.lora_B.shape) * 0.02
+                module[key] = wrapped
             elif isinstance(value, nn.Module):
                 _TinyFlux2._inject_lora(value)
             elif isinstance(value, list):
