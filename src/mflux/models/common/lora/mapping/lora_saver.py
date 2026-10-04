@@ -183,8 +183,9 @@ class LoRASaver:
         for adapter in adapters:
             if isinstance(adapter, LoKrLinear):
                 # A DoRA-scaled LoKr is a function of the weight it lands on, so each adapter
-                # sees the sum of the ones before it.
-                delta = adapter.scale * adapter.delta_weight(base_weight=merged)
+                # sees the sum of the ones before it. The product is taken in float32 for the
+                # same reason as the LoRA factors below.
+                delta = adapter.scale * adapter.delta_weight(base_weight=merged, dtype=mx.float32)
             else:
                 # The factors keep the dtype of the file (often float16 or bfloat16); multiplied in
                 # that dtype, a small product rounds before it reaches the float32 sum.

@@ -156,6 +156,25 @@ def test_fold_applies_a_lokr_adapter_to_the_dense_weight(with_dora):
     assert folded.scales.dtype == mx.bfloat16
 
 
+def test_fold_takes_the_lokr_product_in_float32():
+    # A float16 LoKr file whose Kronecker product sits in float16's subnormal range, as in the
+    # LoRA case above.
+    mx.random.seed(6)
+    weight = (mx.random.normal((OUT, IN)) * 1e-5).astype(mx.bfloat16)
+    base = _quantized(weight, 8)
+    lokr = LoKrLinear.from_linear(
+        base,
+        lokr_w1=(mx.random.normal((8, 16)) * 3e-3).astype(mx.float16),
+        lokr_w2=(mx.random.normal((16, 16)) * 3e-3).astype(mx.float16),
+        scale=0.5,
+    )
+    exact = mx.kron(lokr.lokr_w1.astype(mx.float32), lokr.lokr_w2.astype(mx.float32)).reshape((OUT, IN))
+
+    folded = LoRASaver._fold_before_quantizing(base, [lokr], weight)
+
+    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + 0.5 * exact, 8))
+
+
 def test_bake_and_strip_folds_a_lokr_layer_before_quantizing():
     weight = _dense_weight()
     base = _quantized(weight, 4)
