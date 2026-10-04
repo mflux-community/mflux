@@ -186,7 +186,10 @@ class LoRASaver:
                 # sees the sum of the ones before it.
                 delta = adapter.scale * adapter.delta_weight(base_weight=merged)
             else:
-                delta = adapter.scale * mx.transpose(mx.matmul(adapter.lora_A, adapter.lora_B))
+                # The factors keep the dtype of the file (often float16 or bfloat16); multiplied in
+                # that dtype, a small product rounds before it reaches the float32 sum.
+                lora_a, lora_b = adapter.lora_A.astype(mx.float32), adapter.lora_B.astype(mx.float32)
+                delta = adapter.scale * mx.transpose(mx.matmul(lora_a, lora_b))
             if delta.shape != merged.shape:
                 raise ValueError(
                     f"LoRA shape mismatch{at}: base weight {merged.shape} vs adapter delta {delta.shape}. "
