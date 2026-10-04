@@ -57,11 +57,17 @@ class WeightLoader:
         model_path: str | None = None,
         download_patterns: list[str] | None = None,
     ) -> LoadedWeights:
+        # An mflux-saved checkpoint lives under each component's save subdir, which differs
+        # from its hf_subdir only when components share one (SeedVR2); the HuggingFace layout
+        # is still addressed by hf_subdir below (#621).
+        save_subdirs = ComponentDefinition.save_subdirs(weight_definition.get_components())
+
         # download_patterns lets a caller supply variant-aware HF allow_patterns (e.g. Krea 2
         # Turbo vs Raw need different transformer layouts); default to the definition's list.
         root_path = PathResolution.resolve(
             path=model_path,
             patterns=download_patterns if download_patterns is not None else weight_definition.get_download_patterns(),
+            saved_subdirs=list(save_subdirs.values()),
         )
 
         # 2. Load each component (with caching for shared sources)
@@ -83,10 +89,6 @@ class WeightLoader:
         mflux_version = None
         raw_weights_cache: dict[tuple, dict] = {}  # Cache by (path, loading_mode, weight_files)
 
-        # An mflux-saved checkpoint lives under each component's save subdir, which differs
-        # from its hf_subdir only when components share one (SeedVR2); the HuggingFace layout
-        # is still addressed by hf_subdir below (#621).
-        save_subdirs = ComponentDefinition.save_subdirs(weight_definition.get_components())
         for component in weight_definition.get_components():
             weights, q_level, version = WeightLoader._load_component(
                 root_path, component, raw_weights_cache, save_subdirs[component.name]

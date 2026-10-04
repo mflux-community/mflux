@@ -192,6 +192,25 @@ class TestPathResolutionEmptyDirectory:
         assert "contains no files matching" not in captured.out
 
     @pytest.mark.fast
+    def test_saved_checkpoint_in_component_subdirs_no_warning(self, tmp_path, capsys):
+        # mflux-save writes SeedVR2's two parts to transformer/ and vae/, while the patterns
+        # name the repo's flat files (#823).
+        model_dir = tmp_path / "seedvr2-saved"
+        for subdir in ("transformer", "vae"):
+            (model_dir / subdir).mkdir(parents=True)
+            (model_dir / subdir / "0.safetensors").touch()
+        patterns = ["seedvr2_ema_3b_fp16.safetensors", "ema_vae_fp16.safetensors"]
+
+        result = PathResolution.resolve(path=str(model_dir), patterns=patterns, saved_subdirs=["transformer", "vae"])
+
+        assert result == model_dir
+        assert "contains no files matching" not in capsys.readouterr().out
+
+        # Without the save subdirs the same directory still warns.
+        PathResolution.resolve(path=str(model_dir), patterns=patterns)
+        assert "contains no files matching" in capsys.readouterr().out
+
+    @pytest.mark.fast
     def test_empty_directory_with_custom_patterns(self, tmp_path, capsys):
         # Create a directory with .bin file but looking for .json
         model_dir = tmp_path / "model"

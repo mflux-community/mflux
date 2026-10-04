@@ -23,12 +23,16 @@ class PathResolution:
     )
 
     @staticmethod
-    def resolve(path: str | None, patterns: list[str] | None = None) -> Path | None:
+    def resolve(
+        path: str | None,
+        patterns: list[str] | None = None,
+        saved_subdirs: list[str] | None = None,
+    ) -> Path | None:
         if patterns is None:
             patterns = ["*.safetensors"]
 
         for rule in sorted(PathResolution.RULES, key=lambda r: r.priority):
-            if PathResolution._check(rule.check, path, patterns):
+            if PathResolution._check(rule.check, path, patterns, saved_subdirs):
                 logger.debug(f"Path resolution: '{path}' → rule '{rule.name}' ({rule.action.value})")
                 return PathResolution._execute(rule.action, path, patterns)
 
@@ -39,7 +43,7 @@ class PathResolution:
         return path is not None and "/" in path and path.count("/") == 1 and not path.startswith(("./", "../", "~/"))
 
     @staticmethod
-    def _check(check: str, path: str | None, patterns: list[str]) -> bool:
+    def _check(check: str, path: str | None, patterns: list[str], saved_subdirs: list[str] | None = None) -> bool:
         if check == "is_none":
             return path is None
         if check == "exists_locally":
@@ -51,7 +55,10 @@ class PathResolution:
             # Warn if directory exists but contains no matching files
             if local_path.is_dir():
                 has_matching_files = any(list(local_path.glob(p)) for p in patterns)
-                if not has_matching_files:
+                # mflux-save writes each component's shards to its save subdir, under names the
+                # HuggingFace patterns never list (SeedVR2 keeps both parts flat at repo root, #823).
+                has_saved_checkpoint = any(any((local_path / d).glob("*.safetensors")) for d in saved_subdirs or [])
+                if not has_matching_files and not has_saved_checkpoint:
                     print(
                         f"⚠️  Directory '{path}' exists but contains no files matching {patterns}. "
                         f"Model loading may fail."

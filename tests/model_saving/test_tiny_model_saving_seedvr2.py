@@ -25,6 +25,18 @@ class TestTinySeedVR2ModelSaving:
             bits=8,
         )
 
+    @pytest.mark.fast
+    def test_loading_a_saved_checkpoint_does_not_warn_about_missing_files(self, tmp_path, capsys):
+        # The saved parts sit in transformer/ and vae/, not under the repo's file names (#823).
+        TinyCheckpointRoundtrip.save_and_reload_expecting_identical_weights(
+            weight_definition=SeedVR2WeightDefinition3B,
+            make_components=TestTinySeedVR2ModelSaving._tiny_components,
+            base_path=tmp_path / "seedvr2_tiny_q8",
+            bits=8,
+        )
+
+        assert "contains no files matching" not in capsys.readouterr().out
+
     @staticmethod
     def _tiny_components():
         # vid_in_channels=16 (not the default 33) so PatchIn's proj is Linear(16*1*2*2=64, dim),
