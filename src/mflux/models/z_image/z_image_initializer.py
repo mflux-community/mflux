@@ -33,7 +33,7 @@ class ZImageInitializer:
         ZImageInitializer._init_tokenizers(model, path)
         ZImageInitializer._init_models(model)
         ZImageInitializer._apply_weights(model, weights, quantize)
-        ZImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
+        ZImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
 
     @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:
@@ -146,6 +146,7 @@ class ZImageInitializer:
         lora_paths: list[str] | None,
         lora_scales: list[float] | None,
         bake_lora: bool,
+        weights: LoadedWeights | None = None,
     ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=ZImageLoRAMapping.get_mapping(),
@@ -153,4 +154,5 @@ class ZImageInitializer:
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+            dense_weights=weights.dense_component("transformer") if weights is not None else None,
         )

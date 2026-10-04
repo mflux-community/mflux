@@ -215,7 +215,7 @@ image.save("prompt_file.png")
 
 ## LoRA basics
 
-By default, LoRA and LoKr weights are **baked** into the base model after load (one-time merge) so inference uses a single matmul per layer. With `--quantize`, adapters are merged into dequantized weights and the result is re-quantized (same as baking into a dense model, then quantizing that layer). Use `--no-bake-lora` to keep runtime adapter layers (for example if you change scales programmatically without reloading).
+By default, LoRA and LoKr weights are **baked** into the base model after load (one-time merge) so inference uses a single matmul per layer. With `--quantize` on FLUX, FLUX.2, Qwen-Image, Krea 2 and Z-Image, a checkpoint that stores full-precision weights gets the adapter added to those weights, in float32, before they are quantized. Elsewhere, and whenever the checkpoint is already quantized, the adapter is merged into the dequantized weights and the result is re-quantized. A weak adapter at a low scale loses part of its effect that way: one Z-Image LoRA at scale 0.5 came out at 80% of its strength on q8 ([#814](https://github.com/mflux-community/mflux/issues/814)). Use `--no-bake-lora` to keep runtime adapter layers: they apply the adapter in full on any checkpoint, they cost speed and memory, and they let you change scales programmatically without reloading.
 
 ```sh
 mflux-generate-z-image-turbo \
