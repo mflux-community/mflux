@@ -48,7 +48,7 @@ class Qwen21Initializer:
 
     @staticmethod
     def load_components(model, root: Path, weight_definition, quantize: int | None, *, validate: bool = False) -> None:
-        # Release each dense component before loading the next, especially for edit's visual encoder.
+        # Load and check one component at a time; the parameters stay lazy (see the end of the loop).
         model.bits = None
         for component in weight_definition.get_components():
             module = getattr(model, component.model_attr or component.name)
@@ -81,7 +81,6 @@ class Qwen21Initializer:
             # needs it. Evaluating every component here held all of them at once, parts a run never
             # uses included, and --low-ram could only free the text encoder after that peak (#832).
             del weights, supplied
-            mx.clear_cache()
 
     @staticmethod
     def apply_lora(
