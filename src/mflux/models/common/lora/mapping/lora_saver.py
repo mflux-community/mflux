@@ -15,97 +15,74 @@ class LoRASaver:
         # quantized (see _fold_before_quantizing); every other layer is folded as it stands.
         upgraded: list[str] = []
 
-        def _assign(parent, attr_name, idx, new_child):
-            if parent is None:
-                return
-            if isinstance(parent, list) and idx is not None:
-                parent[idx] = new_child
-            elif isinstance(parent, dict) and attr_name is not None:
-                parent[attr_name] = new_child
-            elif attr_name is not None:
-                setattr(parent, attr_name, new_child)
-
-        def _child_path(path: str, part: str) -> str:
-            return f"{path}.{part}" if path else part
-
-        def _fold_before_quantizing(base_linear, adapters: list, path: str) -> nn.Module | None:
-            if dense_weights is None:
-                return None
-            source = LoRASaver._stored_weight(dense_weights, path)
-            return LoRASaver._fold_before_quantizing(base_linear, adapters, source, path=path)
-
-        def _bake_single(lora_layer: LoRALinear, path: str) -> nn.Module:
-            folded = _fold_before_quantizing(lora_layer.linear, [lora_layer], path)
-            if folded is not None:
-                return folded
-            return LoRASaver._bake_lora_into_linear(lora_layer.linear, lora_layer, path=path, upgraded=upgraded)
-
-        def _bake_lokr(lokr_layer: LoKrLinear, path: str) -> nn.Module:
-            folded = _fold_before_quantizing(lokr_layer.linear, [lokr_layer], path)
-            if folded is not None:
-                return folded
-            return LoRASaver._bake_lokr_into_linear(lokr_layer.linear, lokr_layer, path=path, upgraded=upgraded)
-
-        def _bake_fused(fused_layer: FusedLoRALinear, path: str) -> nn.Module:
-            folded = _fold_before_quantizing(fused_layer.base_linear, fused_layer.loras, path)
+        def bake(layer: nn.Module, path: str) -> nn.Module:
+            fused = isinstance(layer, FusedLoRALinear)
+            base = layer.base_linear if fused else layer.linear
+            adapters = layer.loras if fused else [layer]
+            source = LoRASaver._stored_weight(dense_weights, path) if dense_weights is not None else None
+            folded = LoRASaver._fold_before_quantizing(base, adapters, source, path=path)
             if folded is not None:
                 return folded
             # Adapters are folded one at a time rather than summed: a LoKr carrying a
             # dora_scale is a non-linear function of the CURRENT base weight, so each
             # delta must see the result of the previous fold.
-            current = fused_layer.base_linear
-            for lora in fused_layer.loras:
-                if isinstance(lora, LoRALinear):
-                    current = LoRASaver._bake_lora_into_linear(current, lora, path=path, upgraded=upgraded)
-                elif isinstance(lora, LoKrLinear):
-                    current = LoRASaver._bake_lokr_into_linear(current, lora, path=path, upgraded=upgraded)
+            current = base
+            for adapter in adapters:
+                if isinstance(adapter, LoRALinear):
+                    current = LoRASaver._bake_lora_into_linear(current, adapter, path=path, upgraded=upgraded)
+                elif isinstance(adapter, LoKrLinear):
+                    current = LoRASaver._bake_lokr_into_linear(current, adapter, path=path, upgraded=upgraded)
             return current
 
-        def _walk(obj, parent=None, attr_name=None, idx=None, path=""):
-            # Replace wrappers first
-            if isinstance(obj, FusedLoRALinear):
-                new_child = _bake_fused(obj, path)
-                _assign(parent, attr_name, idx, new_child)
-                obj = new_child
-            elif isinstance(obj, LoKrLinear):
-                new_child = _bake_lokr(obj, path)
-                _assign(parent, attr_name, idx, new_child)
-                obj = new_child
-            elif isinstance(obj, LoRALinear):
-                new_child = _bake_single(obj, path)
-                _assign(parent, attr_name, idx, new_child)
-                obj = new_child
-
-            # Recurse into containers/modules
-            if isinstance(obj, list):
-                for i, child in enumerate(list(obj)):
-                    _walk(child, obj, None, i, _child_path(path, str(i)))
-            elif isinstance(obj, tuple):
-                temp_list = list(obj)
-                for i, child in enumerate(temp_list):
-                    _walk(child, temp_list, None, i, _child_path(path, str(i)))
-                if parent is not None:
-                    _assign(parent, attr_name, idx, type(obj)(temp_list))
-            elif isinstance(obj, dict):
-                for key, child in list(obj.items()):
-                    _walk(child, obj, key, None, _child_path(path, str(key)))
-            elif isinstance(obj, nn.Module):
-                for name, child in vars(obj).items():
-                    if isinstance(child, (nn.Module, list, tuple, dict)):
-                        _walk(child, obj, name, None, _child_path(path, name))
-
-        try:
-            _walk(module, None, None, None)
-        finally:
-            # _walk calls itself, so these closures form a cycle that only the garbage collector
-            # frees. Let go of the checkpoint here, or its dense weights outlive the load, also
-            # when an adapter that does not fit stops the bake halfway.
-            dense_weights = None
+        # The walk gets bake as an argument. A walker that closes over itself is a reference cycle
+        # that only the garbage collector frees, and it kept Krea 2's 26 GB tree alive after the load.
+        LoRASaver._replace_adapters(module, bake)
         if upgraded:
             print(
                 f"🔧 Re-quantized {len(upgraded)} sub-8-bit layers at q8: the folded LoRA delta is below their quantization step"
             )
         return module
+
+    @staticmethod
+    def _replace_adapters(obj, bake, parent=None, attr_name=None, idx=None, path: str = "") -> None:
+        # Replace wrappers first
+        if isinstance(obj, (FusedLoRALinear, LoKrLinear, LoRALinear)):
+            new_child = bake(obj, path)
+            LoRASaver._assign(parent, attr_name, idx, new_child)
+            obj = new_child
+
+        # Recurse into containers/modules
+        if isinstance(obj, list):
+            for i, child in enumerate(list(obj)):
+                LoRASaver._replace_adapters(child, bake, obj, None, i, LoRASaver._child_path(path, str(i)))
+        elif isinstance(obj, tuple):
+            temp_list = list(obj)
+            for i, child in enumerate(temp_list):
+                LoRASaver._replace_adapters(child, bake, temp_list, None, i, LoRASaver._child_path(path, str(i)))
+            if parent is not None:
+                LoRASaver._assign(parent, attr_name, idx, type(obj)(temp_list))
+        elif isinstance(obj, dict):
+            for key, child in list(obj.items()):
+                LoRASaver._replace_adapters(child, bake, obj, key, None, LoRASaver._child_path(path, str(key)))
+        elif isinstance(obj, nn.Module):
+            for name, child in vars(obj).items():
+                if isinstance(child, (nn.Module, list, tuple, dict)):
+                    LoRASaver._replace_adapters(child, bake, obj, name, None, LoRASaver._child_path(path, name))
+
+    @staticmethod
+    def _assign(parent, attr_name, idx, new_child) -> None:
+        if parent is None:
+            return
+        if isinstance(parent, list) and idx is not None:
+            parent[idx] = new_child
+        elif isinstance(parent, dict) and attr_name is not None:
+            parent[attr_name] = new_child
+        elif attr_name is not None:
+            setattr(parent, attr_name, new_child)
+
+    @staticmethod
+    def _child_path(path: str, part: str) -> str:
+        return f"{path}.{part}" if path else part
 
     @staticmethod
     def _bake_lora_into_linear(
@@ -114,10 +91,25 @@ class LoRASaver:
         path: str = "",
         upgraded: list[str] | None = None,
     ) -> nn.Module:
-        delta = mx.matmul(lora_layer.lora_A, lora_layer.lora_B)
-        delta = mx.transpose(delta)
-        delta = lora_layer.scale * delta
-        return LoRASaver._bake_delta_into_linear(base_linear, delta, path=path, upgraded=upgraded)
+        return LoRASaver._bake_delta_into_linear(
+            base_linear, LoRASaver._lora_delta(lora_layer), path=path, upgraded=upgraded
+        )
+
+    @staticmethod
+    def _lora_delta(lora_layer: LoRALinear, dtype: mx.Dtype | None = None) -> mx.array:
+        # The adapter's weight delta with its scale. dtype, when given, is the precision of the
+        # product; otherwise it is the factors' own (the dtype of the file).
+        lora_a, lora_b = lora_layer.lora_A, lora_layer.lora_B
+        if dtype is not None:
+            lora_a, lora_b = lora_a.astype(dtype), lora_b.astype(dtype)
+        return lora_layer.scale * mx.transpose(mx.matmul(lora_a, lora_b))
+
+    @staticmethod
+    def _shape_mismatch(at: str, base_shape: tuple, delta_shape: tuple) -> ValueError:
+        return ValueError(
+            f"LoRA shape mismatch{at}: base weight {base_shape} vs adapter delta {delta_shape}. "
+            f"The adapter does not fit this model."
+        )
 
     @staticmethod
     def _bake_lokr_into_linear(
@@ -132,15 +124,11 @@ class LoRASaver:
 
     @staticmethod
     def _stored_weight(tree, path: str) -> mx.array | None:
-        current = tree
-        for part in [*path.split("."), "weight"] if path else ["weight"]:
-            if isinstance(current, list) and part.isdigit() and int(part) < len(current):
-                current = current[int(part)]
-            elif isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                return None
-        return current if isinstance(current, mx.array) else None
+        # Imported here: the weights package imports ModelSaver, which imports this module.
+        from mflux.models.common.weights.loading.weight_applier import WeightApplier
+
+        weight = WeightApplier._nested_get(tree, LoRASaver._child_path(path, "weight"))
+        return weight if isinstance(weight, mx.array) else None
 
     @staticmethod
     def _fold_before_quantizing(
@@ -169,14 +157,16 @@ class LoRASaver:
         # earlier bake or a loader that rewrites weights breaks that, and then the stored weight no
         # longer describes the layer.
         requantized = mx.quantize(source, **layout)
-        stored = (base_linear.weight, base_linear.scales, getattr(base_linear, "biases", None))
-        for again, current in zip(requantized, stored):
-            if current is None or again.shape != current.shape:
-                return None
-            if not mx.array_equal(again.astype(current.dtype), current).item():
-                return None
-        if len(requantized) != 2 + (stored[2] is not None):
+        stored = [
+            part
+            for part in (base_linear.weight, base_linear.scales, getattr(base_linear, "biases", None))
+            if part is not None
+        ]
+        if len(requantized) != len(stored):
             return None
+        for again, current in zip(requantized, stored):
+            if again.shape != current.shape or not mx.array_equal(again.astype(current.dtype), current).item():
+                return None
 
         at = f" at {path}" if path else ""
         merged = source.astype(mx.float32)
@@ -189,13 +179,9 @@ class LoRASaver:
             else:
                 # The factors keep the dtype of the file (often float16 or bfloat16); multiplied in
                 # that dtype, a small product rounds before it reaches the float32 sum.
-                lora_a, lora_b = adapter.lora_A.astype(mx.float32), adapter.lora_B.astype(mx.float32)
-                delta = adapter.scale * mx.transpose(mx.matmul(lora_a, lora_b))
+                delta = LoRASaver._lora_delta(adapter, dtype=mx.float32)
             if delta.shape != merged.shape:
-                raise ValueError(
-                    f"LoRA shape mismatch{at}: base weight {merged.shape} vs adapter delta {delta.shape}. "
-                    f"The adapter does not fit this model."
-                )
+                raise LoRASaver._shape_mismatch(at, merged.shape, delta.shape)
             merged = merged + delta.astype(mx.float32)
 
         try:
@@ -270,10 +256,7 @@ class LoRASaver:
 
         base_weight = dense_weight(base_linear)
         if base_weight.shape != delta.shape:
-            raise ValueError(
-                f"LoRA shape mismatch{at}: base weight {base_weight.shape} vs adapter delta {delta.shape}. "
-                f"The adapter does not fit this model."
-            )
+            raise LoRASaver._shape_mismatch(at, base_weight.shape, delta.shape)
 
         merged = base_weight + delta.astype(base_weight.dtype)
         bias = getattr(base_linear, "bias", None)

@@ -229,7 +229,7 @@ class FluxInitializer:
         lora_paths: list[str] | None,
         lora_scales: list[float] | None,
         bake_lora: bool,
-        weights: LoadedWeights | None = None,
+        weights: LoadedWeights,
     ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=FluxLoRAMapping.get_mapping(),
@@ -237,7 +237,7 @@ class FluxInitializer:
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
-            dense_weights=weights.dense_component("transformer") if weights is not None else None,
+            dense_weights=weights.dense_component("transformer"),
         )
 
     @staticmethod
