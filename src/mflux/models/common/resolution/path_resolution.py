@@ -58,8 +58,9 @@ class PathResolution:
                 # mflux-save writes each component's shards to its save subdir, under names the
                 # HuggingFace patterns never list (SeedVR2 keeps both parts flat at repo root, #823).
                 # Every component needs its shards there, so a half-copied save still warns.
+                # is_file() skips a folder or a broken symlink that has a shard's name.
                 has_saved_checkpoint = bool(saved_subdirs) and all(
-                    any((local_path / d).glob("*.safetensors")) for d in saved_subdirs
+                    any(p.is_file() for p in (local_path / d).glob("*.safetensors")) for d in saved_subdirs
                 )
                 if not has_matching_files and not has_saved_checkpoint:
                     print(

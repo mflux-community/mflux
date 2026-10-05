@@ -227,6 +227,22 @@ class TestPathResolutionEmptyDirectory:
         assert "contains no files matching" in capsys.readouterr().out
 
     @pytest.mark.fast
+    def test_saved_checkpoint_with_shard_named_folder_still_warns(self, tmp_path, capsys):
+        # A folder named like a shard is not a shard.
+        model_dir = tmp_path / "seedvr2-fake"
+        (model_dir / "transformer").mkdir(parents=True)
+        (model_dir / "transformer" / "0.safetensors").touch()
+        (model_dir / "vae" / "0.safetensors").mkdir(parents=True)
+
+        PathResolution.resolve(
+            path=str(model_dir),
+            patterns=["seedvr2_ema_3b_fp16.safetensors", "ema_vae_fp16.safetensors"],
+            saved_subdirs=["transformer", "vae"],
+        )
+
+        assert "contains no files matching" in capsys.readouterr().out
+
+    @pytest.mark.fast
     def test_empty_directory_with_custom_patterns(self, tmp_path, capsys):
         # Create a directory with .bin file but looking for .json
         model_dir = tmp_path / "model"
