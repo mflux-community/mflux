@@ -80,8 +80,9 @@ def test_qwen21_lora_updates_global_layer(tmp_path, name, bake_lora, prefix):
     actual = LoRALoader._get_target_module(model, name)
     assert isinstance(actual, LoRALinear) is (not bake_lora)
     # Same as above, on outputs up to 140: the baked layer lands up to 1e-3 of them away (#812).
-    tolerance = Float32Precision.bound(1e-5, 3e-3)
-    assert mx.allclose(actual(x), expected, atol=Float32Precision.bound(1e-6, 3e-3), rtol=tolerance).item()
+    absolute_tolerance = Float32Precision.bound(1e-6, 3e-3)
+    relative_tolerance = Float32Precision.bound(1e-5, 3e-3)
+    assert mx.allclose(actual(x), expected, atol=absolute_tolerance, rtol=relative_tolerance).item()
 
 
 @pytest.mark.fast
