@@ -163,6 +163,35 @@ def test_shared_loading_allows_dense_and_matching_quantized_components(tmp_path,
 
 
 @pytest.mark.parametrize("bits", [None, 8])
+@pytest.mark.parametrize(
+    ("tiny", "definition"), [(TinyText, Qwen21WeightDefinition), (TinyEdit, QwenImage21WeightDefinition)]
+)
+def test_shared_loading_leaves_the_parameters_to_their_first_use(tmp_path, monkeypatch, bits, tiny, definition):
+    # Evaluating every component at load held all of them at once, so --low-ram could not lower
+    # the peak (#832). The loader puts lazy parameters in the model, the edit text encoder's
+    # generation head included; a forward pass reads what it needs.
+    ModelSaver.save_model(tiny.make(bits), bits, str(tmp_path), definition)
+    restored = tiny.make()
+    evaluated = set()
+    real_eval = mx.eval
+
+    def recording_eval(*arrays):
+        evaluated.update(id(value) for _, value in tree_flatten(list(arrays)))
+        return real_eval(*arrays)
+
+    monkeypatch.setattr(mx, "eval", recording_eval)
+
+    Qwen21Initializer.load_components(restored, tmp_path, definition, None, validate=True)
+
+    loaded = {
+        id(value)
+        for component in definition.get_components()
+        for _, value in tree_flatten(getattr(restored, component.model_attr or component.name).parameters())
+    }
+    assert loaded and not loaded & evaluated
+
+
+@pytest.mark.parametrize("bits", [None, 8])
 @pytest.mark.parametrize("dtype", [mx.float32, mx.bfloat16])
 def test_native_hf_transformer_without_generated_buffers_loads(tmp_path, bits, dtype):
     class TransformerOnly:
