@@ -164,9 +164,12 @@ class LoRASaver:
         ]
         if len(requantized) != len(stored):
             return None
-        for again, current in zip(requantized, stored):
-            if again.shape != current.shape or not mx.array_equal(again.astype(current.dtype), current).item():
-                return None
+        if any(again.shape != current.shape for again, current in zip(requantized, stored)):
+            return None
+        # One read back per layer: the three comparisons are evaluated together.
+        matches = [mx.array_equal(again.astype(current.dtype), current) for again, current in zip(requantized, stored)]
+        if not mx.all(mx.stack(matches)).item():
+            return None
 
         at = f" at {path}" if path else ""
         merged = source.astype(mx.float32)
@@ -204,21 +207,25 @@ class LoRASaver:
     @staticmethod
     def _affine_codes(weight: mx.array, scales: mx.array, biases: mx.array, group_size: int, bits: int) -> mx.array:
         # The affine codes of `weight` rounded against the given scales and biases, packed as
-        # mx.quantize packs them: one bitstream per row, lowest bits first, so 32 codes fill
-        # exactly `bits` words at any width.
+        # mx.quantize packs them: one bitstream per row, lowest bits first.
         rows, cols = weight.shape
         groups = weight.astype(mx.float32).reshape(rows, cols // group_size, group_size)
         steps = scales.astype(mx.float32)[..., None]
         edges = biases.astype(mx.float32)[..., None]
-        codes = mx.clip(mx.round((groups - edges) / steps), 0, (1 << bits) - 1).astype(mx.uint32)
-        codes = codes.reshape(rows, cols // 32, 32)
-        words = [mx.zeros((rows, cols // 32), dtype=mx.uint32) for _ in range(bits)]
-        for i in range(32):
-            word, offset = divmod(i * bits, 32)
-            words[word] = words[word] | mx.left_shift(codes[:, :, i], offset)
-            if offset + bits > 32:
-                words[word + 1] = words[word + 1] | mx.right_shift(codes[:, :, i], 32 - offset)
-        return mx.stack(words, axis=-1).reshape(rows, cols * bits // 32)
+        codes = mx.clip(mx.round((groups - edges) / steps), 0, (1 << bits) - 1)
+        if 32 % bits == 0:
+            # 2, 4 and 8 bits: whole codes per 32-bit word.
+            per_word = 32 // bits
+            words = codes.astype(mx.uint32).reshape(rows, cols // per_word, per_word)
+            shifts = (mx.arange(per_word, dtype=mx.uint32) * bits)[None, None, :]
+            return mx.sum(mx.left_shift(words, shifts), axis=-1)
+        # 3, 5 and 6 bits: eight codes fill exactly `bits` bytes, so they are joined in a uint64
+        # and its low bytes kept.
+        joined = codes.astype(mx.uint64).reshape(rows, cols // 8, 8)
+        shifts = (mx.arange(8, dtype=mx.uint64) * bits)[None, None, :]
+        joined = mx.sum(mx.left_shift(joined, shifts), axis=-1)
+        packed = joined.view(mx.uint8).reshape(rows, cols // 8, 8)[:, :, :bits]
+        return packed.reshape(rows, cols * bits // 8).view(mx.uint32)
 
     @staticmethod
     def _quantize_dense(
