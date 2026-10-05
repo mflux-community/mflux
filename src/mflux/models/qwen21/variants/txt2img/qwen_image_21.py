@@ -162,6 +162,13 @@ class QwenImage21(nn.Module):
 
         latents = Qwen21LatentCreator.unpack_latents(latents=latents, height=config.height, width=config.width)
         decoded = VAEUtil.decode(vae=self.vae, latent=latents, tiling_config=self.tiling_config)
+        parameters = {
+            **step_cache.generation_parameters(step_cache_ratio),
+            **self.compute_precision.generation_parameters(),
+        }
+        if scheduler != "linear":
+            # The schedule changes the image, so a run that used another one records it for --config-from-conf.
+            parameters["scheduler"] = scheduler
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
@@ -172,10 +179,7 @@ class QwenImage21(nn.Module):
             negative_prompt=negative_prompt,
             lora_paths=self.lora_paths,
             lora_scales=self.lora_scales,
-            generation_parameters={
-                **step_cache.generation_parameters(step_cache_ratio),
-                **self.compute_precision.generation_parameters(),
-            },
+            generation_parameters=parameters,
         )
 
     def save_model(self, base_path: str) -> None:

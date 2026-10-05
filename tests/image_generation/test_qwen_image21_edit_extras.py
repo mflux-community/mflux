@@ -1,3 +1,4 @@
+import json
 import sys
 from argparse import Namespace
 from types import SimpleNamespace
@@ -13,7 +14,10 @@ from mflux.callbacks.callback_manager import CallbackManager
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
-from mflux.models.qwen21.cli import qwen21_edit_generate as cli
+from mflux.models.qwen21.cli import (
+    qwen21_edit_generate as cli,
+    qwen21_generate,
+)
 from mflux.models.qwen21.model.qwen21_text_encoder.grounding import QwenImage21Grounding
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
@@ -262,6 +266,45 @@ def test_cli_passes_the_scheduler_to_the_edit(tmp_path, monkeypatch):
     cli.main()
 
     assert calls and calls[0]["scheduler"] == "viggle_turbo"
+
+
+@pytest.mark.parametrize("scheduler", ["linear", "viggle_turbo"])
+def test_edit_records_a_scheduler_other_than_linear(tmp_path, scheduler):
+    # The schedule changes the image, so --config-from-conf has to find it in the sidecar.
+    image = _stub_model().generate_image(
+        seed=1,
+        prompt="edit",
+        num_inference_steps=6,
+        image_paths=[_source(tmp_path)],
+        output_resolution=64,
+        scheduler=scheduler,
+    )
+
+    assert image.generation_parameters.get("scheduler") == (None if scheduler == "linear" else scheduler)
+
+
+@pytest.mark.parametrize("command", [cli, qwen21_generate])
+def test_config_from_conf_replays_the_scheduler(tmp_path, monkeypatch, command):
+    sidecar = tmp_path / "image.metadata.json"
+    recorded = {
+        "prompt": "edit",
+        "seed": 1,
+        "steps": 6,
+        "scheduler": "viggle_turbo",
+        "image_paths": [_source(tmp_path)],
+    }
+    sidecar.write_text(json.dumps(recorded))
+
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar)])
+    assert command.build_parser().parse_args().scheduler == "viggle_turbo"
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), "--scheduler", "linear"])
+    assert command.build_parser().parse_args().scheduler == "linear"
+
+
+def test_rewrite_prompt_takes_at_most_ten_references():
+    # generate_image refuses an eleventh reference, so a rewrite that names <image11> could not be used.
+    with pytest.raises(ValueError, match="at most 10"):
+        _stub_model().rewrite_prompt("edit", ["unread.png"] * 11)
 
 
 def test_image_paths_take_in_memory_images(tmp_path):

@@ -75,8 +75,7 @@ class QwenImage21Edit(nn.Module):
         scheduler: str = "linear",
     ) -> GeneratedImage:
         image_paths = image_paths or []
-        if len(image_paths) > 10:
-            raise ValueError("Qwen-Image-2.1 supports at most 10 reference images.")
+        QwenImage21Edit._check_reference_count(image_paths)
         QwenImage21LatentCreator.validate_resolution(output_resolution)
         if not 0 < strength <= 1:
             raise ValueError(f"strength must be in (0, 1], got {strength}.")
@@ -219,6 +218,8 @@ class QwenImage21Edit(nn.Module):
         }
         if strength < 1:
             parameters["strength"] = strength
+        if scheduler != "linear":
+            parameters["scheduler"] = scheduler
         if auto_mask is not None:
             parameters["auto_mask"] = auto_mask
         if use_step_cache:
@@ -319,7 +320,13 @@ class QwenImage21Edit(nn.Module):
         # then pass it as the prompt with enhance_prompt=False (#831).
         if not image_paths:
             raise ValueError("rewrite_prompt needs at least one reference image.")
+        QwenImage21Edit._check_reference_count(image_paths)
         return self._rewrite_prompt(prompt, [open_oriented(path).convert("RGBA") for path in image_paths])
+
+    @staticmethod
+    def _check_reference_count(image_paths: list) -> None:
+        if len(image_paths) > 10:
+            raise ValueError("Qwen-Image-2.1 supports at most 10 reference images.")
 
     @staticmethod
     def _recorded_path(image: str | Path | Image.Image) -> str:

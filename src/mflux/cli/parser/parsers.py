@@ -516,6 +516,13 @@ class CommandLineParser(argparse.ArgumentParser):
                 if not isinstance(recorded_precision, str) or recorded_precision not in ComputePrecision.CHOICES:
                     self.error(f"compute_precision in --config-from-conf: invalid choice {recorded_precision!r} (choose from {', '.join(sorted(ComputePrecision.CHOICES))})")  # fmt: off
                 namespace.compute_precision = recorded_precision
+            # A schedule other than the default changes the image as well (Qwen-Image-2.1's viggle_turbo).
+            if (
+                hasattr(namespace, "scheduler")
+                and prior_gen_metadata.get("scheduler") is not None
+                and not self._option_was_provided("--scheduler")
+            ):
+                namespace.scheduler = prior_gen_metadata["scheduler"]
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")
