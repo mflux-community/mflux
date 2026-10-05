@@ -170,7 +170,7 @@ edited = model.generate_image(
 edited.save("panda-scarf.png")
 ```
 
-`model.rewrite_prompt(prompt, image_paths)` returns the prompt that `enhance_prompt=True` would encode, so you can read or change it and then pass it as `prompt` with `enhance_prompt=False`. Where `enhance_prompt=True` falls back to the original instruction, `rewrite_prompt` raises. The rewrite sees every reference image. `image_paths` also takes PIL images; the image metadata then records `<in-memory image>` for them.
+`model.rewrite_prompt(prompt, images)` returns the prompt that `enhance_prompt=True` would encode, so you can read or change it and then pass it as `prompt` with `enhance_prompt=False`. Where `enhance_prompt=True` falls back to the original instruction, `rewrite_prompt` raises. The rewrite sees every reference image. `images`, like `image_paths` in `generate_image`, takes paths or PIL images; the image metadata then records `<in-memory image>` for them.
 
 ## Reference and validation
 

@@ -315,14 +315,14 @@ class QwenImage21Edit(nn.Module):
         logger.info("auto_mask %r resolved to bbox %s", auto_mask, tuple(round(v, 3) for v in bbox))
         return QwenImage21Grounding.rasterize_mask(bbox, (width, height))
 
-    def rewrite_prompt(self, prompt: str, image_paths: list[str | Path | Image.Image]) -> str:
+    def rewrite_prompt(self, prompt: str, images: list[str | Path | Image.Image]) -> str:
         # The rewrite enhance_prompt=True runs, for a caller who wants to read or change it first and
         # then pass it as the prompt with enhance_prompt=False (#831). Unlike enhance_prompt, it raises
         # when it can't rewrite: handing back the terse instruction would pass for a rewrite.
-        if not image_paths:
+        if not images:
             raise ValueError("rewrite_prompt needs at least one reference image.")
-        QwenImage21Edit._check_reference_count(image_paths)
-        return self._rewritten(prompt, [open_oriented(path).convert("RGBA") for path in image_paths])
+        QwenImage21Edit._check_reference_count(images)
+        return self._rewritten(prompt, [open_oriented(image).convert("RGBA") for image in images])
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:
