@@ -86,8 +86,12 @@ class LoKrLinear(nn.Module):
         hc = mx.swapaxes(hc, -1, -2)
         return hc.reshape(*prefix_shape, -1)
 
-    def delta_weight(self, base_weight: mx.array | None = None) -> mx.array:
-        delta = mx.kron(self.lokr_w1, self.lokr_w2).reshape((self.output_dims, self.input_dims))
+    def delta_weight(self, base_weight: mx.array | None = None, dtype: mx.Dtype | None = None) -> mx.array:
+        # dtype, when given, is the precision of the Kronecker product; otherwise it is the factors' own.
+        w1, w2 = self.lokr_w1, self.lokr_w2
+        if dtype is not None:
+            w1, w2 = w1.astype(dtype), w2.astype(dtype)
+        delta = mx.kron(w1, w2).reshape((self.output_dims, self.input_dims))
         if self.dora_scale is None:
             return delta
 
