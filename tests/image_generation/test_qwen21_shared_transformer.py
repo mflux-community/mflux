@@ -7,7 +7,6 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
-from tests.float32_precision import Float32Precision
 
 pytestmark = pytest.mark.fast
 
@@ -125,7 +124,4 @@ class TestQwen21SharedTransformer:
         for index, timestep in enumerate([0.8, 0.5]):
             target = latents.at[:, -4:].add(timestep)
             actual = model(target, text, mx.array([timestep]), layout, cache)
-            # MLX on the CPU matches the pinned output to 4e-7; where float32 matmuls are not full
-            # precision (an M5 GPU) it lands up to 4.9e-4 away (#812).
-            tolerance = Float32Precision.bound(1e-5, 1e-3)
-            np.testing.assert_allclose(np.array(actual), expected[index][None], atol=tolerance, rtol=1e-5)
+            np.testing.assert_allclose(np.array(actual), expected[index][None], atol=1e-5, rtol=1e-5)
