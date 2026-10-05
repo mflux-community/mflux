@@ -32,7 +32,7 @@ class Krea2Initializer:
         Krea2Initializer._init_tokenizers(model, path)
         Krea2Initializer._init_models(model, model_config)
         Krea2Initializer._apply_weights(model, weights, quantize)
-        Krea2Initializer._apply_lora(model, lora_paths, lora_scales, bake_lora)
+        Krea2Initializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
         del weights
         mx.eval(model)
         mx.clear_cache()
@@ -86,6 +86,7 @@ class Krea2Initializer:
         lora_paths: list[str] | None,
         lora_scales: list[float] | None,
         bake_lora: bool,
+        weights: LoadedWeights,
     ) -> None:
         model.lora_paths, model.lora_scales = LoRALoader.load_and_apply_lora(
             lora_mapping=Krea2LoRAMapping.get_mapping(),
@@ -93,4 +94,5 @@ class Krea2Initializer:
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+            dense_weights=weights.dense_component("transformer"),
         )
