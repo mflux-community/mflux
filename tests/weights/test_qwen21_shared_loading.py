@@ -19,6 +19,7 @@ from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from tests.float32_precision import Float32Precision
 
 pytestmark = pytest.mark.fast
 
@@ -277,7 +278,10 @@ def test_edit_lora_save_reload_preserves_adapter_once(tmp_path, monkeypatch, bit
 
     np.testing.assert_array_equal(TinyEdit.output(restored), after_save)
     if bits is None:
-        np.testing.assert_allclose(after_save, adapted, atol=1e-5, rtol=1e-5)
+        # Saved, the adapter is baked into the weights, so the output comes from other products than
+        # with the adapter live; where float32 matmuls are not full precision that lands up to 1.3e-4
+        # away (#812).
+        np.testing.assert_allclose(after_save, adapted, atol=Float32Precision.bound(1e-5, 3e-4), rtol=1e-5)
     assert not np.allclose(after_save, before, atol=1e-5)
     assert restored.lora_paths == []
     assert restored.lora_scales == []
