@@ -49,8 +49,24 @@ def _delta(lora: LoRALinear) -> mx.array:
     return (lora.scale * mx.transpose(mx.matmul(lora.lora_A, lora.lora_B))).astype(mx.float32)
 
 
+def _layout(weight: mx.array, bits: int) -> tuple[mx.array, mx.array]:
+    # The scales and biases mx.quantize picks for the float32 sum, in the dtype the layer keeps.
+    _, scales, biases = mx.quantize(weight, group_size=GROUP, bits=bits)
+    return scales.astype(mx.bfloat16), biases.astype(mx.bfloat16)
+
+
 def _codes(weight: mx.array, bits: int) -> mx.array:
-    return mx.quantize(weight, group_size=GROUP, bits=bits)[0]
+    # Each weight's nearest code under those stored scales and biases, unpacked.
+    scales, biases = _layout(weight, bits)
+    groups = weight.astype(mx.float32).reshape(weight.shape[0], -1, GROUP)
+    codes = mx.round((groups - biases.astype(mx.float32)[..., None]) / scales.astype(mx.float32)[..., None])
+    return mx.clip(codes, 0, 2**bits - 1).reshape(weight.shape)
+
+
+def _unpacked(layer: nn.QuantizedLinear) -> mx.array:
+    # The layer's codes as MLX itself unpacks them.
+    ones = mx.ones(layer.scales.shape, dtype=mx.float32)
+    return mx.dequantize(layer.weight, ones, mx.zeros_like(ones), group_size=layer.group_size, bits=layer.bits)
 
 
 def _strength(baked: nn.Module, base: nn.Module, lora: LoRALinear) -> float:
@@ -71,10 +87,45 @@ def test_fold_equals_quantizing_the_merged_weight(bits):
 
     assert isinstance(folded, nn.QuantizedLinear)
     assert (folded.bits, folded.group_size) == (bits, GROUP)
-    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + _delta(lora), bits))
+    target = weight.astype(mx.float32) + _delta(lora)
+    assert mx.array_equal(_unpacked(folded), _codes(target, bits))
+    scales, biases = _layout(target, bits)
+    assert mx.array_equal(folded.scales, scales) and mx.array_equal(folded.biases, biases)
     # Float32 scales would promote every activation through the layer.
     assert folded.scales.dtype == base.scales.dtype == mx.bfloat16
     assert folded.biases.dtype == base.biases.dtype
+
+
+def test_fold_decodes_closer_than_codes_rounded_against_float32_scales():
+    # Codes rounded against the float32 scales and decoded with the bfloat16 ones move whole groups
+    # by about the delta this fold keeps. At q8 that is a fifth of the layer's error here.
+    weight = _dense_weight()
+    base = _quantized(weight, 8)
+    lora = _small_adapter(base)
+    target = weight.astype(mx.float32) + _delta(lora)
+    codes, scales, biases = mx.quantize(target, group_size=GROUP, bits=8)
+    cast_after = mx.dequantize(codes, scales.astype(mx.bfloat16), biases.astype(mx.bfloat16), group_size=GROUP, bits=8)
+
+    folded = LoRASaver._fold_before_quantizing(base, [lora], weight)
+
+    def error(decoded: mx.array) -> float:
+        return mx.sqrt(mx.mean((decoded.astype(mx.float32) - target) ** 2)).item()
+
+    assert error(dense_weight(folded)) < 0.9 * error(cast_after)
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+def test_affine_codes_are_packed_the_way_mlx_unpacks_them(bits):
+    mx.random.seed(bits)
+    weight = mx.random.normal((OUT, IN)) * 0.04
+    scales, biases = _layout(weight, bits)
+
+    packed = LoRASaver._affine_codes(weight, scales, biases, group_size=GROUP, bits=bits)
+
+    assert packed.dtype == mx.uint32 and packed.shape == (OUT, IN * bits // 32)
+    ones = mx.ones(scales.shape, dtype=mx.float32)
+    unpacked = mx.dequantize(packed, ones, mx.zeros_like(ones), group_size=GROUP, bits=bits)
+    assert mx.array_equal(unpacked, _codes(weight, bits))
 
 
 def test_fold_keeps_the_whole_adapter_where_the_grid_fold_loses_part():
@@ -102,7 +153,7 @@ def test_fold_multiplies_low_precision_factors_in_float32():
 
     folded = LoRASaver._fold_before_quantizing(base, [lora], weight)
 
-    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + lora.scale * exact, 8))
+    assert mx.array_equal(_unpacked(folded), _codes(weight.astype(mx.float32) + lora.scale * exact, 8))
 
 
 def test_fold_sums_stacked_adapters():
@@ -112,7 +163,7 @@ def test_fold_sums_stacked_adapters():
 
     folded = LoRASaver._fold_before_quantizing(base, [first, second], weight)
 
-    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + _delta(first) + _delta(second), 8))
+    assert mx.array_equal(_unpacked(folded), _codes(weight.astype(mx.float32) + _delta(first) + _delta(second), 8))
 
 
 def test_a_stored_weight_the_layer_was_not_quantized_from_is_ignored():
@@ -152,7 +203,7 @@ def test_fold_applies_a_lokr_adapter_to_the_dense_weight(with_dora):
 
     merged = weight.astype(mx.float32)
     merged = merged + 0.5 * lokr.delta_weight(base_weight=merged)
-    assert mx.array_equal(folded.weight, _codes(merged, 8))
+    assert mx.array_equal(_unpacked(folded), _codes(merged, 8))
     assert folded.scales.dtype == mx.bfloat16
 
 
@@ -172,7 +223,7 @@ def test_fold_takes_the_lokr_product_in_float32():
 
     folded = LoRASaver._fold_before_quantizing(base, [lokr], weight)
 
-    assert mx.array_equal(folded.weight, _codes(weight.astype(mx.float32) + 0.5 * exact, 8))
+    assert mx.array_equal(_unpacked(folded), _codes(weight.astype(mx.float32) + 0.5 * exact, 8))
 
 
 def test_bake_and_strip_folds_a_lokr_layer_before_quantizing():
@@ -189,7 +240,7 @@ def test_bake_and_strip_folds_a_lokr_layer_before_quantizing():
 
     # The fold onto the grid would have re-quantized this q4 layer at q8.
     assert transformer.blocks[0].proj.bits == 4
-    assert mx.array_equal(transformer.blocks[0].proj.weight, expected)
+    assert mx.array_equal(_unpacked(transformer.blocks[0].proj), expected)
 
 
 def test_a_dense_base_is_left_to_the_dense_fold():
@@ -225,7 +276,9 @@ def test_bake_and_strip_folds_the_layers_found_in_the_dense_weights(capsys):
 
     # Found in the tree: folded before quantizing, at the precision the layer had.
     assert transformer.blocks[0].proj.bits == 4
-    assert mx.array_equal(transformer.blocks[0].proj.weight, _codes(stored.astype(mx.float32) + _delta(stored_lora), 4))
+    assert mx.array_equal(
+        _unpacked(transformer.blocks[0].proj), _codes(stored.astype(mx.float32) + _delta(stored_lora), 4)
+    )
     assert transformer.blocks[2].proj.bits == 4
     # Not in the tree: folded onto the grid, with the q8 escape for a sub-8-bit layer.
     assert transformer.blocks[1].proj.bits == 8
@@ -309,7 +362,7 @@ def test_loader_passes_the_dense_weights_to_the_bake(tmp_path):
 
     delta = 0.5 * mx.transpose(mx.matmul(mx.transpose(lora_a), mx.transpose(lora_b)))
     merged = weight.astype(mx.float32) + delta.astype(mx.float32)
-    assert mx.array_equal(transformer.blocks[0].proj.weight, _codes(merged, 8))
+    assert mx.array_equal(_unpacked(transformer.blocks[0].proj), _codes(merged, 8))
 
 
 def test_dense_component_is_only_offered_for_an_unquantized_checkpoint():

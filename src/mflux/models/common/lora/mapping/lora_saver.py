@@ -203,12 +203,36 @@ class LoRASaver:
         except Exception as e:
             raise RuntimeError(f"Failed to bake a LoRA into {type(base_linear).__name__}{at}: {e}") from e
         # Quantizing a float32 weight gives float32 scales, and those would promote every
-        # activation that goes through the layer. Keep the dtype the layer had.
+        # activation that goes through the layer. Keep the dtype the layer had, and round the
+        # codes against the scales and biases in that dtype: codes rounded against the float32
+        # ones and decoded with the rounded ones move a whole group by up to the delta itself.
         folded.scales = folded.scales.astype(base_linear.scales.dtype)
         if getattr(base_linear, "biases", None) is not None:
             folded.biases = folded.biases.astype(base_linear.biases.dtype)
+            folded.weight = LoRASaver._affine_codes(
+                merged, folded.scales, folded.biases, group_size=layout["group_size"], bits=layout["bits"]
+            )
         mx.eval(folded.parameters())
         return folded
+
+    @staticmethod
+    def _affine_codes(weight: mx.array, scales: mx.array, biases: mx.array, group_size: int, bits: int) -> mx.array:
+        # The affine codes of `weight` rounded against the given scales and biases, packed as
+        # mx.quantize packs them: one bitstream per row, lowest bits first, so 32 codes fill
+        # exactly `bits` words at any width.
+        rows, cols = weight.shape
+        groups = weight.astype(mx.float32).reshape(rows, cols // group_size, group_size)
+        steps = scales.astype(mx.float32)[..., None]
+        edges = biases.astype(mx.float32)[..., None]
+        codes = mx.clip(mx.round((groups - edges) / steps), 0, (1 << bits) - 1).astype(mx.uint32)
+        codes = codes.reshape(rows, cols // 32, 32)
+        words = [mx.zeros((rows, cols // 32), dtype=mx.uint32) for _ in range(bits)]
+        for i in range(32):
+            word, offset = divmod(i * bits, 32)
+            words[word] = words[word] | mx.left_shift(codes[:, :, i], offset)
+            if offset + bits > 32:
+                words[word + 1] = words[word + 1] | mx.right_shift(codes[:, :, i], 32 - offset)
+        return mx.stack(words, axis=-1).reshape(rows, cols * bits // 32)
 
     @staticmethod
     def _quantize_dense(
