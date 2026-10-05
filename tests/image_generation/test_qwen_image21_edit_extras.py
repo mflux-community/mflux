@@ -221,6 +221,28 @@ def test_rewrite_prompt_is_public_and_matches_enhance_prompt(tmp_path):
     assert prompts == ["a detailed edit"]
 
 
+def test_rewrite_prompt_raises_when_it_cannot_rewrite(tmp_path):
+    # enhance_prompt falls back to the instruction; the public method says so instead, or the caller
+    # would generate from the terse instruction thinking it was rewritten.
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: "no json here"
+    with pytest.raises(ValueError, match="could not be parsed"):
+        model.rewrite_prompt("edit", [_source(tmp_path)])
+
+    released = _stub_model()
+    released.text_encoder = None
+    with pytest.raises(RuntimeError, match="released by the memory saver"):
+        released.rewrite_prompt("edit", [_source(tmp_path)])
+
+
+def test_enhance_prompt_falls_back_when_the_text_encoder_was_released(tmp_path):
+    prompts = []
+    model = _stub_model(prompts)
+    model.text_encoder = None
+    _generate(model, tmp_path, enhance_prompt=True)
+    assert prompts == ["edit"]
+
+
 def test_scheduler_reaches_the_edit_schedule(tmp_path):
     # The CLI checked --scheduler viggle_turbo and then never passed it on (#831).
     model = _stub_model()

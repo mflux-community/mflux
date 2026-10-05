@@ -317,11 +317,12 @@ class QwenImage21Edit(nn.Module):
 
     def rewrite_prompt(self, prompt: str, image_paths: list[str | Path | Image.Image]) -> str:
         # The rewrite enhance_prompt=True runs, for a caller who wants to read or change it first and
-        # then pass it as the prompt with enhance_prompt=False (#831).
+        # then pass it as the prompt with enhance_prompt=False (#831). Unlike enhance_prompt, it raises
+        # when it can't rewrite: handing back the terse instruction would pass for a rewrite.
         if not image_paths:
             raise ValueError("rewrite_prompt needs at least one reference image.")
         QwenImage21Edit._check_reference_count(image_paths)
-        return self._rewrite_prompt(prompt, [open_oriented(path).convert("RGBA") for path in image_paths])
+        return self._rewritten(prompt, [open_oriented(path).convert("RGBA") for path in image_paths])
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:
@@ -336,17 +337,19 @@ class QwenImage21Edit(nn.Module):
     def _rewrite_prompt(self, prompt: str, images: list[Image.Image]) -> str:
         # Official serving recipe: rewrite a terse instruction into a detailed description
         # before encoding. Best-effort: any failure falls back to the original instruction.
-        if not prompt or not prompt.strip():
-            return prompt
         try:
-            reply = self._vision_reply(QwenImage21Grounding.rewrite_request(prompt, len(images)), images, 384)
+            return self._rewritten(prompt, images)
         except Exception as exc:  # noqa: BLE001
             logger.warning("enhance_prompt failed (%s); using the original", exc)
             return prompt
+
+    def _rewritten(self, prompt: str, images: list[Image.Image]) -> str:
+        if not prompt or not prompt.strip():
+            return prompt
+        reply = self._vision_reply(QwenImage21Grounding.rewrite_request(prompt, len(images)), images, 384)
         rewritten = QwenImage21Grounding.parse_rewrite(reply)
         if rewritten is None:
-            logger.warning("enhance_prompt could not parse the rewrite reply; using the original")
-            return prompt
+            raise ValueError(f"The rewrite reply could not be parsed: {reply[:120]!r}")
         return rewritten
 
     def _verify_output(self, instruction: str, original: Image.Image, output: Image.Image) -> dict:
