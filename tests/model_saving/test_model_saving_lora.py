@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from mlx import nn
 
 from mflux.models.z_image.variants import ZImageTurbo
 
@@ -34,7 +35,7 @@ class TestModelSavingLora:
             # ...and given an 'on-the-fly' quantized model which we generate an image from.
             # The adapters stay live on both models: baking folds them into the dense weights on
             # this load and onto the saved q4 grid on the next one, so only live adapters compare
-            # the two quantized bases (#814).
+            # the two quantized bases (#814). The baked routes are covered by the test below.
             modelB = ZImageTurbo(
                 quantize=4,
                 lora_paths=lora_paths,
@@ -77,6 +78,59 @@ class TestModelSavingLora:
         finally:
             # cleanup
             TestModelSavingLora._delete_folder_if_exists(PATH)
+
+    @pytest.mark.slow
+    def test_bake_lora_into_a_saved_4bit_checkpoint(self):
+        # A saved q4 checkpoint has no dense weights to fold into, so its LoRA layers are folded onto
+        # the grid and re-quantized at q8, while a -q 4 load folds before quantizing and stays q4
+        # (#814). Both must still land near the live adapters: on an M5 Max the baked images are at
+        # 23 dB (saved) and 26 dB (-q 4) from the live ones, the image without the LoRAs at 17 dB.
+        TestModelSavingLora._delete_folder_if_exists(PATH)
+
+        try:
+            model = ZImageTurbo(quantize=4)
+            model.save_model(PATH)
+            del model
+
+            images, bits = {}, {}
+            for route, source in {"saved": {"model_path": PATH}, "dense": {"quantize": 4}}.items():
+                for bake in (True, False):
+                    model = ZImageTurbo(
+                        lora_paths=TestModelSavingLora.LORA_PATHS,
+                        lora_scales=TestModelSavingLora.LORA_SCALES,
+                        bake_lora=bake,
+                        **source,
+                    )
+                    if bake:
+                        bits[route] = {
+                            module.bits
+                            for _, module in model.transformer.named_modules()
+                            if isinstance(module, nn.QuantizedLinear)
+                        }
+                    images[route, bake] = TestModelSavingLora._generate(model)
+                    del model
+
+            assert bits == {"saved": {4, 8}, "dense": {4}}
+            for route in ("saved", "dense"):
+                assert TestModelSavingLora._psnr(images[route, True], images[route, False]) > 20, route
+
+        finally:
+            TestModelSavingLora._delete_folder_if_exists(PATH)
+
+    @staticmethod
+    def _generate(model) -> np.ndarray:
+        image = model.generate_image(
+            seed=44,
+            prompt="mkym this is made of wool, pizza",
+            num_inference_steps=2,
+            height=368,
+            width=640,
+        )
+        return np.array(image.image).astype(np.float32)
+
+    @staticmethod
+    def _psnr(a: np.ndarray, b: np.ndarray) -> float:
+        return float(10 * np.log10(255**2 / np.mean((a - b) ** 2)))
 
     @pytest.mark.slow
     def test_save_baked_lora_loads_with_same_output(self):
