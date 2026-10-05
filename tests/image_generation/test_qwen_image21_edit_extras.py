@@ -168,6 +168,115 @@ def test_enhance_prompt_encodes_the_rewrite_and_records_the_original(tmp_path):
     assert image.generation_parameters["original_prompt"] == "edit"
 
 
+def test_enhance_prompt_shows_the_rewrite_every_reference_image(tmp_path):
+    # Only the first image used to reach the rewrite, so an instruction about <image2> came back
+    # as "<image2> is not present" (#831).
+    model = _stub_model()
+    seen = []
+
+    def reply(instruction, images, tokens):
+        seen.append((instruction, len(images)))
+        return '{"rewritten_prompt": "a detailed edit"}'
+
+    model._vision_reply = reply
+
+    class _Encoded(Exception):
+        pass
+
+    def stop(prompt, images):
+        raise _Encoded  # the stubbed encoder serves one reference; the rewrite is what this checks
+
+    model._encode_prompt = stop
+    second = tmp_path / "second.png"
+    Image.new("RGBA", (64, 64), (10, 200, 30, 255)).save(second)
+    with pytest.raises(_Encoded):
+        model.generate_image(
+            seed=1,
+            prompt="put the hat from <image2> on <image1>",
+            num_inference_steps=4,
+            image_paths=[_source(tmp_path), str(second)],
+            output_resolution=64,
+            enhance_prompt=True,
+        )
+    instruction, count = seen[0]
+    assert count == 2
+    assert "<image1>, the image to be edited, and the reference image <image2>" in instruction
+
+
+def test_rewrite_prompt_is_public_and_matches_enhance_prompt(tmp_path):
+    prompts = []
+    model = _stub_model(prompts)
+    model._vision_reply = lambda instruction, images, tokens: '{"rewritten_prompt": "a detailed edit"}'
+
+    rewritten = model.rewrite_prompt("edit", [_source(tmp_path)])
+    model.generate_image(
+        seed=1, prompt=rewritten, num_inference_steps=4, image_paths=[_source(tmp_path)], output_resolution=64
+    )
+
+    assert rewritten == "a detailed edit"
+    assert prompts == ["a detailed edit"]
+
+
+def test_scheduler_reaches_the_edit_schedule(tmp_path):
+    # The CLI checked --scheduler viggle_turbo and then never passed it on (#831).
+    model = _stub_model()
+    schedulers = []
+
+    class _SchedulerRecorder(_Recorder):
+        def call_before_loop(self, seed, prompt, latents, config, **kwargs):
+            schedulers.append(type(config.scheduler).__name__)
+
+    model.callbacks.register(_SchedulerRecorder())
+    model.generate_image(
+        seed=1,
+        prompt="edit",
+        num_inference_steps=6,
+        image_paths=[_source(tmp_path)],
+        output_resolution=64,
+        scheduler="viggle_turbo",
+    )
+
+    assert schedulers == ["ViggleTurboScheduler"]
+
+
+def test_cli_passes_the_scheduler_to_the_edit(tmp_path, monkeypatch):
+    calls = []
+
+    class _Model:
+        def __init__(self, **kwargs):
+            self.callbacks = CallbackRegistry()
+
+        def generate_image(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(save=lambda *args, **kwargs: None, verification=None)
+
+    monkeypatch.setattr(cli, "QwenImage21Edit", _Model)
+    monkeypatch.setattr(cli.CallbackManager, "register_callbacks", lambda *a, **k: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mflux-generate-qwen-2.1-edit", "--prompt", "edit", "--image-paths", _source(tmp_path), "--steps", "6",
+         "--scheduler", "viggle_turbo", "--output", str(tmp_path / "out.png")],
+    )  # fmt: skip
+
+    cli.main()
+
+    assert calls and calls[0]["scheduler"] == "viggle_turbo"
+
+
+def test_image_paths_take_in_memory_images(tmp_path):
+    # Images passed directly work like paths, also with strength < 1, and the metadata records a
+    # placeholder instead of the object's repr, which carries a memory address (#831).
+    model = _stub_model()
+    source = Image.new("RGBA", (64, 64), (*SOURCE_RGB, 255))
+
+    image = model.generate_image(
+        seed=1, prompt="edit", num_inference_steps=4, image_paths=[source], output_resolution=64, strength=0.5
+    )
+
+    assert image.image_paths == ["<in-memory image>"]
+
+
 def test_enhance_prompt_falls_back_on_an_unparseable_reply(tmp_path):
     prompts = []
     model = _stub_model(prompts)

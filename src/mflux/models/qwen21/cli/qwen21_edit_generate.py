@@ -198,6 +198,7 @@ def main() -> None:
                 enhance_prompt=args.enhance_prompt,
                 verify=args.verify,
                 verify_retries=args.verify_retries,
+                scheduler=args.scheduler,
             )
             if image.verification is not None:
                 print(f"verification: {image.verification}")

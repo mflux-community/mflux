@@ -170,6 +170,8 @@ edited = model.generate_image(
 edited.save("panda-scarf.png")
 ```
 
+`model.rewrite_prompt(prompt, image_paths)` returns the prompt that `enhance_prompt=True` would encode, so you can read or change it and then pass it as `prompt` with `enhance_prompt=False`. The rewrite sees every reference image. `image_paths` also takes PIL images; the image metadata then records `<in-memory image>` for them.
+
 ## Reference and validation
 
 The port targets checkpoint revision [`b3179ad`](https://huggingface.co/Qwen/Qwen-Image-2.1/tree/b3179ad355be050328e483a9dfdd9e60cd62adfa) and the Diffusers implementation at [`80c7ed2`](https://github.com/huggingface/diffusers/tree/80c7ed262aeffbeb43ef13ae04baeb9b84515a69/src/diffusers/pipelines/qwenimage21). Adapted model code retains its Apache-2.0 attribution; the upstream license is included in [LICENSE.diffusers](LICENSE.diffusers). Checkpoint use is governed by the model's [Qwen Research License](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/b3179ad355be050328e483a9dfdd9e60cd62adfa/LICENSE).

@@ -16,7 +16,7 @@ GROUNDING_PROMPT = "Outline the position of {query} and output the bbox coordina
 # describe what must stay unchanged, and answer as JSON with a rewritten_prompt field.
 REWRITE_PROMPT = (
     "You rewrite terse image-editing instructions into detailed prompts for an image "
-    "editing model. Look at <image1>, the image to be edited. Rewrite the instruction "
+    "editing model. Look at {images}. Rewrite the instruction "
     "below into ONE descriptive paragraph of 40-120 words that:\n"
     "- describes the requested change concretely (color, material, style, position) as "
     "already applied to the image;\n"
@@ -48,6 +48,16 @@ class QwenImage21Grounding:
     GROUNDING_PROMPT = GROUNDING_PROMPT
     REWRITE_PROMPT = REWRITE_PROMPT
     VERIFY_PROMPT = VERIFY_PROMPT
+
+    @staticmethod
+    def rewrite_request(instruction: str, image_count: int) -> str:
+        # The rewrite sees every reference image: an instruction that names <image2> needs it (#831).
+        images = "<image1>, the image to be edited"
+        if image_count == 2:
+            images += ", and the reference image <image2>"
+        elif image_count > 2:
+            images += ", and the reference images " + ", ".join(f"<image{i}>" for i in range(2, image_count + 1))
+        return REWRITE_PROMPT.format(images=images, instruction=instruction)
 
     @staticmethod
     def chat(instruction: str, image_count: int) -> str:
