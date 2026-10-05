@@ -7,6 +7,7 @@ from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.lora.mapping.lora_mapping import LoRATarget
 from mflux.models.z_image.model.z_image_transformer.transformer import ZImageTransformer
 from mflux.models.z_image.weights.z_image_lora_mapping import ZImageLoRAMapping
+from tests.float32_precision import Float32Precision
 
 
 @pytest.mark.fast
@@ -38,9 +39,11 @@ def test_fused_qkv_matches_dense_reference(tmp_path, layer_type, bits, bake_lora
     LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [0.7], bake_lora=bake_lora)
 
     actual = mx.concatenate([getattr(attention, name)(x) for name in ("to_q", "to_k", "to_v")], axis=-1)
-    # Unbaked LoRA paths on an M5 GPU sit up to 1.7e-3 from the dense reference (#812); the
-    # baked path is exact. An unapplied adapter is off by 0.1, a 0.5 scale instead of 0.7 by 0.03.
-    assert mx.allclose(actual, expected, atol=1e-3, rtol=2e-3).item()
+    # expected is one product with the three layers' merged weight; both the baked and the live
+    # layers get there through other products, which land up to 1.7e-3 away where float32 matmuls
+    # are not full precision (#812). An unapplied adapter is off by 0.1, a 0.5 scale instead of
+    # 0.7 by 0.03.
+    assert mx.allclose(actual, expected, atol=Float32Precision.bound(1e-6, 4e-3)).item()
     if bits and bake_lora:
         assert attention.to_q.bits == 8
 
@@ -86,8 +89,10 @@ def test_linear_lora_and_bias_delta(tmp_path, source, path, bits):
     LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)] * 3, [0.7, -0.3, -0.8])
 
     actual = LoRALoader._get_target_module(model, path)(x)
-    assert mx.allclose(actual, expected, atol=0.02 if bits else 1e-3).item()
-    assert mx.allclose(LoRALoader._get_target_module(model, path).bias, expected_bias, atol=1e-4).item()
+    # Unquantized, the baked weight sums the three adapters in another order than expected; that
+    # lands up to 5.7e-5 away where float32 matmuls are not full precision (#812).
+    assert mx.allclose(actual, expected, atol=0.02 if bits else Float32Precision.bound(2e-6, 2e-4)).item()
+    assert mx.allclose(LoRALoader._get_target_module(model, path).bias, expected_bias, atol=1e-6).item()
 
 
 @pytest.mark.fast
@@ -116,7 +121,7 @@ def test_norm_delta_matches_reference(tmp_path, source, path, scale):
 
     LoRALoader.load_and_apply_lora(ZImageLoRAMapping.get_mapping(), model, [str(adapter)], [scale])
 
-    assert mx.allclose(norm(x), expected, atol=1e-4).item()
+    assert mx.allclose(norm(x), expected, atol=1e-6).item()
 
 
 @pytest.mark.fast
@@ -169,7 +174,7 @@ def test_unmatched_direct_patch_does_not_block_lora(tmp_path, capsys, bake_lora,
 
     LoRALoader.load_and_apply_lora([target], model, [str(adapter)], [1], bake_lora=bake_lora, role=role)
 
-    assert mx.allclose(model.proj(x), expected, atol=1e-4).item()
+    assert mx.allclose(model.proj(x), expected, atol=1e-6).item()
     assert f"unrelated.proj.{suffix}" in capsys.readouterr().out
 
 

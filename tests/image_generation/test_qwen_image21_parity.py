@@ -11,6 +11,7 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 from mflux.models.qwen21.model.qwen21_vae.vae import QwenImage21VAE
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from tests.float32_precision import Float32Precision
 
 pytestmark = pytest.mark.fast
 
@@ -213,10 +214,10 @@ class TestQwenImage21Reference:
         with torch.no_grad():
             expected = reference(input_ids=ids, use_cache=False, **kwargs).last_hidden_state
         actual = model(mx.array(ids.cpu().numpy()), **mlx_kwargs)
-        tolerance = 2e-3 if dtype == torch.float32 else 1e-2
-        # Against torch on the CPU, the M5 GPU's float32 path lands up to 2.7e-3 absolute on the
-        # deepstack outputs (43% of elements past 1e-4), so the float32 bounds are set for that (#812).
-        absolute_tolerance = 5e-3 if dtype == torch.float32 else tolerance
+        tolerance = 1e-4 if dtype == torch.float32 else 1e-2
+        # Against torch on the CPU, MLX on the CPU stays within 6e-7 on the float32 outputs; where
+        # float32 matmuls are not full precision (an M5 GPU) the deepstack ones land up to 2.7e-3 away (#812).
+        absolute_tolerance = Float32Precision.bound(2e-4, 5e-3) if dtype == torch.float32 else tolerance
         np.testing.assert_allclose(
             np.array(actual.astype(mx.float32)), expected.float().cpu().numpy(), atol=absolute_tolerance, rtol=tolerance
         )

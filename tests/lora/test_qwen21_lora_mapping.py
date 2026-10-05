@@ -13,6 +13,7 @@ from mflux.models.qwen21.cli import qwen21_edit_generate, qwen21_generate
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_time_text_embed import Qwen21TimeTextEmbed
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
 from mflux.models.qwen21.weights.qwen21_lora_mapping import Qwen21LoRAMapping
+from tests.float32_precision import Float32Precision
 
 
 @pytest.mark.fast
@@ -44,10 +45,10 @@ def test_qwen21_lora_updates_target_layer(tmp_path, name, prefix, suffix, bake_l
 
     actual = LoRALoader._get_target_module(model, path)
     assert isinstance(actual, LoRALinear) is (not bake_lora)
-    # Float32 matmuls on an M5 GPU land up to 2.3e-3 relative from the CPU result on these
-    # arange-built contractions, depending on the block's random init (#812); an unapplied or
-    # mis-scaled adapter is off by 0.1 or more.
-    assert mx.allclose(actual(x), expected, atol=1e-3, rtol=5e-3).item()
+    # expected adds the adapter the way the live layer does, so the baked layer gets there through
+    # other products. Where float32 matmuls are not full precision (an M5 GPU) that lands up to
+    # 1.2e-3 away (#812); an unapplied or mis-scaled adapter is off by 0.1 or more.
+    assert mx.allclose(actual(x), expected, atol=Float32Precision.bound(1e-6, 3e-3)).item()
     assert paths == [str(adapter)]
     assert scales == [0.7]
 
@@ -78,7 +79,9 @@ def test_qwen21_lora_updates_global_layer(tmp_path, name, bake_lora, prefix):
 
     actual = LoRALoader._get_target_module(model, name)
     assert isinstance(actual, LoRALinear) is (not bake_lora)
-    assert mx.allclose(actual(x), expected, atol=1e-3, rtol=5e-3).item()
+    # Same as above, on outputs up to 140: the baked layer lands up to 1e-3 of them away (#812).
+    tolerance = Float32Precision.bound(1e-5, 3e-3)
+    assert mx.allclose(actual(x), expected, atol=Float32Precision.bound(1e-6, 3e-3), rtol=tolerance).item()
 
 
 @pytest.mark.fast
@@ -106,9 +109,12 @@ def test_qwen21_lora_matches_fused_mlp(tmp_path, bake_lora, prefix):
 
     assert isinstance(mlp.gate_layer, LoRALinear) is (not bake_lora)
     assert isinstance(mlp.proj, LoRALinear) is (not bake_lora)
-    assert mx.allclose(mlp.gate_layer(x), expected_gate, atol=1e-3, rtol=5e-3).item()
-    assert mx.allclose(mlp.proj(x), expected_proj, atol=1e-3, rtol=5e-3).item()
-    assert mx.allclose(mlp(x), expected, atol=1e-3, rtol=5e-3).item()
+    # expected comes from one product with the fused weight; the live layers split it, which lands
+    # up to 3.3e-4 away where float32 matmuls are not full precision (#812).
+    tolerance = Float32Precision.bound(1e-6, 1e-3)
+    assert mx.allclose(mlp.gate_layer(x), expected_gate, atol=tolerance).item()
+    assert mx.allclose(mlp.proj(x), expected_proj, atol=tolerance).item()
+    assert mx.allclose(mlp(x), expected, atol=tolerance).item()
 
 
 @pytest.mark.fast
