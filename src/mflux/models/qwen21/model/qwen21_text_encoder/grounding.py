@@ -53,10 +53,9 @@ class QwenImage21Grounding:
     def rewrite_request(instruction: str, image_count: int) -> str:
         # The rewrite sees every reference image: an instruction that names <image2> needs it (#831).
         images = "<image1>, the image to be edited"
-        if image_count == 2:
-            images += ", and the reference image <image2>"
-        elif image_count > 2:
-            images += ", and the reference images " + ", ".join(f"<image{i}>" for i in range(2, image_count + 1))
+        if image_count > 1:
+            references = ", ".join(f"<image{i}>" for i in range(2, image_count + 1))
+            images += f", and the reference image{'s' if image_count > 2 else ''} {references}"
         return REWRITE_PROMPT.format(images=images, instruction=instruction)
 
     @staticmethod

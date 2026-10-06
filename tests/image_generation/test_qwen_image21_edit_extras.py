@@ -18,6 +18,7 @@ from mflux.models.qwen21.cli import (
     qwen21_edit_generate as cli,
     qwen21_generate,
 )
+from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
 from mflux.models.qwen21.model.qwen21_text_encoder.grounding import QwenImage21Grounding
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
@@ -321,6 +322,57 @@ def test_config_from_conf_replays_the_scheduler(tmp_path, monkeypatch, command):
     assert command.build_parser().parse_args().scheduler == "viggle_turbo"
     monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), "--scheduler", "linear"])
     assert command.build_parser().parse_args().scheduler == "linear"
+
+
+def test_edit_rejects_a_scheduler_its_loop_cannot_run(tmp_path):
+    # The loop takes Euler steps over the sigmas and never calls step(); only linear and viggle_turbo
+    # are that update, so anything else would run the wrong sampler and record it as run.
+    with pytest.raises(ValueError, match="linear or viggle_turbo"):
+        _generate(_stub_model(), tmp_path, scheduler="flow_match_euler_discrete")
+
+
+@pytest.mark.parametrize("command", [cli, qwen21_generate])
+@pytest.mark.parametrize("recorded", ["nope", "os.path.Thing", 5])
+def test_config_from_conf_rejects_an_unknown_scheduler(tmp_path, monkeypatch, command, recorded):
+    # Before the model loads, and without importing a module the sidecar names.
+    sidecar = tmp_path / "image.metadata.json"
+    sidecar.write_text(
+        json.dumps({"prompt": "edit", "seed": 1, "steps": 6, "scheduler": recorded, "image_paths": [_source(tmp_path)]})
+    )
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar)])
+    with pytest.raises(SystemExit) as exc:
+        command.build_parser().parse_args()
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("given", "named"),
+    [([], "replayed from --config-from-conf"), (["--scheduler", "viggle_turbo"], "--scheduler viggle_turbo")],
+)
+def test_viggle_turbo_step_error_names_where_the_scheduler_came_from(tmp_path, monkeypatch, capsys, given, named):
+    sidecar = tmp_path / "image.metadata.json"
+    sidecar.write_text(
+        json.dumps(
+            {"prompt": "edit", "seed": 1, "steps": 6, "scheduler": "viggle_turbo", "image_paths": [_source(tmp_path)]}
+        )
+    )
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), "--steps", "20", *given])
+    parser = cli.build_parser()
+    args = parser.parse_args()
+    with pytest.raises(SystemExit):
+        ViggleTurboScheduler.check_args(parser, args)
+    assert named in capsys.readouterr().err
+
+
+def test_rewrite_prompt_raises_for_an_empty_prompt(tmp_path):
+    with pytest.raises(ValueError, match="empty"):
+        _stub_model().rewrite_prompt("   ", [_source(tmp_path)])
+
+
+def test_rewrite_request_names_each_reference():
+    assert "Look at <image1>, the image to be edited." in QwenImage21Grounding.rewrite_request("x", 1)
+    assert "and the reference image <image2>." in QwenImage21Grounding.rewrite_request("x", 2)
+    assert "and the reference images <image2>, <image3>." in QwenImage21Grounding.rewrite_request("x", 3)
 
 
 def test_rewrite_prompt_takes_at_most_ten_references():

@@ -46,9 +46,14 @@ class ViggleTurboScheduler(BaseScheduler):
             return
         nodes = len(ViggleTurboScheduler.SIGMA_NODES)
         if args.steps != nodes:
+            # A replayed sidecar can set the scheduler without --scheduler on the command line.
+            source = (
+                "--scheduler viggle_turbo"
+                if parser._option_was_provided("--scheduler")
+                else "viggle_turbo (replayed from --config-from-conf)"
+            )
             parser.error(
-                f"--scheduler viggle_turbo samples the distilled LoRA on its fixed sigma nodes; "
-                f"use --steps {nodes}, got {args.steps}"
+                f"{source} samples the distilled LoRA on its fixed sigma nodes; use --steps {nodes}, got {args.steps}"
             )
         if not args.lora_paths:
             print(

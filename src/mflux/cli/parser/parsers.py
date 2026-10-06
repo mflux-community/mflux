@@ -12,6 +12,7 @@ from mflux.cli.defaults import defaults as ui_defaults
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
+from mflux.models.common.schedulers import SCHEDULER_REGISTRY
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
 from mflux.utils.logging_util import LoggingUtil
@@ -522,7 +523,12 @@ class CommandLineParser(argparse.ArgumentParser):
                 and prior_gen_metadata.get("scheduler") is not None
                 and not self._option_was_provided("--scheduler")
             ):
-                namespace.scheduler = prior_gen_metadata["scheduler"]
+                # Checked here so a bad sidecar fails before the model loads, and registered names only:
+                # a dotted one would import whatever module the sidecar names.
+                recorded_scheduler = prior_gen_metadata["scheduler"]
+                if not isinstance(recorded_scheduler, str) or recorded_scheduler not in SCHEDULER_REGISTRY:
+                    self.error(f"scheduler in --config-from-conf: unknown scheduler {recorded_scheduler!r} (choose from {', '.join(sorted(SCHEDULER_REGISTRY))})")  # fmt: off
+                namespace.scheduler = recorded_scheduler
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")

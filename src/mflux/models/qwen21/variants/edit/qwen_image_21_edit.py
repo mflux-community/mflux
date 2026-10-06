@@ -29,6 +29,12 @@ from mflux.utils.image_util import ImageUtil
 logger = logging.getLogger(__name__)
 
 
+MAX_REFERENCES = 10
+# The edit loop takes Euler steps over the scheduler's sigmas and never calls its step(), which is
+# the right update for these two only.
+EDIT_SCHEDULERS = ("linear", "viggle_turbo")
+
+
 class QwenImage21Edit(nn.Module):
     def __init__(
         self,
@@ -76,6 +82,8 @@ class QwenImage21Edit(nn.Module):
     ) -> GeneratedImage:
         image_paths = image_paths or []
         QwenImage21Edit._check_reference_count(image_paths)
+        if scheduler not in EDIT_SCHEDULERS:
+            raise ValueError(f"The Qwen-Image-2.1 edit runs the linear or viggle_turbo schedule, got {scheduler!r}.")
         QwenImage21LatentCreator.validate_resolution(output_resolution)
         if not 0 < strength <= 1:
             raise ValueError(f"strength must be in (0, 1], got {strength}.")
@@ -326,8 +334,8 @@ class QwenImage21Edit(nn.Module):
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:
-        if len(image_paths) > 10:
-            raise ValueError("Qwen-Image-2.1 supports at most 10 reference images.")
+        if len(image_paths) > MAX_REFERENCES:
+            raise ValueError(f"Qwen-Image-2.1 supports at most {MAX_REFERENCES} reference images.")
 
     @staticmethod
     def _recorded_path(image: str | Path | Image.Image) -> str:
@@ -337,6 +345,8 @@ class QwenImage21Edit(nn.Module):
     def _rewrite_prompt(self, prompt: str, images: list[Image.Image]) -> str:
         # Official serving recipe: rewrite a terse instruction into a detailed description
         # before encoding. Best-effort: any failure falls back to the original instruction.
+        if not prompt or not prompt.strip():
+            return prompt
         try:
             return self._rewritten(prompt, images)
         except Exception as exc:  # noqa: BLE001
@@ -345,7 +355,7 @@ class QwenImage21Edit(nn.Module):
 
     def _rewritten(self, prompt: str, images: list[Image.Image]) -> str:
         if not prompt or not prompt.strip():
-            return prompt
+            raise ValueError("There is no instruction to rewrite: the prompt is empty.")
         reply = self._vision_reply(QwenImage21Grounding.rewrite_request(prompt, len(images)), images, 384)
         rewritten = QwenImage21Grounding.parse_rewrite(reply)
         if rewritten is None:
