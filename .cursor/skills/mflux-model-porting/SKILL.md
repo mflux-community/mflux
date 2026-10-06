@@ -119,7 +119,7 @@ Use `src/mflux/models/flux2/` as the canonical tree. Do **not** invent flat mlx-
 
 ## Integration surfaces checklist (don’t forget)
 
-Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclosed) show the same wiring gaps recurring on every new model. Use this as a **tick list** alongside the workflow above — not every row applies to every model (e.g. skip vision-encoder rows for txt2img-only), but scan it before opening a port PR.
+Past [closed PRs](https://github.com/mflux-community/mflux/pulls?q=is%3Apr+is%3Aclosed) show the same wiring gaps recurring on every new model. Use this as a **tick list** alongside the workflow above — not every row applies to every model (e.g. skip vision-encoder rows for txt2img-only), but scan it before opening a port PR.
 
 ### Repo wiring (required for every new model family)
 
@@ -129,7 +129,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 | `ModelConfig` | Entry in `AVAILABLE_MODELS`: aliases, HF repo id, `num_train_steps`, guidance support, sigma shift, `transformer_overrides`, distilled vs base step defaults |
 | `scripts/ci_extract_models.py` | Add an `OVERLAY` row for every new `AVAILABLE_MODELS` key: taxonomy, CLI/tool commands, status, and quantization support. Use `EXTRA_ENTRIES` only for standalone tools with no `ModelConfig` entry. Run `just ci-extract` and confirm the model is present in `.ci_cache/models_mflux.json`. |
 | `cli/defaults/defaults.py` | `MODEL_INFERENCE_STEPS` (keyed by the canonical `AVAILABLE_MODELS` key — the `--model` choices derive from the registry, nothing to add there) |
-| `models/common/cli/save.py` | Route `mflux-save` to the **correct variant class** (txt2img vs edit vs turbo — wrong class silently drops weights; see [#405](https://github.com/filipstrand/mflux/pull/405)) |
+| `models/common/cli/save.py` | Route `mflux-save` to the **correct variant class** (txt2img vs edit vs turbo — wrong class silently drops weights; see [#405](https://github.com/mflux-community/mflux/pull/405)) |
 | Main `README.md` | Model table row + attribution line |
 | `src/mflux/models/<model>/README.md` | Examples aligned with Flux2-style layout; disk sizes measured (`du`, `mflux-save`) |
 | `src/mflux/assets/` | Hero/showcase image if other models have one (`git add -f` when `*.jpg` is gitignored) |
@@ -140,14 +140,14 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 |---|---|
 | `*WeightDefinition` | `get_components()`, `get_download_patterns()`, `get_tokenizers()` — **only** list artifacts mflux actually loads |
 | Weight mapping | Explicit `WeightTarget` list; verify tensor names/shapes against HF cache blobs |
-| Tokenizer | Exercise local-path load, partial HF cache, and any special formats (protobuf, sentencepiece, etc.) — see [#383](https://github.com/filipstrand/mflux/pull/383), [#389](https://github.com/filipstrand/mflux/pull/389), [#390](https://github.com/filipstrand/mflux/pull/390) |
+| Tokenizer | Exercise local-path load, partial HF cache, and any special formats (protobuf, sentencepiece, etc.) — see [#383](https://github.com/mflux-community/mflux/pull/383), [#389](https://github.com/mflux-community/mflux/pull/389), [#390](https://github.com/mflux-community/mflux/pull/390) |
 | Optional reference components | Document in README what the upstream pipeline includes but mflux omits (extra encoders, preprocessors, etc.) |
 
 ### LoRA
 
 | Surface | What to do |
 |---|---|
-| `*LoRAMapping` | Support **multiple export key conventions** (diffusers, PEFT `.default.weight`, kohya/`diffusion_model.*` aliases) — silent zero-key loads were fixed repeatedly ([#376](https://github.com/filipstrand/mflux/pull/376), [#374](https://github.com/filipstrand/mflux/pull/374), [#397](https://github.com/filipstrand/mflux/pull/397)) |
+| `*LoRAMapping` | Support **multiple export key conventions** (diffusers, PEFT `.default.weight`, kohya/`diffusion_model.*` aliases) — silent zero-key loads were fixed repeatedly ([#376](https://github.com/mflux-community/mflux/pull/376), [#374](https://github.com/mflux-community/mflux/pull/374), [#397](https://github.com/mflux-community/mflux/pull/397)) |
 | Tests | Fast tests that real community LoRA filenames map to non-zero keys |
 | Inference CLI | `--lora-paths` / `--lora-scales` via shared parser (no bespoke loader) |
 
@@ -156,7 +156,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 | Surface | What to do |
 |---|---|
 | Thin CLI | `CommandLineParser` + `CallbackManager.register_callbacks(...)` |
-| `DimensionResolver` | Use in generate/edit CLIs when width/height can be omitted (API/OpenWebUI paths) — [#378](https://github.com/filipstrand/mflux/pull/378) |
+| `DimensionResolver` | Use in generate/edit CLIs when width/height can be omitted (API/OpenWebUI paths) — [#378](https://github.com/mflux-community/mflux/pull/378) |
 | `latent_creator` | `pack_latents` / `unpack_latents`; img2img path must match txt2img normalization (BN, scale factor) |
 | `tiling_config` | If initializer sets custom tiling, ensure `MemorySaver` does not overwrite it |
 | Guidance defaults | Distilled vs base: match `ModelConfig`, CLI default, README, and training preview adapter |
@@ -169,7 +169,7 @@ Past [closed PRs](https://github.com/filipstrand/mflux/pulls?q=is%3Apr+is%3Aclos
 | `training/runner.py` | Register `*TrainingAdapter`; handle `low_ram` / tiling like other models |
 | Example JSON | `models/common/training/_example/train_<model>.json` + `.gitignore` un-ignore |
 | Preview generation | Adapter should use canonical steps/guidance for distilled vs base (unit test this) |
-| Local `model_path` | Confirm `mflux-train` works with saved local weights — [#370](https://github.com/filipstrand/mflux/pull/370) |
+| Local `model_path` | Confirm `mflux-train` works with saved local weights — [#370](https://github.com/mflux-community/mflux/pull/370) |
 
 ### Tests & CI
 

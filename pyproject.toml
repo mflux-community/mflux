@@ -87,7 +87,7 @@ dev = [
 dev = { requires-python = ">=3.13" }
 
 [project.urls]
-homepage = "https://github.com/filipstrand/mflux"
+homepage = "https://github.com/mflux-community/mflux"
 
 [project.scripts]
 mflux-generate = "mflux.models.flux.cli.flux_generate:main"
