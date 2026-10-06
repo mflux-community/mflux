@@ -19,7 +19,6 @@ from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
-from tests.float32_precision import Float32Precision
 
 pytestmark = pytest.mark.fast
 
@@ -162,6 +161,53 @@ def test_shared_loading_allows_dense_and_matching_quantized_components(tmp_path,
     assert restored.bits == 8
 
 
+class _HeadedTextEncoder(nn.Module):
+    # A text encoder with a generation head beside its body, like the edit model's lm_head.
+    def __init__(self):
+        super().__init__()
+        self.body = nn.Linear(1024, 1024, bias=False)
+        self.lm_head = nn.Linear(1024, 4096, bias=False)
+
+
+@pytest.mark.parametrize(("saved_bits", "quantize"), [(None, None), (None, 8), (8, None)])
+def test_shared_loading_reads_each_weight_at_its_first_use(tmp_path, saved_bits, quantize):
+    # Evaluating every component at load held all of them at once, so --low-ram could not lower
+    # the peak (#832). Measured as memory, so a read through any path counts, not only mx.eval:
+    # nothing is read at load, and the first use of the generation head reads the head alone.
+    original = TinyEdit.make(saved_bits)
+    original.text_encoder = _HeadedTextEncoder()
+    if saved_bits:
+        nn.quantize(
+            original.text_encoder,
+            bits=saved_bits,
+            class_predicate=QwenImage21WeightDefinition.quantization_predicate,
+        )
+    x = mx.ones((1, 1024))
+    expected = original.text_encoder.lm_head(x)
+    mx.eval(original.parameters(), expected)
+    ModelSaver.save_model(original, saved_bits, str(tmp_path), QwenImage21WeightDefinition)
+    restored = TinyEdit.make()
+    restored.text_encoder = _HeadedTextEncoder()
+    mx.synchronize()
+    mx.clear_cache()
+    before = mx.get_active_memory()
+
+    Qwen21Initializer.load_components(restored, tmp_path, QwenImage21WeightDefinition, quantize, validate=True)
+
+    assert mx.get_active_memory() - before < 1e6
+    head = restored.text_encoder.lm_head(x)
+    mx.eval(head)
+    # The dense head that -q quantizes is released when the GPU finishes, a moment after eval returns.
+    mx.synchronize()
+    read = mx.get_active_memory() - before
+    head_bytes, body_bytes = (
+        sum(value.nbytes for _, value in tree_flatten(layer.parameters()))
+        for layer in (restored.text_encoder.lm_head, restored.text_encoder.body)
+    )
+    assert head_bytes <= read < head_bytes + body_bytes
+    assert mx.allclose(head, expected, atol=0.02).item()
+
+
 @pytest.mark.parametrize("bits", [None, 8])
 @pytest.mark.parametrize("dtype", [mx.float32, mx.bfloat16])
 def test_native_hf_transformer_without_generated_buffers_loads(tmp_path, bits, dtype):
@@ -278,10 +324,7 @@ def test_edit_lora_save_reload_preserves_adapter_once(tmp_path, monkeypatch, bit
 
     np.testing.assert_array_equal(TinyEdit.output(restored), after_save)
     if bits is None:
-        # Saved, the adapter is baked into the weights, so the output comes from other products than
-        # with the adapter live; where float32 matmuls are not full precision that lands up to 1.3e-4
-        # away (#812).
-        np.testing.assert_allclose(after_save, adapted, atol=Float32Precision.bound(1e-5, 3e-4), rtol=1e-5)
+        np.testing.assert_allclose(after_save, adapted, atol=1e-5, rtol=1e-5)
     assert not np.allclose(after_save, before, atol=1e-5)
     assert restored.lora_paths == []
     assert restored.lora_scales == []

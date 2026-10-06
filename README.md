@@ -2,7 +2,7 @@
 
 [![MFLUX](https://img.shields.io/pypi/v/mflux?label=MFLUX&logo=pypi&logoColor=white)](https://pypi.org/project/mflux/)
 [![MLX](https://img.shields.io/pypi/v/mlx?label=MLX&logo=pypi&logoColor=white)](https://pypi.org/project/mlx/)
-[![CI](https://github.com/filipstrand/mflux/actions/workflows/tests.yml/badge.svg)](https://github.com/filipstrand/mflux/actions/workflows/tests.yml)
+[![CI](https://github.com/mflux-community/mflux/actions/workflows/tests.yml/badge.svg)](https://github.com/mflux-community/mflux/actions/workflows/tests.yml)
 [![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
 ### About
@@ -136,6 +136,11 @@ MFLUX supports the following model families. They have different strengths and w
 |[Depth Pro](src/mflux/models/depth_pro/README.md) | Oct 2024 | — | — | No | Very fast and accurate depth estimation model from Apple. |
 |[FLUX.1](src/mflux/models/flux/README.md) | Aug 2024 | 12B | Distilled & Base | No (legacy) | Legacy option with decent quality. Has edit capabilities with 'Kontext' model and upscaling support via ControlNet |
 
+**Schedulers**<br>
+MFlux supports a small number of schedulers - see;<br>
+[Schedulers - User Manual](docs/schedulers.md)<br>
+[Schedulers - Technical Overview](src/mflux/models/common/schedulers/README.md)<br>
+
 ---
 
 ### ✨ Features
@@ -156,6 +161,8 @@ MFLUX supports the following model families. They have different strengths and w
 
 See the [common README](src/mflux/models/common/README.md) for detailed usage and examples, and use the model section above to browse specific models and capabilities.
 
+
+
 > [!NOTE]
 > As MFLUX supports a wide variety of CLI tools and options, the easiest way to navigate the CLI in 2026 is to use a coding agent (like [Cursor](https://cursor.com), [Claude Code](https://www.anthropic.com/claude-code), or similar). Ask questions like: “Can you help me generate an image using z-image?”
 
@@ -174,11 +181,11 @@ MFlux was originally created by [Filip Strand](https://github.com/filipstrand) i
 
 <table>
 <tr>
-<td align="center" width="150"><a href="https://github.com/filipstrand"><img src="https://github.com/filipstrand.png?size=100" width="72" alt="filipstrand"><br><b>Filip Strand</b></a><br><sub>created mflux</sub></td>
-<td align="center" width="150"><a href="https://github.com/anthonywu"><img src="https://github.com/anthonywu.png?size=100" width="72" alt="anthonywu"><br><b>Anthony Wu</b></a><br><sub>toolchain, CI, releases, mflux.web</sub></td>
-<td align="center" width="150"><a href="https://github.com/plz12345"><img src="https://github.com/plz12345.png?size=100" width="72" alt="plz12345"><br><b>plz12345</b></a><br><sub>devops, Krea 2, Boogu</sub></td>
+<td align="center" width="150"><a href="https://github.com/filipstrand"><img src="https://github.com/filipstrand.png?size=100" width="72" alt="filipstrand"><br><b>Filip Strand</b></a><br><sub>Created MFlux</sub></td>
+<td align="center" width="150"><a href="https://github.com/anthonywu"><img src="https://github.com/anthonywu.png?size=100" width="72" alt="anthonywu"><br><b>Anthony Wu</b></a><br><sub>Toolchain, CI, releases, mflux.web</sub></td>
+<td align="center" width="150"><a href="https://github.com/plz12345"><img src="https://github.com/plz12345.png?size=100" width="72" alt="plz12345"><br><b>plz12345</b></a><br><sub>Devops, Krea 2, Boogu</sub></td>
 <td align="center" width="150"><a href="https://github.com/fxd0h"><img src="https://github.com/fxd0h.png?size=100" width="72" alt="fxd0h"><br><b>Mariano Abad</b></a><br><sub>ControlNets, training, Lens</sub></td>
-<td align="center" width="150"><a href="https://github.com/ianscrivener"><img src="https://github.com/ianscrivener.png?size=100" width="72" alt="ianscrivener"><br><b>Ian Scrivener</b></a><br><sub>community, CUDA, model builds</sub></td>
+<td align="center" width="150"><a href="https://github.com/ianscrivener"><img src="https://github.com/ianscrivener.png?size=100" width="72" alt="ianscrivener"><br><b>Ian Scrivener</b></a><br><sub>HF, community, CUDA, model builds</sub></td>
 </tr>
 </table>
 
@@ -291,7 +298,7 @@ MFLUX would not be possible without the great work of:
 - ByteDance, @numz and @adrientoupet for the [SeedVR2 project](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
 - Hugging Face for the [Diffusers library implementations](https://github.com/huggingface/diffusers) 
 - Depth Pro authors for the [Depth Pro model](https://github.com/apple/ml-depth-pro?tab=readme-ov-file#citation)
-- The MLX community and all [contributors and testers](https://github.com/filipstrand/mflux/graphs/contributors)
+- The MLX community and all [contributors and testers](https://github.com/mflux-community/mflux/graphs/contributors)
 
 ---
 

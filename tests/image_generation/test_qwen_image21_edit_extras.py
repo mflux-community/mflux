@@ -540,27 +540,6 @@ def test_generation_head_is_optional_when_loading():
         )
 
 
-def test_generation_head_stays_on_disk_until_first_use(tmp_path):
-    from mlx import nn
-
-    from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
-    from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
-
-    path = str(tmp_path / "head.safetensors")
-    mx.save_safetensors(path, {"lm_head": mx.ones((1024, 4096)), "embed": mx.ones((1024, 4096))})
-    mx.clear_cache()
-    weights = mx.load(path)
-    module = nn.Module()
-    module.lm_head = nn.Linear(4096, 1024, bias=False)
-    module.embed = nn.Linear(4096, 1024, bias=False)
-    module.lm_head.weight, module.embed.weight = weights.pop("lm_head"), weights.pop("embed")
-    before = mx.get_active_memory()
-    Qwen21Initializer._materialize("text_encoder", module, QwenImage21WeightDefinition)
-    assert mx.get_active_memory() - before < 20e6  # the 16 MB embed only, not the head
-    mx.eval(module.lm_head(mx.ones((1, 4096))))  # first use reads it from disk
-    assert mx.get_active_memory() - before >= 32e6
-
-
 def test_vision_replies_are_reused_across_seeds(tmp_path):
     model = _stub_model()
     calls = []
