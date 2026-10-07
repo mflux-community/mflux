@@ -3,14 +3,21 @@ from pathlib import Path
 import mlx.core as mx
 import pytest
 
+from mflux.models.common.config import ModelConfig
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 from mflux.models.common.weights.mapping.weight_mapper import WeightMapper
 from mflux.models.common.weights.mapping.weight_mapping import WeightTarget
+from mflux.models.fibo.model.fibo_transformer.transformer import FiboTransformer
 from mflux.models.fibo.weights.fibo_weight_definition import FIBOWeightDefinition
 from mflux.models.fibo_vlm.weights.fibo_vlm_weight_definition import FIBOVLMWeightDefinition
+from mflux.models.flux.model.flux_transformer.ada_layer_norm_continuous import AdaLayerNormContinuous
+from mflux.models.flux.model.flux_transformer.transformer import Transformer
 from mflux.models.flux.weights.flux_weight_definition import FluxControlnetWeightDefinition, FluxWeightDefinition
 from mflux.models.flux.weights.flux_weight_mapping import FluxWeightMapping
+from mflux.models.flux2.model.flux2_transformer.transformer import Flux2Transformer
+from mflux.models.flux2.weights.flux2_weight_definition import Flux2KleinWeightDefinition
 from mflux.models.ming_image.weights.ming_image_weight_definition import MingImageWeightDefinition
+from mflux.models.qwen.model.qwen_transformer.qwen_transformer import QwenTransformer
 from mflux.models.qwen.weights.qwen_weight_definition import QwenWeightDefinition
 from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
 from mflux.models.seedvr2.weights.seedvr2_weight_definition import (
@@ -33,6 +40,9 @@ from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightD
 #   z_image_controlnet_union alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1 @ 5155fc56d178
 #                            Z-Image-Turbo-Fun-Controlnet-Union-2.1.safetensors
 #   ming_image_transformer   inclusionAI/Ming-Image-0.1-Design @ 208087ada148  transformer/
+#   flux1_schnell_transformer  black-forest-labs/FLUX.1-schnell @ 741f7c3ce8b3  transformer/  (captured 2026-10-07)
+#   qwen_image_transformer     Qwen/Qwen-Image-2512 @ 25468b98e327  transformer/  (captured 2026-10-07)
+#   flux2_klein_4b_transformer black-forest-labs/FLUX.2-klein-4B @ e7b7dc27f91d  transformer/  (captured 2026-10-07)
 # To regenerate one, take the keys of mx.load(<file>) (lazy, reads no weights) or of the shard index's weight_map;
 # only fibo_vlm_decoder is then filtered, to the "model.language_model" and "lm_head" prefixes.
 # A required mapping entry these names cannot satisfy would reject the official checkpoint at load time.
@@ -80,6 +90,63 @@ def test_an_official_checkpoint_carries_every_required_weight(fixture, component
     missing = _Component.missing(_OfficialNames.weights(fixture), component)
 
     assert [target.to_pattern for target in missing] == []
+
+
+class _Placement:
+    @staticmethod
+    def unplaced(module, mapped, path: str = "") -> list[str]:
+        # The names in a mapped weight tree that the module has no parameter for. Module.update(strict=False)
+        # skips them without a word, which is how a model comes to run without part of its checkpoint.
+        if isinstance(mapped, mx.array):
+            return []
+        items = mapped.items() if isinstance(mapped, dict) else enumerate(mapped)
+        names = []
+        for key, value in items:
+            present = key in module if isinstance(module, dict) else isinstance(module, list) and key < len(module)
+            if present:
+                names += _Placement.unplaced(module[key], value, f"{path}{key}.")
+            else:
+                names.append(f"{path}{key}")
+        return names
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    ("fixture", "component", "build"),
+    [
+        ("flux1_schnell_transformer", _Component.of(FluxWeightDefinition, "transformer"), lambda: Transformer(ModelConfig.schnell())),
+        ("fibo_transformer", _Component.of(FIBOWeightDefinition, "transformer"), FiboTransformer),
+        ("qwen_image_transformer", _Component.of(QwenWeightDefinition, "transformer"), QwenTransformer),
+        ("flux2_klein_4b_transformer", _Component.of(Flux2KleinWeightDefinition, "transformer"), Flux2Transformer),
+    ],
+)  # fmt: skip
+def test_a_transformer_has_a_place_for_every_weight_of_its_official_checkpoint(fixture, component, build):
+    # FLUX.1, FIBO and Qwen-Image ran without norm_out.linear.bias from 0.16.0 to 0.21.0: the output norm they share
+    # with FLUX.2 lost its bias for FLUX.2, whose checkpoint has none, and the loader dropped theirs silently.
+    mapped = WeightMapper.apply_mapping(
+        _OfficialNames.weights(fixture), component.mapping_getter(), component.num_blocks, component.num_layers
+    )
+
+    assert _Placement.unplaced(build(), mapped) == []
+
+
+@pytest.mark.fast
+def test_the_shared_output_norm_applies_its_bias_and_starts_it_at_zero():
+    # Zero by default, so a model saved without the bias loads as it was saved; the checkpoint's value when it has one.
+    norm = AdaLayerNormContinuous(4, 4)
+    norm.linear.weight = mx.zeros((8, 4))
+    x, embedding = mx.ones((1, 2, 4)) * mx.array([1.0, 2.0, 3.0, 4.0]), mx.ones((1, 4))
+    assert mx.array_equal(norm.linear.bias, mx.zeros((8,))).item()
+    # In the model's precision: a float32 zero would promote a bf16 stream, and a model saved without the bias
+    # would stop giving the pixels it gave.
+    assert norm.linear.bias.dtype == ModelConfig.precision
+    unbiased = norm(x, embedding)
+
+    norm.linear.bias = mx.array([1.0] * 4 + [0.5] * 4)  # scale 1 and shift 0.5
+
+    assert mx.allclose(norm(x, embedding), unbiased * 2 + 0.5).item()
+    # FLUX.2 checkpoints have no bias for this layer, so its transformer does not grow one.
+    assert "bias" not in Flux2Transformer().norm_out.linear
 
 
 @pytest.mark.fast
