@@ -42,6 +42,13 @@ image = model.generate_image(
 )
 image.save("qwen_tiger.png")
 ```
+
+You can also call the steps of `mflux-generate-qwen` and `mflux-generate-qwen-edit` from Python. `QwenImageCommand` (in `mflux.models.qwen.cli.qwen_image_generate`) and `QwenImageEditCommand` (in `mflux.models.qwen.cli.qwen_image_edit_generate`) each have `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded. Things to know for Qwen:
+
+- A process that keeps the model loaded also keeps the text encoder: about 14 GB, or 15.5 GB for edits, which also load its vision part. `--quantize` does not shrink it, because mflux leaves the text encoder in bfloat16 on purpose (about 7 billion parameters at 2 bytes each). The exception is a pre-quantized checkpoint that ships its own quantized text encoder.
+- `--model` takes this command's own names, a repo id or a local path. Another model's built-in name, such as `dev`, raises `ModelConfigError` before any weight is loaded. With a repo id or path, `--base-model` must also name this command's model, by alias or repo id.
+- When `--guidance` is not given, `generate()` uses 3.5 for text-to-image and 2.5 for edits.
+- `QwenImage` keeps each prompt's text embeddings in `model.prompt_cache`, one entry per distinct pair of prompt and negative prompt. A process that stays up and sees many different prompts should clear it now and then with `model.prompt_cache.clear()`, then `gc.collect()` and `mx.clear_cache()`. `QwenImageEdit` does not use that cache.
 </details>
 
 <details>
@@ -199,6 +206,8 @@ image = model.generate_image(
 )
 image.save("qwen_edit_dogs.png")
 ```
+
+To run the command itself step by step with its own flags, use `QwenImageEditCommand` from `mflux.models.qwen.cli.qwen_image_edit_generate`. It has the same `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)` steps as `QwenImageCommand` in the text-to-image section, with a default guidance of 2.5. Its `generate()` raises `ValueError` when `args.image_paths` is empty or `None`. The command line always sets it, so this only matters when you build `args` yourself.
 </details>
 
 ### Example 2: Single Image with LoRAs (Camera Angle Transformations)

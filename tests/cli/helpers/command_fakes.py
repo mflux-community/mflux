@@ -49,6 +49,13 @@ class FakeModel:
         self.images: list[FakeImage] = []
         type(self).instances.append(self)
 
+    def bound_init(self) -> dict:
+        # What the real constructor receives once its own defaults are applied. Passing a default
+        # explicitly builds the same model, so a pin on this holds whether or not load() names it.
+        bound = type(self).init_signature.bind(None, **self.init_kwargs)
+        bound.apply_defaults()
+        return {name: value for name, value in bound.arguments.items() if name != "self"}
+
     def bind_generate(self, **kwargs):
         type(self).generate_signature.bind(self, **kwargs)
 

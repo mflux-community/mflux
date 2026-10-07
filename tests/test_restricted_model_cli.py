@@ -22,6 +22,7 @@ from mflux.models.ideogram4.cli import ideogram4_generate
 from mflux.models.krea2.cli import krea2_generate
 from mflux.models.lens.cli import lens_generate
 from mflux.models.qwen21.cli import qwen21_controlnet_generate, qwen21_generate
+from mflux.models.qwen.cli import qwen_image_edit_generate, qwen_image_generate
 from mflux.models.z_image.cli import z_image_generate, z_image_turbo_generate
 from mflux.utils.exceptions import ModelConfigError
 
@@ -46,6 +47,8 @@ CLI_MODELS = [
     ),
     (qwen21_generate, "qwen-image-2.1", "dev", (), ()),
     (qwen21_controlnet_generate, "qwen-image-2.1-controlnet-union", "z-image-controlnet", (), ()),
+    (qwen_image_generate, "qwen-image", "dev", (), ()),
+    (qwen_image_edit_generate, "qwen-image-edit", "qwen-image", (), ("--image-paths", "ref.png")),
 ]
 
 
