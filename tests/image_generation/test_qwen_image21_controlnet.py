@@ -18,6 +18,7 @@ from mflux.models.qwen21.qwen_image21_initializer import QwenImage21Initializer
 from mflux.models.qwen21.variants.controlnet.qwen_image21_controlnet_transformer import QwenImage21ControlNet
 from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from mflux.utils.exceptions import ModelConfigError
 from tests.weights.test_qwen21_shared_loading import TinyEdit
 
 pytestmark = pytest.mark.fast
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.fast
 RESOURCES = Path(__file__).parent.parent / "resources"
 # The shape of the Qwen-Image-2.1 transformer the official ControlNet was trained beside.
 OFFICIAL = dict(num_layers=32, num_attention_heads=32, attention_head_dim=128, mlp_ratio=3, eps=1e-6)
-# tests/resources/qwen21_controlnet_videox_fun_tiny.safetensors: random weights, inputs and outputs of
+# tests/resources/qwen21_controlnet_videox_fun_tiny.npz: random weights, inputs and outputs of
 # VideoX-Fun's QwenImage21ControlTransformer2DModel at these dimensions (aigc-apps/VideoX-Fun @ 4b7b6402,
 # CPU, float32), so the comparison with the reference runs without it.
 TINY = dict(
@@ -38,7 +39,7 @@ TARGET, TEXT_LENGTH = (1, 4, 6), 5
 class _Reference:
     @staticmethod
     def load() -> tuple[QwenImage21Transformer, QwenImage21ControlNet, dict[str, mx.array]]:
-        tensors = dict(mx.load(str(RESOURCES / "qwen21_controlnet_videox_fun_tiny.safetensors")))
+        tensors = dict(mx.load(str(RESOURCES / "qwen21_controlnet_videox_fun_tiny.npz")))
         weights = {key.removeprefix("weights."): value for key, value in tensors.items() if key.startswith("weights.")}
         control = {key: value for key, value in weights.items() if key.startswith("control")}
         base = {key: value for key, value in weights.items() if key not in control}
@@ -242,7 +243,7 @@ def test_the_command_passes_its_options_to_the_model(monkeypatch, tmp_path):
         ((), "Give --controlnet-image-path"),
         (("--image-path", "source.png"), "needs both --image-path and --mask-image"),
         (("--controlnet-image-path", "edges.png", "--width", "500"), "multiple of 32"),
-        (("--controlnet-image-path", "edges.png", "--model", "qwen-image-2.1"), "not a Qwen-Image-2.1 ControlNet"),
+        (("--controlnet-image-path", "edges.png", "--output", "out.jpg"), "outputs RGBA"),
     ],
 )
 def test_the_command_rejects_a_request_it_cannot_run_before_loading(monkeypatch, tmp_path, extra, message):
@@ -252,7 +253,26 @@ def test_the_command_rejects_a_request_it_cannot_run_before_loading(monkeypatch,
         cli.Qwen21ControlnetCommand.validate(args)
 
 
+@pytest.mark.parametrize("foreign", ["qwen-image-2.1", "z-image-controlnet", "dev-controlnet-canny"])
+def test_the_command_takes_no_other_model(monkeypatch, tmp_path, foreign):
+    # Another ControlNet entry has a controlnet_model too; only this model's aliases may reach the loader.
+    args, _ = _Command.args(monkeypatch, tmp_path, "--controlnet-image-path", "edges.png", "--model", foreign)
+
+    with pytest.raises(ModelConfigError, match="only accepts the aliases"):
+        cli.Qwen21ControlnetCommand.validate(args)
+
+
+def test_a_negative_prompt_without_guidance_is_reported(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli.Qwen21ControlnetCommand, "load", lambda args: SimpleNamespace(callbacks=None))
+    monkeypatch.setattr(cli.CallbackManager, "register_callbacks", lambda **kwargs: None)
+    monkeypatch.setattr(cli.Qwen21ControlnetCommand, "generate", lambda *a: SimpleNamespace(save=lambda **k: None))
+    _Command.args(monkeypatch, tmp_path, "--controlnet-image-path", "edges.png", "--negative-prompt", "blurry")
+
+    with pytest.warns(UserWarning, match="--negative-prompt"):
+        cli.main()
+
+
 def test_the_default_strength_is_the_full_control(monkeypatch, tmp_path):
     args, _ = _Command.args(monkeypatch, tmp_path, "--controlnet-image-path", "edges.png")
 
-    assert (args.controlnet_strength, args.model, args.steps) == (1.0, "qwen-image-2.1-controlnet", 40)
+    assert (args.controlnet_strength, args.model, args.steps) == (1.0, "qwen-image-2.1-controlnet-union", 40)

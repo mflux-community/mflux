@@ -1,4 +1,5 @@
 from argparse import Namespace
+from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
@@ -11,7 +12,7 @@ from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopIm
 from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.prompt_util import PromptUtil
 
-DEFAULT_MODEL = "qwen-image-2.1-controlnet"
+DEFAULT_MODEL = "qwen-image-2.1-controlnet-union"
 IGNORED_OPTIONS = {
     "--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora.",
     "--scheduler": "The ControlNet runs the linear Euler schedule of Qwen-Image-2.1; other schedulers are not wired.",
@@ -73,11 +74,11 @@ class Qwen21ControlnetCommand:
     @staticmethod
     def validate(args: Namespace) -> ModelConfig:
         # Weight-free: checked before the model loads, so a bad request fails fast.
-        model_config = ConfigResolution.resolve(args.model, args.base_model)
-        if not model_config.controlnet_model:
-            raise ValueError(
-                f"--model {args.model!r} is not a Qwen-Image-2.1 ControlNet model. Use {DEFAULT_MODEL} (the default)."
-            )
+        # Only this model's aliases, or a checkpoint saved from it: another ControlNet entry would send
+        # a foreign checkpoint to this loader.
+        model_config = ConfigResolution.resolve_restricted(
+            args.model, DEFAULT_MODEL, model_path=args.model_path, base_model=args.base_model
+        )
         if args.controlnet_image_path is None and args.image_path is None:
             raise ValueError("Give --controlnet-image-path, or --image-path with --mask-image to inpaint.")
         if (args.image_path is None) != (args.mask_image is None):
@@ -87,6 +88,8 @@ class Qwen21ControlnetCommand:
             if value is not None and (not isinstance(value, int) or value < 32 or value % 32):
                 raise ValueError(f"--{name} must be a positive multiple of 32.")
         QwenImage21LatentCreator.validate_resolution(args.output_resolution)
+        if Path(args.output).suffix.lower() not in (".png", ".webp", ".tif", ".tiff"):
+            raise ValueError("Qwen-Image-2.1 outputs RGBA; use PNG, WebP or TIFF to retain transparency.")
         return model_config
 
     @staticmethod
@@ -121,6 +124,10 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    if args.guidance is None or args.guidance == 1:
+        CommandLineParser.warn_ignored_options(
+            {"--negative-prompt": CONDITIONAL_OPTIONS["--negative-prompt"]["reason"]}
+        )
     try:
         Qwen21ControlnetCommand.validate(args)
     except ModelConfigError:
