@@ -2,6 +2,7 @@ import json
 from typing import TYPE_CHECKING
 
 import mlx.core as mx
+from mlx import nn
 
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
@@ -9,12 +10,15 @@ from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.qwen21.model.qwen21_text_encoder.processor import QwenImage21Processor
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_feed_forward import Qwen21SwiGLUFeedForward
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 from mflux.models.qwen21.model.qwen21_vae.vae import QwenImage21VAE
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
 if TYPE_CHECKING:
+    from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
     from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 
 
@@ -62,3 +66,40 @@ class QwenImage21Initializer:
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)
+
+    @staticmethod
+    def init_controlnet(
+        model: "QwenImage21Controlnet",
+        model_config: ModelConfig,
+        quantize: int | None,
+        model_path: str | None,
+        controlnet_path: str | None = None,
+        lora_paths: list[str] | None = None,
+        lora_scales: list[float] | None = None,
+        bake_lora: bool = True,
+        compute_precision: mx.Dtype | None = None,
+    ) -> None:
+        from mflux.models.qwen21.variants.controlnet.qwen_image21_controlnet_transformer import QwenImage21ControlNet
+
+        QwenImage21Initializer.init(
+            model, model_config, quantize, model_path, lora_paths, lora_scales, bake_lora, compute_precision
+        )
+        source = controlnet_path or model_config.controlnet_model
+        if source is None:
+            raise ValueError("No ControlNet checkpoint: pass controlnet_path or a model config that names one.")
+        root = PathResolution.resolve(source, ["*.safetensors"])
+        files = [root] if root.is_file() else sorted(root.glob("*.safetensors"))
+        if len(files) != 1:
+            raise ValueError(f"Expected one ControlNet .safetensors file in {root}, found {len(files)}.")
+        # The checkpoint holds the control branch only (control_img_in and the control blocks), named as this
+        # module names them, so a strict load is the check that the file is this ControlNet.
+        model.controlnet = QwenImage21ControlNet(model._component_configs["transformer"])
+        weights = [(key, value.astype(ModelConfig.precision)) for key, value in mx.load(str(files[0])).items()]
+        model.controlnet.load_weights(weights, strict=True)
+        if model.bits is not None:
+            nn.quantize(
+                model.controlnet, bits=model.bits, class_predicate=QwenImage21WeightDefinition.quantization_predicate
+            )
+        if compute_precision is not None:
+            # The same modules the base transformer casts, in the control blocks.
+            model.compute_precision.apply(model.controlnet, (Qwen21Attention, Qwen21SwiGLUFeedForward))

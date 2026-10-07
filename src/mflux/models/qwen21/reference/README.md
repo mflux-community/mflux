@@ -87,6 +87,37 @@ mflux-generate-qwen-2.1-edit \
 
 Auto-mask, prompt rewriting and verification decode greedily with the text encoder's own untied `lm_head`, so they need no extra download. The head is about 1.2 GB in bf16 and 0.66 GB at q8. The loader keeps it lazy and reads it only when one of these options first uses it. `save_model` still writes the head, so exports keep these options. Checkpoints saved before this support existed do not have the head. They still generate, but these three options raise an error with them.
 
+## ControlNet (Fun ControlNet Union)
+
+`mflux-generate-qwen-2.1-controlnet` runs Qwen-Image-2.1 with the [Fun ControlNet Union](https://huggingface.co/alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union) from Alibaba PAI. One 7.6 GB checkpoint reads Canny, depth, grayscale, HED, lineart, MLSD, pose and scribble images, so there is no control-type flag. The same branch inpaints.
+
+```sh
+mflux-generate-qwen-2.1-controlnet \
+  --prompt "A man in a white t-shirt holds his open hand toward the camera, soft window light, photograph" \
+  --controlnet-image-path canny.png \
+  --width 640 --height 384 \
+  --steps 20 --seed 43 -q 8 \
+  --output controlled.png
+```
+
+```sh
+mflux-generate-qwen-2.1-controlnet \
+  --prompt "A young woman with long purple hair stands on a beach with one hand on her hip, white sleeveless dress" \
+  --image-path source.png --mask-image mask.png \
+  --controlnet-image-path pose.png \
+  --width 512 --height 896 \
+  --seed 43 -q 8 \
+  --output inpainted.png
+```
+
+- `--controlnet-strength` scales every control skip: `1.0` (the default) is the strongest, lower values weaken it, and `0` gives the base model.
+- `--image-path` with `--mask-image` inpaints: white in the mask is regenerated from the prompt and black is kept. Add `--controlnet-image-path` and the regenerated region follows that structure too. Describe the whole target image in the prompt; the mask says where, the text does not.
+- Width and height are multiples of 32, and the control image, the source and the mask are resized to them. When they are omitted the size comes from `--output-resolution` and the aspect ratio of the control image (of the source when there is no control image).
+- The control branch adds 16 blocks to the 32 of the base model, and the prefix KV cache is off while it runs. On an M5 Max at q8, 20 steps at 992x608 take about 49 seconds and peak at about 30 GB.
+- The ControlNet loads from its own checkpoint each time. `mflux-save` does not write it.
+
+From Python it is `QwenImage21Controlnet` in `mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet`, with `controlnet_image_path`, `controlnet_strength`, `image_path` and `mask_image` on `generate_image`.
+
 ## LoRA
 
 Use the same LoRA arguments and adapter formats as the text-to-image command:

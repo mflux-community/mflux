@@ -156,6 +156,15 @@ OVERLAY: dict[str, tuple[str, str, str, list[str], list[str], str, list[str] | N
         "active",
         STANDARD_QUANTS,
     ),
+    "qwen-image-2.1-controlnet-union": (
+        "image",
+        "qwen-image-2.1",
+        "qwen-image-2.1-controlnet",
+        ["mflux-generate-qwen-2.1-controlnet"],
+        [],
+        "active",
+        STANDARD_QUANTS,
+    ),
     "qwen-image-edit": (
         "image",
         "qwen-image",

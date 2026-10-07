@@ -75,6 +75,7 @@ MODEL_CLASSES: dict[str, type] = {
 # "not supported yet" from "someone added a model and forgot this table".
 UNSUPPORTED_MODELS = {
     "lens-turbo": "LensImage has no save_model(); its transformer is a single-file checkpoint",
+    "qwen-image-2.1-controlnet-union": "save the base as qwen-image-2.1; the ControlNet loads from its own checkpoint",
 }
 
 

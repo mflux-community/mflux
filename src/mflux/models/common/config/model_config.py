@@ -159,6 +159,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def qwen_image_21_controlnet_union() -> "ModelConfig":
+        return AVAILABLE_MODELS["qwen-image-2.1-controlnet-union"]
+
+    @staticmethod
+    @lru_cache
     def boogu_image_turbo() -> "ModelConfig":
         return AVAILABLE_MODELS["boogu-image-turbo"]
 
@@ -806,6 +811,22 @@ AVAILABLE_MODELS = {
         model_name="Qwen/Qwen-Image-2.1",
         base_model=None,
         controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=None,
+        supports_guidance=True,
+        requires_sigma_shift=True,
+        sigma_max_shift=0.9,
+        sigma_max_seq_len=8192,
+        sigma_shift_terminal=0.02,
+    ),
+    "qwen-image-2.1-controlnet-union": ModelConfig(
+        # The base model with alibaba-pai's Fun ControlNet-Union branch beside it.
+        priority=31,
+        aliases=["qwen-image-2.1-controlnet-union", "qwen-image-2.1-controlnet", "qwen-2.1-controlnet"],
+        model_name="Qwen/Qwen-Image-2.1",
+        base_model=None,
+        controlnet_model="alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union",
         custom_transformer_model=None,
         num_train_steps=None,
         max_sequence_length=None,

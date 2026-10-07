@@ -155,7 +155,7 @@ MFlux supports a small number of schedulers - see;<br>
 - Text-to-image and image-to-image generation.
 - LoRA finetuning
 - In-context editing, multi-image editing, and virtual try-on
-- ControlNet (Canny), depth conditioning, fill/inpainting, and Redux
+- ControlNet (Canny for FLUX.1, Union for Z-Image and Qwen-Image-2.1), depth conditioning, fill/inpainting, and Redux
 - Upscaling (SeedVR2 and Flux ControlNet)
 - Depth map extraction and FIBO prompt tooling (VLM inspire/refine)
 
