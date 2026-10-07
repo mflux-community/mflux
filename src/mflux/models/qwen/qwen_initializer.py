@@ -94,7 +94,7 @@ class QwenImageInitializer:
     @staticmethod
     def _init_edit_models(model) -> None:
         model.vae = QwenVAE()
-        model.transformer = QwenTransformer()
+        model.transformer = QwenTransformer(**(model.model_config.transformer_overrides or {}))
         model.text_encoder = QwenTextEncoder()
         model.text_encoder.encoder.visual = VisionTransformer()
 

@@ -154,6 +154,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def qwen_image_edit_2511() -> "ModelConfig":
+        return AVAILABLE_MODELS["qwen-image-edit-2511"]
+
+    @staticmethod
+    @lru_cache
     def qwen_image_21() -> "ModelConfig":
         return AVAILABLE_MODELS["qwen-image-2.1"]
 
@@ -577,8 +582,6 @@ AVAILABLE_MODELS = {
             "qwen-edit",
             "qwen-edit-plus",
             "qwen-edit-2509",
-            "qwen-edit-2511",
-            "qwen-image-edit-2511",
         ],
         model_name="Qwen/Qwen-Image-Edit-2509",
         base_model=None,
@@ -588,6 +591,24 @@ AVAILABLE_MODELS = {
         max_sequence_length=None,
         supports_guidance=None,
         requires_sigma_shift=True,
+        sigma_max_shift=0.9,
+        sigma_max_seq_len=8192,
+        sigma_shift_terminal=0.02,
+    ),
+    "qwen-image-edit-2511": ModelConfig(
+        # Same schedule as 2509. Its transformer config sets zero_cond_t: the reference-image tokens are
+        # modulated at timestep 0. Run as a 2509 it blurs the edit and can leave it undone.
+        priority=16,
+        aliases=["qwen-image-edit-2511", "qwen-edit-2511"],
+        model_name="Qwen/Qwen-Image-Edit-2511",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=None,
+        max_sequence_length=None,
+        supports_guidance=None,
+        requires_sigma_shift=True,
+        transformer_overrides={"zero_cond_t": True},
         sigma_max_shift=0.9,
         sigma_max_seq_len=8192,
         sigma_shift_terminal=0.02,

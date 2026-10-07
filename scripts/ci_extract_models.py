@@ -174,6 +174,15 @@ OVERLAY: dict[str, tuple[str, str, str, list[str], list[str], str, list[str] | N
         "active",
         STANDARD_QUANTS,
     ),
+    "qwen-image-edit-2511": (
+        "image",
+        "qwen-image",
+        "qwen-image-edit-2511",
+        ["mflux-generate-qwen-edit"],
+        [],
+        "active",
+        STANDARD_QUANTS,
+    ),
     "fibo": (
         "image",
         "fibo",
