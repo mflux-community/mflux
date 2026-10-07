@@ -42,6 +42,8 @@ class QwenImageEditCommand:
             args.model,
             DEFAULT_MODEL,
             model_path=args.model_path,
+            # 2511 runs the same pipeline; its reference tokens read timestep 0 (zero_cond_t).
+            extra_keys=("qwen-image-edit-2511",),
             base_model=args.base_model,
         )
 
