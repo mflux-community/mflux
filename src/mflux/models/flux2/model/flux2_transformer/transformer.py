@@ -66,7 +66,7 @@ class Flux2Transformer(nn.Module):
             )
             for _ in range(num_single_layers)
         ]
-        self.norm_out = AdaLayerNormContinuous(self.inner_dim, self.inner_dim)
+        self.norm_out = AdaLayerNormContinuous(self.inner_dim, self.inner_dim, bias=False)
         self.proj_out = nn.Linear(self.inner_dim, patch_size * patch_size * self.out_channels, bias=False)
 
     def __call__(

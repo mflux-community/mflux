@@ -1,3 +1,4 @@
+import json
 import sys
 from argparse import Namespace
 from types import SimpleNamespace
@@ -13,7 +14,11 @@ from mflux.callbacks.callback_manager import CallbackManager
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
-from mflux.models.qwen21.cli import qwen21_edit_generate as cli
+from mflux.models.qwen21.cli import (
+    qwen21_edit_generate as cli,
+    qwen21_generate,
+)
+from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
 from mflux.models.qwen21.model.qwen21_text_encoder.grounding import QwenImage21Grounding
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
@@ -166,6 +171,228 @@ def test_enhance_prompt_encodes_the_rewrite_and_records_the_original(tmp_path):
     image = _generate(model, tmp_path, enhance_prompt=True)
     assert prompts == ["a detailed edit"]
     assert image.generation_parameters["original_prompt"] == "edit"
+
+
+def test_enhance_prompt_shows_the_rewrite_every_reference_image(tmp_path):
+    # Only the first image used to reach the rewrite, so an instruction about <image2> came back
+    # as "<image2> is not present" (#831).
+    model = _stub_model()
+    seen = []
+
+    def reply(instruction, images, tokens):
+        seen.append((instruction, len(images)))
+        return '{"rewritten_prompt": "a detailed edit"}'
+
+    model._vision_reply = reply
+
+    class _Encoded(Exception):
+        pass
+
+    def stop(prompt, images):
+        raise _Encoded  # the stubbed encoder serves one reference; the rewrite is what this checks
+
+    model._encode_prompt = stop
+    second = tmp_path / "second.png"
+    Image.new("RGBA", (64, 64), (10, 200, 30, 255)).save(second)
+    with pytest.raises(_Encoded):
+        model.generate_image(
+            seed=1,
+            prompt="put the hat from <image2> on <image1>",
+            num_inference_steps=4,
+            image_paths=[_source(tmp_path), str(second)],
+            output_resolution=64,
+            enhance_prompt=True,
+        )
+    instruction, count = seen[0]
+    assert count == 2
+    assert "<image1>, the image to be edited, and the reference image <image2>" in instruction
+
+
+def test_rewrite_prompt_is_public_and_matches_enhance_prompt(tmp_path):
+    prompts = []
+    model = _stub_model(prompts)
+    model._vision_reply = lambda instruction, images, tokens: '{"rewritten_prompt": "a detailed edit"}'
+
+    rewritten = model.rewrite_prompt("edit", [_source(tmp_path)])
+    model.generate_image(
+        seed=1, prompt=rewritten, num_inference_steps=4, image_paths=[_source(tmp_path)], output_resolution=64
+    )
+
+    assert rewritten == "a detailed edit"
+    assert prompts == ["a detailed edit"]
+
+
+def test_rewrite_prompt_raises_when_it_cannot_rewrite(tmp_path):
+    # enhance_prompt falls back to the instruction; the public method says so instead, or the caller
+    # would generate from the terse instruction thinking it was rewritten.
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: "no json here"
+    with pytest.raises(ValueError, match="could not be parsed"):
+        model.rewrite_prompt("edit", [_source(tmp_path)])
+
+    released = _stub_model()
+    released.text_encoder = None
+    with pytest.raises(RuntimeError, match="released by the memory saver"):
+        released.rewrite_prompt("edit", [_source(tmp_path)])
+
+
+def test_enhance_prompt_falls_back_when_the_text_encoder_was_released(tmp_path):
+    prompts = []
+    model = _stub_model(prompts)
+    model.text_encoder = None
+    _generate(model, tmp_path, enhance_prompt=True)
+    assert prompts == ["edit"]
+
+
+def test_scheduler_reaches_the_edit_schedule(tmp_path):
+    # The CLI checked --scheduler viggle_turbo and then never passed it on (#831).
+    model = _stub_model()
+    schedulers = []
+
+    class _SchedulerRecorder(_Recorder):
+        def call_before_loop(self, seed, prompt, latents, config, **kwargs):
+            schedulers.append(type(config.scheduler).__name__)
+
+    model.callbacks.register(_SchedulerRecorder())
+    model.generate_image(
+        seed=1,
+        prompt="edit",
+        num_inference_steps=6,
+        image_paths=[_source(tmp_path)],
+        output_resolution=64,
+        scheduler="viggle_turbo",
+    )
+
+    assert schedulers == ["ViggleTurboScheduler"]
+
+
+def test_cli_passes_the_scheduler_to_the_edit(tmp_path, monkeypatch):
+    calls = []
+
+    class _Model:
+        def __init__(self, **kwargs):
+            self.callbacks = CallbackRegistry()
+
+        def generate_image(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(save=lambda *args, **kwargs: None, verification=None)
+
+    monkeypatch.setattr(cli, "QwenImage21Edit", _Model)
+    monkeypatch.setattr(cli.CallbackManager, "register_callbacks", lambda *a, **k: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mflux-generate-qwen-2.1-edit", "--prompt", "edit", "--image-paths", _source(tmp_path), "--steps", "6",
+         "--scheduler", "viggle_turbo", "--output", str(tmp_path / "out.png")],
+    )  # fmt: skip
+
+    cli.main()
+
+    assert calls and calls[0]["scheduler"] == "viggle_turbo"
+
+
+@pytest.mark.parametrize("scheduler", ["linear", "viggle_turbo"])
+def test_edit_records_a_scheduler_other_than_linear(tmp_path, scheduler):
+    # The schedule changes the image, so --config-from-conf has to find it in the sidecar.
+    image = _stub_model().generate_image(
+        seed=1,
+        prompt="edit",
+        num_inference_steps=6,
+        image_paths=[_source(tmp_path)],
+        output_resolution=64,
+        scheduler=scheduler,
+    )
+
+    assert image.generation_parameters.get("scheduler") == (None if scheduler == "linear" else scheduler)
+
+
+@pytest.mark.parametrize("command", [cli, qwen21_generate])
+def test_config_from_conf_replays_the_scheduler(tmp_path, monkeypatch, command):
+    sidecar = tmp_path / "image.metadata.json"
+    recorded = {
+        "prompt": "edit",
+        "seed": 1,
+        "steps": 6,
+        "scheduler": "viggle_turbo",
+        "image_paths": [_source(tmp_path)],
+    }
+    sidecar.write_text(json.dumps(recorded))
+
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar)])
+    assert command.build_parser().parse_args().scheduler == "viggle_turbo"
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), "--scheduler", "linear"])
+    assert command.build_parser().parse_args().scheduler == "linear"
+
+
+def test_edit_rejects_a_scheduler_its_loop_cannot_run(tmp_path):
+    # The loop takes Euler steps over the sigmas and never calls step(); only linear and viggle_turbo
+    # are that update, so anything else would run the wrong sampler and record it as run.
+    with pytest.raises(ValueError, match="linear or viggle_turbo"):
+        _generate(_stub_model(), tmp_path, scheduler="flow_match_euler_discrete")
+
+
+@pytest.mark.parametrize("command", [cli, qwen21_generate])
+@pytest.mark.parametrize("recorded", ["nope", "os.path.Thing", 5])
+def test_config_from_conf_rejects_an_unknown_scheduler(tmp_path, monkeypatch, capsys, command, recorded):
+    # Before the model loads, and without importing a module the sidecar names; --scheduler still can.
+    sidecar = tmp_path / "image.metadata.json"
+    sidecar.write_text(
+        json.dumps({"prompt": "edit", "seed": 1, "steps": 6, "scheduler": recorded, "image_paths": [_source(tmp_path)]})
+    )
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar)])
+    with pytest.raises(SystemExit) as exc:
+        command.build_parser().parse_args()
+    assert exc.value.code == 2
+    assert "Pass --scheduler" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("given", "named"),
+    [([], "replayed from --config-from-conf"), (["--scheduler", "viggle_turbo"], "--scheduler viggle_turbo")],
+)
+def test_viggle_turbo_step_error_names_where_the_scheduler_came_from(tmp_path, monkeypatch, capsys, given, named):
+    sidecar = tmp_path / "image.metadata.json"
+    sidecar.write_text(
+        json.dumps(
+            {"prompt": "edit", "seed": 1, "steps": 6, "scheduler": "viggle_turbo", "image_paths": [_source(tmp_path)]}
+        )
+    )
+    monkeypatch.setattr(sys, "argv", ["mflux", "--config-from-conf", str(sidecar), "--steps", "20", *given])
+    parser = cli.build_parser()
+    args = parser.parse_args()
+    with pytest.raises(SystemExit):
+        ViggleTurboScheduler.check_args(parser, args)
+    assert named in capsys.readouterr().err
+
+
+def test_rewrite_prompt_raises_for_an_empty_prompt(tmp_path):
+    with pytest.raises(ValueError, match="empty"):
+        _stub_model().rewrite_prompt("   ", [_source(tmp_path)])
+
+
+def test_rewrite_request_names_each_reference():
+    assert "Look at <image1>, the image to be edited." in QwenImage21Grounding.rewrite_request("x", 1)
+    assert "and the reference image <image2>." in QwenImage21Grounding.rewrite_request("x", 2)
+    assert "and the reference images <image2>, <image3>." in QwenImage21Grounding.rewrite_request("x", 3)
+
+
+def test_rewrite_prompt_takes_at_most_ten_references():
+    # generate_image refuses an eleventh reference, so a rewrite that names <image11> could not be used.
+    with pytest.raises(ValueError, match="at most 10"):
+        _stub_model().rewrite_prompt("edit", ["unread.png"] * 11)
+
+
+def test_image_paths_take_in_memory_images(tmp_path):
+    # Images passed directly work like paths, also with strength < 1, and the metadata records a
+    # placeholder instead of the object's repr, which carries a memory address (#831).
+    model = _stub_model()
+    source = Image.new("RGBA", (64, 64), (*SOURCE_RGB, 255))
+
+    image = model.generate_image(
+        seed=1, prompt="edit", num_inference_steps=4, image_paths=[source], output_resolution=64, strength=0.5
+    )
+
+    assert image.image_paths == ["<in-memory image>"]
 
 
 def test_enhance_prompt_falls_back_on_an_unparseable_reply(tmp_path):

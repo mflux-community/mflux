@@ -8,7 +8,7 @@ from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import ViggleTurboScheduler
-from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+from mflux.models.qwen21.variants.edit.qwen_image_21_edit import EDIT_SCHEDULERS, MAX_REFERENCES, QwenImage21Edit
 from mflux.utils.dimension_resolver import DimensionResolver
 from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopImageGenerationException
 from mflux.utils.prompt_util import PromptUtil
@@ -142,12 +142,12 @@ def main() -> None:
         )
     if Path(args.output).suffix.lower() not in (".png", ".webp", ".tif", ".tiff"):
         parser.error("Qwen-Image-2.1 outputs RGBA; use PNG, WebP or TIFF to retain transparency.")
-    if args.scheduler not in ("linear", "viggle_turbo"):
+    if args.scheduler not in EDIT_SCHEDULERS:
         parser.error("Qwen-Image-2.1 supports the default linear Euler scheduler or viggle_turbo only.")
     ViggleTurboScheduler.check_args(parser, args)
     paths = args.image_paths or []
-    if len(paths) > 10:
-        parser.error("Qwen-Image-2.1 supports at most 10 reference images.")
+    if len(paths) > MAX_REFERENCES:
+        parser.error(f"Qwen-Image-2.1 supports at most {MAX_REFERENCES} reference images.")
     validate_edit_args(parser, args, paths)
     try:
         guidance = args.guidance if args.guidance is not None else 1.0
@@ -198,6 +198,7 @@ def main() -> None:
                 enhance_prompt=args.enhance_prompt,
                 verify=args.verify,
                 verify_retries=args.verify_retries,
+                scheduler=args.scheduler,
             )
             if image.verification is not None:
                 print(f"verification: {image.verification}")

@@ -105,6 +105,16 @@ class TestQwen21StepCacheWiring:
         expected = StepCache.for_run(config, ratio=0.25, signal_fn=model.transformer.time_text_embed).skip_steps
         assert skipped == set(expected)
 
+    @pytest.mark.parametrize(
+        ("scheduler", "recorded"), [("linear", {}), ("viggle_turbo", {"scheduler": "viggle_turbo"})]
+    )
+    def test_a_scheduler_other_than_linear_is_recorded(self, no_decode, scheduler, recorded):
+        # The schedule changes the image, so --config-from-conf has to find it in the sidecar.
+        _stub_model().generate_image(
+            seed=1, prompt="a cat", num_inference_steps=6, height=128, width=128, scheduler=scheduler
+        )
+        assert no_decode["generation_parameters"] == recorded
+
     def test_deprecated_teacache_ratio_alias_still_works(self, no_decode):
         model = _stub_model()
         model.generate_image(seed=1, prompt="a cat", num_inference_steps=40, height=128, width=128, teacache_ratio=0.25)

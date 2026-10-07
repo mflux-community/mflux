@@ -12,6 +12,7 @@ from mflux.cli.defaults import defaults as ui_defaults
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
+from mflux.models.common.schedulers import SCHEDULER_REGISTRY
 from mflux.models.flux.variants.in_context.utils.in_context_loras import LORA_NAME_MAP
 from mflux.utils import box_values, scale_factor
 from mflux.utils.logging_util import LoggingUtil
@@ -516,6 +517,18 @@ class CommandLineParser(argparse.ArgumentParser):
                 if not isinstance(recorded_precision, str) or recorded_precision not in ComputePrecision.CHOICES:
                     self.error(f"compute_precision in --config-from-conf: invalid choice {recorded_precision!r} (choose from {', '.join(sorted(ComputePrecision.CHOICES))})")  # fmt: off
                 namespace.compute_precision = recorded_precision
+            # A schedule other than the default changes the image as well (Qwen-Image-2.1's viggle_turbo).
+            if (
+                hasattr(namespace, "scheduler")
+                and prior_gen_metadata.get("scheduler") is not None
+                and not self._option_was_provided("--scheduler")
+            ):
+                # Checked here so a bad sidecar fails before the model loads, and registered names only:
+                # a dotted one would import whatever module the sidecar names.
+                recorded_scheduler = prior_gen_metadata["scheduler"]
+                if not isinstance(recorded_scheduler, str) or recorded_scheduler not in SCHEDULER_REGISTRY:
+                    self.error(f"scheduler in --config-from-conf: {recorded_scheduler!r} is not a registered scheduler, and a sidecar doesn't import one. Pass --scheduler to use it.")  # fmt: off
+                namespace.scheduler = recorded_scheduler
 
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")

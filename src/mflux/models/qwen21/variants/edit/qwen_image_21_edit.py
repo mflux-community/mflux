@@ -29,6 +29,12 @@ from mflux.utils.image_util import ImageUtil
 logger = logging.getLogger(__name__)
 
 
+MAX_REFERENCES = 10
+# The edit loop takes Euler steps over the scheduler's sigmas and never calls its step(), which is
+# the right update for these two only.
+EDIT_SCHEDULERS = ("linear", "viggle_turbo")
+
+
 class QwenImage21Edit(nn.Module):
     def __init__(
         self,
@@ -61,7 +67,7 @@ class QwenImage21Edit(nn.Module):
         width: int | None = None,
         guidance: float = 1.0,
         negative_prompt: str | None = None,
-        image_paths: list[str | Path] | None = None,
+        image_paths: list[str | Path | Image.Image] | None = None,
         output_resolution: int = 1024,
         use_kv_cache: bool = True,
         mask_image: str | Path | Image.Image | None = None,
@@ -72,10 +78,12 @@ class QwenImage21Edit(nn.Module):
         enhance_prompt: bool = False,
         verify: bool = False,
         verify_retries: int = 0,
+        scheduler: str = "linear",
     ) -> GeneratedImage:
         image_paths = image_paths or []
-        if len(image_paths) > 10:
-            raise ValueError("Qwen-Image-2.1 supports at most 10 reference images.")
+        QwenImage21Edit._check_reference_count(image_paths)
+        if scheduler not in EDIT_SCHEDULERS:
+            raise ValueError(f"The Qwen-Image-2.1 edit runs the linear or viggle_turbo schedule, got {scheduler!r}.")
         QwenImage21LatentCreator.validate_resolution(output_resolution)
         if not 0 < strength <= 1:
             raise ValueError(f"strength must be in (0, 1], got {strength}.")
@@ -105,12 +113,13 @@ class QwenImage21Edit(nn.Module):
             guidance=guidance,
             # strength < 1 skips the first (1 - strength) of the schedule, starting from
             # the source noised to that sigma instead of pure noise
-            image_path=str(image_paths[0]) if strength < 1 else None,
+            image_path=QwenImage21Edit._recorded_path(image_paths[0]) if strength < 1 else None,
             image_strength=1 - strength if strength < 1 else None,
+            scheduler=scheduler,
         )
         original_prompt = prompt
         if enhance_prompt:
-            prompt = self._rewrite_prompt(prompt, source)
+            prompt = self._rewrite_prompt(prompt, images)
             logger.info("enhance_prompt: %r -> %r", original_prompt, prompt)
         # White = repaint, black = preserve; drives per-step latent blending and a final pixel composite.
         inpaint_mask = self._resolve_mask(mask_image, auto_mask, source, width, height)
@@ -217,6 +226,8 @@ class QwenImage21Edit(nn.Module):
         }
         if strength < 1:
             parameters["strength"] = strength
+        if scheduler != "linear":
+            parameters["scheduler"] = scheduler
         if auto_mask is not None:
             parameters["auto_mask"] = auto_mask
         if use_step_cache:
@@ -232,7 +243,7 @@ class QwenImage21Edit(nn.Module):
             lora_paths=self.lora_paths,
             lora_scales=self.lora_scales,
             generation_time=config.time_steps.format_dict["elapsed"],
-            image_paths=image_paths,
+            image_paths=[QwenImage21Edit._recorded_path(path) for path in image_paths],
             negative_prompt=negative_prompt,
             generation_parameters=parameters,
         )
@@ -261,6 +272,7 @@ class QwenImage21Edit(nn.Module):
                 strength=strength,
                 use_step_cache=use_step_cache,
                 step_cache_threshold=step_cache_threshold,
+                scheduler=scheduler,
             )
             # the retry got the resolved mask and prompt; record how they were derived
             retry_image.generation_parameters.update(
@@ -311,20 +323,43 @@ class QwenImage21Edit(nn.Module):
         logger.info("auto_mask %r resolved to bbox %s", auto_mask, tuple(round(v, 3) for v in bbox))
         return QwenImage21Grounding.rasterize_mask(bbox, (width, height))
 
-    def _rewrite_prompt(self, prompt: str, source: Image.Image) -> str:
+    def rewrite_prompt(self, prompt: str, images: list[str | Path | Image.Image]) -> str:
+        # The rewrite enhance_prompt=True runs, for a caller who wants to read or change it first and
+        # then pass it as the prompt with enhance_prompt=False (#831). Unlike enhance_prompt, it raises
+        # when it can't rewrite: handing back the terse instruction would pass for a rewrite.
+        if not images:
+            raise ValueError("rewrite_prompt needs at least one reference image.")
+        QwenImage21Edit._check_reference_count(images)
+        return self._rewritten(prompt, [open_oriented(image).convert("RGBA") for image in images])
+
+    @staticmethod
+    def _check_reference_count(image_paths: list) -> None:
+        if len(image_paths) > MAX_REFERENCES:
+            raise ValueError(f"Qwen-Image-2.1 supports at most {MAX_REFERENCES} reference images.")
+
+    @staticmethod
+    def _recorded_path(image: str | Path | Image.Image) -> str:
+        # What the metadata records for a reference: its path, or a placeholder for an image passed in memory.
+        return str(image) if isinstance(image, (str, Path)) else "<in-memory image>"
+
+    def _rewrite_prompt(self, prompt: str, images: list[Image.Image]) -> str:
         # Official serving recipe: rewrite a terse instruction into a detailed description
         # before encoding. Best-effort: any failure falls back to the original instruction.
         if not prompt or not prompt.strip():
             return prompt
         try:
-            reply = self._vision_reply(QwenImage21Grounding.REWRITE_PROMPT.format(instruction=prompt), [source], 384)
+            return self._rewritten(prompt, images)
         except Exception as exc:  # noqa: BLE001
             logger.warning("enhance_prompt failed (%s); using the original", exc)
             return prompt
+
+    def _rewritten(self, prompt: str, images: list[Image.Image]) -> str:
+        if not prompt or not prompt.strip():
+            raise ValueError("There is no instruction to rewrite: the prompt is empty.")
+        reply = self._vision_reply(QwenImage21Grounding.rewrite_request(prompt, len(images)), images, 384)
         rewritten = QwenImage21Grounding.parse_rewrite(reply)
         if rewritten is None:
-            logger.warning("enhance_prompt could not parse the rewrite reply; using the original")
-            return prompt
+            raise ValueError(f"The rewrite reply could not be parsed: {reply[:120]!r}")
         return rewritten
 
     def _verify_output(self, instruction: str, original: Image.Image, output: Image.Image) -> dict:

@@ -52,7 +52,11 @@ dependencies = [
 
     # Security floor for anyio, which is used transitively by httpx through huggingface-hub;
     # mflux does not import it directly
-    "anyio>=4.14.2,<5.0"
+    "anyio>=4.14.2,<5.0",
+
+    # Security floor for fsspec (GHSA-27vj-qcqg-25rc), which comes in through huggingface-hub and torch;
+    # mflux does not import it directly
+    "fsspec>=2026.6.0",
 ]
 classifiers = [
     "Intended Audience :: Developers",
