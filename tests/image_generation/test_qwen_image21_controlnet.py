@@ -6,6 +6,7 @@ import mlx.core as mx
 import numpy as np
 import PIL.Image
 import pytest
+from mlx import nn
 from mlx.utils import tree_flatten
 
 from mflux.models.common.config.model_config import AVAILABLE_MODELS, ModelConfig
@@ -13,8 +14,11 @@ from mflux.models.qwen21.cli import qwen21_controlnet_generate as cli
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
+from mflux.models.qwen21.qwen_image21_initializer import QwenImage21Initializer
 from mflux.models.qwen21.variants.controlnet.qwen_image21_controlnet_transformer import QwenImage21ControlNet
 from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
+from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
+from tests.weights.test_qwen21_shared_loading import TinyEdit
 
 pytestmark = pytest.mark.fast
 
@@ -96,6 +100,51 @@ def test_the_official_checkpoint_names_are_exactly_this_module():
     assert controlnet._slots == {layer: slot for slot, layer in enumerate(range(0, 32, 2))}
     assert controlnet.control_img_in.weight.shape == (4096, 129)
     assert ["before_proj" in block for block in controlnet.control_blocks] == [True] + [False] * 15
+
+
+class _TinySaved:
+    @staticmethod
+    def make(bits: int | None = None, checkpoint: str = "/missing-original-checkpoint") -> QwenImage21Controlnet:
+        # The tiny edit model of the shared-loading tests, as a ControlNet model with a one-block control branch.
+        edit = TinyEdit.make(bits)
+        model = QwenImage21Controlnet.__new__(QwenImage21Controlnet)
+        nn.Module.__init__(model)
+        for name in ("transformer", "vae", "text_encoder"):
+            setattr(model, name, getattr(edit, name))
+        model.tokenizers, model.bits, model.processor = {}, bits, edit.processor
+        model._component_configs, model._checkpoint_path = edit._component_configs, checkpoint
+        model.controlnet = QwenImage21ControlNet({**TinyEdit.CONFIG, "control_in_dim": 9})
+        if bits:
+            nn.quantize(model.controlnet, bits=bits, class_predicate=QwenImage21WeightDefinition.quantization_predicate)
+        return model
+
+
+@pytest.mark.parametrize("bits", [None, 8])
+def test_a_saved_model_carries_the_control_branch_and_reloads_it(tmp_path, bits):
+    original = _TinySaved.make(bits)
+    mx.eval(original.parameters())
+
+    original.save_model(str(tmp_path))
+    restored = _TinySaved.make(checkpoint=str(tmp_path))
+    restored.bits = bits  # what loading the base components beside it leaves
+    QwenImage21Initializer._load_saved_controlnet(restored, None)
+
+    assert any((tmp_path / "controlnet").glob("*.safetensors"))
+    saved, loaded = (
+        dict(tree_flatten(original.controlnet.parameters())),
+        dict(tree_flatten(restored.controlnet.parameters())),
+    )
+    assert saved.keys() == loaded.keys()
+    assert all(mx.array_equal(saved[name], loaded[name]).item() for name in saved)
+
+
+def test_a_saved_control_branch_must_match_the_precision_of_its_model(tmp_path):
+    _TinySaved.make(8).save_model(str(tmp_path))
+    restored = _TinySaved.make(checkpoint=str(tmp_path))
+    restored.bits = 4
+
+    with pytest.raises(ValueError, match="8-bit but the model beside it is 4-bit"):
+        QwenImage21Initializer._load_saved_controlnet(restored, None)
 
 
 class _FakeVAE:

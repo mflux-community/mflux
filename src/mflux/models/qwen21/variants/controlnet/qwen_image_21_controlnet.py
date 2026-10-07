@@ -1,3 +1,5 @@
+import json
+import shutil
 from pathlib import Path
 
 import mlx.core as mx
@@ -9,6 +11,7 @@ from mflux.cli.defaults.defaults import MODEL_INFERENCE_STEPS
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.vae.vae_util import VAEUtil
+from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
 from mflux.models.qwen21.model.qwen21_text_encoder.prompt_encoder import QwenImage21PromptEncoder
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
@@ -17,6 +20,9 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer impor
 from mflux.models.qwen21.model.qwen21_vae.vae import QwenImage21VAE
 from mflux.models.qwen21.qwen_image21_initializer import QwenImage21Initializer
 from mflux.models.qwen21.variants.controlnet.qwen_image21_controlnet_transformer import QwenImage21ControlNet
+from mflux.models.qwen21.weights.qwen_image21_controlnet_weight_definition import (
+    QwenImage21ControlnetWeightDefinition,
+)
 from mflux.utils.exceptions import StopImageGenerationException
 from mflux.utils.exif_orientation import open_oriented
 from mflux.utils.generated_image import GeneratedImage
@@ -159,6 +165,19 @@ class QwenImage21Controlnet(nn.Module):
             negative_prompt=negative_prompt,
             generation_parameters=self.compute_precision.generation_parameters(),
         )
+
+    def save_model(self, base_path: str) -> None:
+        # The base checkpoint as QwenImage21Edit saves it, with the control branch under controlnet/.
+        ModelSaver.save_model(self, self.bits, base_path, QwenImage21ControlnetWeightDefinition)
+        destination = Path(base_path)
+        for name, config in self._component_configs.items():
+            (destination / name / "config.json").write_text(json.dumps(config, indent=2))
+        self.processor.save_pretrained(str(destination / "processor"))
+        for relative in ("model_index.json", "scheduler/scheduler_config.json"):
+            source = Path(self._checkpoint_path) / relative
+            if source.exists() and source.resolve() != (destination / relative).resolve():
+                (destination / relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination / relative)
 
     def _encode_prompt(self, prompt: str) -> tuple[mx.array, mx.array]:
         # Text only: no image goes through the text encoder's vision slots here.

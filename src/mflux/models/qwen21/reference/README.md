@@ -114,7 +114,7 @@ mflux-generate-qwen-2.1-controlnet \
 - `--image-path` with `--mask-image` inpaints: white in the mask is regenerated from the prompt and black is kept. Add `--controlnet-image-path` and the regenerated region follows that structure too. Describe the whole target image in the prompt; the mask says where, the text does not.
 - Width and height are multiples of 32, and the control image, the source and the mask are resized to them. When they are omitted the size comes from `--output-resolution` and the aspect ratio of the control image (of the source when there is no control image).
 - The control branch adds 16 blocks to the 32 of the base model, and the prefix KV cache is off while it runs. On an M5 Max at q8, 20 steps at 992x608 take about 49 seconds and peak at about 30 GB.
-- The ControlNet loads from its own checkpoint each time. `mflux-save` does not write it.
+- `mflux-save --model qwen-image-2.1-controlnet -q 8 --path ./qwen21-controlnet-q8` writes the base model and the ControlNet together (21 GB at q8, the control branch under `controlnet/`). Run it with `--model ./qwen21-controlnet-q8 --base-model qwen-image-2.1-controlnet`: the same pixels as quantizing at load, without reading the original weights each time.
 
 From Python it is `QwenImage21Controlnet` in `mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet`, with `controlnet_image_path`, `controlnet_strength`, `image_path` and `mask_image` on `generate_image`.
 

@@ -19,6 +19,7 @@ from mflux.models.krea2.variants.txt2img.krea2 import Krea2
 from mflux.models.ming_image import MingImage
 from mflux.models.qwen.variants.edit.qwen_image_edit import QwenImageEdit
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
 from mflux.models.z_image import ZImage, ZImageTurbo, ZImageTurboControlnet
@@ -60,6 +61,7 @@ MODEL_CLASSES: dict[str, type] = {
     "ming-image-design": MingImage,
     "qwen-image": QwenImage,
     "qwen-image-2.1": QwenImage21,
+    "qwen-image-2.1-controlnet-union": QwenImage21Controlnet,
     "qwen-image-edit": QwenImageEdit,
     "schnell": Flux1,
     "schnell-controlnet-canny": Flux1Controlnet,
@@ -75,7 +77,6 @@ MODEL_CLASSES: dict[str, type] = {
 # "not supported yet" from "someone added a model and forgot this table".
 UNSUPPORTED_MODELS = {
     "lens-turbo": "LensImage has no save_model(); its transformer is a single-file checkpoint",
-    "qwen-image-2.1-controlnet-union": "save the base as qwen-image-2.1; the ControlNet loads from its own checkpoint",
 }
 
 
