@@ -37,10 +37,12 @@ class QwenImage21Initializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
         compute_precision: mx.Dtype | None = None,
+        download_patterns: list[str] | None = None,
     ) -> None:
         precision = ComputePrecision(compute_precision)
         root = PathResolution.resolve(
-            model_path or model_config.model_name, QwenImage21WeightDefinition.get_download_patterns()
+            model_path or model_config.model_name,
+            download_patterns or QwenImage21WeightDefinition.get_download_patterns(),
         )
         if root is None:
             raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")
@@ -84,9 +86,22 @@ class QwenImage21Initializer:
         compute_precision: mx.Dtype | None = None,
     ) -> None:
         from mflux.models.qwen21.variants.controlnet.qwen_image21_controlnet_transformer import QwenImage21ControlNet
+        from mflux.models.qwen21.weights.qwen_image21_controlnet_weight_definition import (
+            QwenImage21ControlnetWeightDefinition,
+        )
 
+        # The patterns include controlnet/, so a model saved by mflux and hosted on the Hub brings its branch;
+        # the original base repo has no such folder and the branch then comes from the ControlNet repo.
         QwenImage21Initializer.init(
-            model, model_config, quantize, model_path, lora_paths, lora_scales, bake_lora, compute_precision
+            model,
+            model_config,
+            quantize,
+            model_path,
+            lora_paths,
+            lora_scales,
+            bake_lora,
+            compute_precision,
+            download_patterns=QwenImage21ControlnetWeightDefinition.get_download_patterns(),
         )
         model.controlnet = QwenImage21ControlNet(model._component_configs["transformer"])
         saved = Path(model._checkpoint_path) / "controlnet"

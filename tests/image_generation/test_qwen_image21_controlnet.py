@@ -139,6 +139,23 @@ def test_a_saved_model_carries_the_control_branch_and_reloads_it(tmp_path, bits)
     assert all(mx.array_equal(saved[name], loaded[name]).item() for name in saved)
 
 
+def test_the_model_asks_the_hub_for_a_saved_control_branch(monkeypatch):
+    # A saved model hosted on the Hub keeps its branch under controlnet/; without these patterns the
+    # download would leave it out and the model would load the original ControlNet in its place.
+    asked = {}
+
+    def resolve(path, patterns=None, **kwargs):
+        asked["patterns"] = patterns
+        raise RuntimeError("stop before loading")
+
+    monkeypatch.setattr("mflux.models.qwen21.qwen_image21_initializer.PathResolution.resolve", resolve)
+
+    with pytest.raises(RuntimeError, match="stop before loading"):
+        QwenImage21Controlnet(model_path="someone/qwen21-controlnet-q8")
+
+    assert {"controlnet/*.safetensors", "transformer/*.safetensors"} <= set(asked["patterns"])
+
+
 def test_a_saved_control_branch_must_match_the_precision_of_its_model(tmp_path):
     _TinySaved.make(8).save_model(str(tmp_path))
     restored = _TinySaved.make(checkpoint=str(tmp_path))

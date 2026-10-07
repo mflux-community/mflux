@@ -18,7 +18,7 @@ class QwenImage21ControlnetWeightDefinition:
 
     @staticmethod
     def get_download_patterns() -> list[str]:
-        return QwenImage21WeightDefinition.get_download_patterns()
+        return QwenImage21WeightDefinition.get_download_patterns() + ["controlnet/*.safetensors", "controlnet/*.json"]
 
     @staticmethod
     def get_tokenizers() -> list[TokenizerDefinition]:

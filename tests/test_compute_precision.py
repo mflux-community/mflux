@@ -870,6 +870,7 @@ class TestCommandLine:
             "mflux-generate-z-image-turbo",
             "mflux-generate-qwen-2.1",
             "mflux-generate-qwen-2.1-edit",
+            "mflux-generate-qwen-2.1-controlnet",
         }
         assert {flags[name]["--compute-precision"] for name in supporting} == {"honored"}
 
