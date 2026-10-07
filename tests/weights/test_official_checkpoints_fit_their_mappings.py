@@ -123,10 +123,11 @@ class _Placement:
 def test_a_transformer_has_a_place_for_every_weight_of_its_official_checkpoint(fixture, component, build):
     # FLUX.1, FIBO and Qwen-Image ran without norm_out.linear.bias from 0.16.0 to 0.21.0: the output norm they share
     # with FLUX.2 lost its bias for FLUX.2, whose checkpoint has none, and the loader dropped theirs silently.
-    mapped = WeightMapper.apply_mapping(
-        _OfficialNames.weights(fixture), component.mapping_getter(), component.num_blocks, component.num_layers
-    )
+    weights, mapping = _OfficialNames.weights(fixture), component.mapping_getter()
+    mapped = WeightMapper.apply_mapping(weights, mapping, component.num_blocks, component.num_layers)
 
+    # Both halves: a name the mapping leaves out never reaches the module either.
+    assert WeightMapper.unmapped_names(weights, mapping, component.num_blocks, component.num_layers) == []
     assert _Placement.unplaced(build(), mapped) == []
 
 
