@@ -333,8 +333,8 @@ def test_edit_rejects_a_scheduler_its_loop_cannot_run(tmp_path):
 
 @pytest.mark.parametrize("command", [cli, qwen21_generate])
 @pytest.mark.parametrize("recorded", ["nope", "os.path.Thing", 5])
-def test_config_from_conf_rejects_an_unknown_scheduler(tmp_path, monkeypatch, command, recorded):
-    # Before the model loads, and without importing a module the sidecar names.
+def test_config_from_conf_rejects_an_unknown_scheduler(tmp_path, monkeypatch, capsys, command, recorded):
+    # Before the model loads, and without importing a module the sidecar names; --scheduler still can.
     sidecar = tmp_path / "image.metadata.json"
     sidecar.write_text(
         json.dumps({"prompt": "edit", "seed": 1, "steps": 6, "scheduler": recorded, "image_paths": [_source(tmp_path)]})
@@ -343,6 +343,7 @@ def test_config_from_conf_rejects_an_unknown_scheduler(tmp_path, monkeypatch, co
     with pytest.raises(SystemExit) as exc:
         command.build_parser().parse_args()
     assert exc.value.code == 2
+    assert "Pass --scheduler" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

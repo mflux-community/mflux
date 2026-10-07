@@ -527,7 +527,7 @@ class CommandLineParser(argparse.ArgumentParser):
                 # a dotted one would import whatever module the sidecar names.
                 recorded_scheduler = prior_gen_metadata["scheduler"]
                 if not isinstance(recorded_scheduler, str) or recorded_scheduler not in SCHEDULER_REGISTRY:
-                    self.error(f"scheduler in --config-from-conf: unknown scheduler {recorded_scheduler!r} (choose from {', '.join(sorted(SCHEDULER_REGISTRY))})")  # fmt: off
+                    self.error(f"scheduler in --config-from-conf: {recorded_scheduler!r} is not a registered scheduler, and a sidecar doesn't import one. Pass --scheduler to use it.")  # fmt: off
                 namespace.scheduler = recorded_scheduler
 
             # all configs from the metadata config defers to any explicitly defined args
