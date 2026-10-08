@@ -22,8 +22,12 @@ class QwenTransformer(nn.Module):
         num_attention_heads: int = 24,
         joint_attention_dim: int = 3584,
         patch_size: int = 2,
+        zero_cond_t: bool = False,
     ) -> None:
         super().__init__()
+        # Qwen-Image-Edit-2511 (transformer config zero_cond_t): the tokens of the reference images are
+        # modulated with the embedding of timestep 0, and only the noisy latent with the current one.
+        self.zero_cond_t = zero_cond_t
         self.inner_dim = num_attention_heads * attention_head_dim
         self.img_in = nn.Linear(in_channels, self.inner_dim)
         self.txt_norm = QwenTransformerRMSNorm(joint_attention_dim, eps=1e-6)
@@ -51,6 +55,11 @@ class QwenTransformer(nn.Module):
         encoder_hidden_states = self.txt_norm(encoder_hidden_states)
         encoder_hidden_states = self.txt_in(encoder_hidden_states)
         text_embeddings = self.time_text_embed(timestep, hidden_states)
+        cond_embeddings, is_cond_token = None, None
+        if self.zero_cond_t and cond_image_grid is not None:
+            cond_embeddings = self.time_text_embed(mx.zeros_like(timestep), hidden_states)
+            target_tokens = (config.height // 16) * (config.width // 16)
+            is_cond_token = (mx.arange(hidden_states.shape[1]) >= target_tokens)[None, :, None]
         image_rotary_embeddings = QwenTransformer._compute_rotary_embeddings(
             encoder_hidden_states_mask=encoder_hidden_states_mask,
             pos_embed=self.pos_embed,
@@ -66,6 +75,8 @@ class QwenTransformer(nn.Module):
                 encoder_hidden_states_mask=encoder_hidden_states_mask,
                 text_embeddings=text_embeddings,
                 image_rotary_embeddings=image_rotary_embeddings,
+                cond_embeddings=cond_embeddings,
+                is_cond_token=is_cond_token,
             )
         hidden_states = self.norm_out(hidden_states, text_embeddings)
         hidden_states = self.proj_out(hidden_states)
@@ -80,6 +91,8 @@ class QwenTransformer(nn.Module):
         encoder_hidden_states_mask: mx.array,
         text_embeddings: mx.array,
         image_rotary_embeddings: tuple[mx.array, mx.array],
+        cond_embeddings: mx.array | None = None,
+        is_cond_token: mx.array | None = None,
     ) -> tuple[mx.array, mx.array]:
         return block(
             hidden_states=hidden_states,
@@ -88,6 +101,8 @@ class QwenTransformer(nn.Module):
             text_embeddings=text_embeddings,
             image_rotary_emb=image_rotary_embeddings,
             block_idx=idx,
+            cond_embeddings=cond_embeddings,
+            is_cond_token=is_cond_token,
         )
 
     @staticmethod

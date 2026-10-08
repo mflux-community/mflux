@@ -32,15 +32,22 @@ class QwenTransformerBlock(nn.Module):
         text_embeddings: mx.array,
         image_rotary_emb: tuple[mx.array, mx.array],
         block_idx: int | None = None,
+        cond_embeddings: mx.array | None = None,
+        is_cond_token: mx.array | None = None,
     ) -> tuple[mx.array, mx.array]:
         img_mod_params = self.img_mod_linear(self.img_mod_silu(text_embeddings))
         txt_mod_params = self.txt_mod_linear(self.txt_mod_silu(text_embeddings))
 
         img_mod1, img_mod2 = mx.split(img_mod_params, 2, axis=-1)
         txt_mod1, txt_mod2 = mx.split(txt_mod_params, 2, axis=-1)
+        cond_mod1, cond_mod2 = None, None
+        if cond_embeddings is not None:
+            # zero_cond_t: the reference-image tokens take the modulation of timestep 0.
+            cond_mod_params = self.img_mod_linear(self.img_mod_silu(cond_embeddings))
+            cond_mod1, cond_mod2 = mx.split(cond_mod_params, 2, axis=-1)
 
         img_normed = self.img_norm1(hidden_states)
-        img_modulated, img_gate1 = QwenTransformerBlock._modulate(img_normed, img_mod1)
+        img_modulated, img_gate1 = QwenTransformerBlock._modulate(img_normed, img_mod1, cond_mod1, is_cond_token)
 
         txt_normed = self.txt_norm1(encoder_hidden_states)
         txt_modulated, txt_gate1 = QwenTransformerBlock._modulate(txt_normed, txt_mod1)
@@ -57,7 +64,7 @@ class QwenTransformerBlock(nn.Module):
         encoder_hidden_states = encoder_hidden_states + txt_gate1 * txt_attn_output
 
         img_normed2 = self.img_norm2(hidden_states)
-        img_modulated2, img_gate2 = QwenTransformerBlock._modulate(img_normed2, img_mod2)
+        img_modulated2, img_gate2 = QwenTransformerBlock._modulate(img_normed2, img_mod2, cond_mod2, is_cond_token)
 
         img_mlp_output = self.img_ff(img_modulated2)
 
@@ -71,6 +78,14 @@ class QwenTransformerBlock(nn.Module):
         return encoder_hidden_states, hidden_states
 
     @staticmethod
-    def _modulate(x: mx.array, mod_params: mx.array) -> tuple[mx.array, mx.array]:
-        shift, scale, gate = mx.split(mod_params, 3, axis=-1)
-        return x * (1 + scale[:, None, :]) + shift[:, None, :], gate[:, None, :]
+    def _modulate(
+        x: mx.array,
+        mod_params: mx.array,
+        cond_mod_params: mx.array | None = None,
+        is_cond_token: mx.array | None = None,
+    ) -> tuple[mx.array, mx.array]:
+        shift, scale, gate = (part[:, None, :] for part in mx.split(mod_params, 3, axis=-1))
+        if cond_mod_params is not None:
+            cond = (part[:, None, :] for part in mx.split(cond_mod_params, 3, axis=-1))
+            shift, scale, gate = (mx.where(is_cond_token, c, p) for c, p in zip(cond, (shift, scale, gate)))
+        return x * (1 + scale) + shift, gate

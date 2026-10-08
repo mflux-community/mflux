@@ -161,12 +161,14 @@ def test_main_rejects_a_model_name_this_command_cannot_run_before_building_anyth
         (["--model", "qwen-edit"], None),
         (["--model", "qwen-edit-2511"], None),
         (["--model", "someone/my-finetune", "--base-model", "qwen-image-edit"], "someone/my-finetune"),
+        (["--model", "someone/my-2511-finetune", "--base-model", "qwen-edit-2511"], "someone/my-2511-finetune"),
     ],
-    ids=["alias", "2511-alias", "repo-id-with-own-base"],
+    ids=["alias", "2511-alias", "repo-id-with-own-base", "repo-id-with-2511-base"],
 )
 def test_main_builds_the_edit_config_for_its_own_names(monkeypatch, first_png, argv, model_path):
     model = run_main(monkeypatch, ["--prompt", "x", "--image-paths", str(first_png), *argv])
-    assert model.bound_init()["model_config"] is AVAILABLE_MODELS["qwen-image-edit"]
+    key = "qwen-image-edit-2511" if "2511" in argv[-1] else "qwen-image-edit"
+    assert model.bound_init()["model_config"] is AVAILABLE_MODELS[key]
     assert model.bound_init()["model_path"] == model_path
 
 

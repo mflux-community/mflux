@@ -92,13 +92,26 @@ class TestConfigResolutionInferSubstring:
         assert config.text_encoder_overrides["hidden_size"] == 4096
 
     @pytest.mark.fast
-    def test_inferred_config_preserves_scheduler_shift_settings(self):
-        config = ConfigResolution.resolve(model_name="Qwen/Qwen-Image-Edit-2511")
+    @pytest.mark.parametrize(
+        ("model_name", "base_model"),
+        [
+            ("Qwen/Qwen-Image-Edit-2511", None),
+            ("someone/Qwen-Image-Edit-2511-mlx-q8", "Qwen/Qwen-Image-Edit-2511"),
+        ],
+    )
+    def test_a_2511_checkpoint_gets_the_2511_entry_and_its_schedule(self, model_name, base_model):
+        # 2511 has its own entry: it shares 2509's schedule and adds zero_cond_t, which a 2509 does not have.
+        config = ConfigResolution.resolve(model_name=model_name)
 
-        assert config.base_model == "Qwen/Qwen-Image-Edit-2509"
+        assert config.base_model == base_model
         assert config.sigma_max_shift == 0.9
         assert config.sigma_max_seq_len == 8192
         assert config.sigma_shift_terminal == 0.02
+        assert config.transformer_overrides == {"zero_cond_t": True}
+
+    def test_a_2509_checkpoint_stays_without_zero_cond_t(self):
+        assert ConfigResolution.resolve(model_name="someone/Qwen-Image-Edit-2509-q8").transformer_overrides == {}
+        assert ConfigResolution.resolve(model_name="qwen-image-edit").model_name == "Qwen/Qwen-Image-Edit-2509"
 
 
 class TestConfigResolutionError:

@@ -50,6 +50,7 @@ MODEL_INFERENCE_STEPS = {
     "ming-image-design": 12,
     "qwen-image": 20,
     "qwen-image-edit": 20,
+    "qwen-image-edit-2511": 20,
     "qwen-image-2.1": 40,
     "qwen-image-2.1-controlnet-union": 40,
     "schnell": 4,
