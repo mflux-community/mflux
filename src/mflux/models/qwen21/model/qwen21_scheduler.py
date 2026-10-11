@@ -76,3 +76,88 @@ class ViggleTurboScheduler(BaseScheduler):
 
 register_contrib(ViggleTurboScheduler, "viggle_turbo")
 register_contrib(ViggleTurboScheduler, "ViggleTurboScheduler")
+
+
+class Qwen21TurboScheduler(BaseScheduler):
+    """Fixed 8-step schedule of the Qwen-Image-2.1-Turbo checkpoint.
+
+    The checkpoint saves its sigma nodes as `sample_sigmas` in model_index.json, and its
+    scheduler config turns dynamic shifting off (shift 1.0, no shift_terminal). So this
+    scheduler uses the nodes raw, with no resolution shift and no terminal rescale. The reference
+    pipeline uses these nodes whatever num_inference_steps is, so any other step count
+    is an error here. step() is the same first-order Euler update LinearScheduler uses.
+
+    The Turbo model selects this schedule for the default "linear" scheduler name. See
+    for_model().
+    """
+
+    SIGMA_NODES = (1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568)
+
+    def __init__(self, config):
+        self.config = config
+        steps = config.num_inference_steps
+        if steps != len(self.SIGMA_NODES):
+            raise ValueError(
+                f"Qwen-Image-2.1-Turbo samples on its {len(self.SIGMA_NODES)} saved sigma nodes, "
+                f"but num_inference_steps is {steps}. Use {len(self.SIGMA_NODES)} steps."
+            )
+        self._sigmas = mx.array([*self.SIGMA_NODES, 0.0], dtype=mx.float32)
+        self._timesteps = mx.arange(steps, dtype=mx.float32)
+
+    @staticmethod
+    def is_turbo(model_config) -> bool:
+        from mflux.models.common.config.model_config import ModelConfig
+
+        # Every registry entry on the Turbo checkpoint, the ControlNet entry too.
+        return model_config.model_name == ModelConfig.qwen_image_21_turbo().model_name
+
+    @staticmethod
+    def default_steps(model_config) -> int:
+        # The step count when a Python API caller gives none: 8 for Turbo, else the base default.
+        from mflux.cli.defaults.defaults import MODEL_INFERENCE_STEPS
+
+        if Qwen21TurboScheduler.is_turbo(model_config):
+            return len(Qwen21TurboScheduler.SIGMA_NODES)
+        return MODEL_INFERENCE_STEPS["qwen-image-2.1"]
+
+    @staticmethod
+    def for_model(model_config, scheduler: str) -> str:
+        # The scheduler name Config should build. The Turbo checkpoint's default schedule is
+        # its saved nodes, so "linear" (the default name) maps to them. The caller records
+        # the original name in the image metadata, so a replay passes "linear" again.
+        if scheduler == "linear" and Qwen21TurboScheduler.is_turbo(model_config):
+            return "qwen21_turbo"
+        return scheduler
+
+    @staticmethod
+    def check_args(parser, args, model_config) -> None:
+        # Runs before the model load, so a wrong value fails fast.
+        if not Qwen21TurboScheduler.is_turbo(model_config):
+            return
+        nodes = len(Qwen21TurboScheduler.SIGMA_NODES)
+        if args.steps != nodes and not parser._option_was_provided("--steps"):
+            # The default came from the checkpoint's name, and a local folder such as
+            # Qwen--Qwen-Image-2.1-Turbo-mflux-q8 matches the "qwen" alias (20 steps) first.
+            args.steps = nodes
+        if args.steps != nodes:
+            parser.error(f"Qwen-Image-2.1-Turbo samples on {nodes} fixed sigma nodes. Got --steps {args.steps}. Use --steps {nodes}.")  # fmt: off
+        if args.guidance is not None and args.guidance != 1:
+            parser.error(f"Qwen-Image-2.1-Turbo runs without CFG. Got --guidance {args.guidance}. Use --guidance 1.")
+        if args.scheduler == "viggle_turbo":
+            parser.error("viggle_turbo is the schedule of a LoRA for the base Qwen-Image-2.1. Do not use it with the Turbo model.")  # fmt: off
+
+    @property
+    def sigmas(self) -> mx.array:
+        return self._sigmas
+
+    @property
+    def timesteps(self) -> mx.array:
+        return self._timesteps
+
+    def step(self, noise: mx.array, timestep: int, latents: mx.array, **kwargs) -> mx.array:
+        dt = (self._sigmas[timestep + 1] - self._sigmas[timestep]).astype(latents.dtype)
+        return latents + noise.astype(latents.dtype) * dt
+
+
+register_contrib(Qwen21TurboScheduler, "qwen21_turbo")
+register_contrib(Qwen21TurboScheduler, "Qwen21TurboScheduler")

@@ -27,7 +27,8 @@ class Qwen21WeightDefinition:
             ComponentDefinition(
                 name="text_encoder",
                 hf_subdir="text_encoder",
-                loading_mode="multi_json",
+                # Glob, not the shard index: Qwen-Image-2.1-Turbo ships one model.safetensors with no index.
+                loading_mode="multi_glob",
                 precision=mx.bfloat16,
                 skip_quantization=True,  # Quantization causes significant semantic degradation
                 mapping_getter=Qwen21WeightMapping.get_text_encoder_mapping,

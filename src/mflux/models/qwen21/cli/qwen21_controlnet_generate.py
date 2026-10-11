@@ -7,15 +7,18 @@ from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler
 from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
 from mflux.utils.exceptions import ModelConfigError, PromptFileReadError, StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
 from mflux.utils.prompt_util import PromptUtil
 
 DEFAULT_MODEL = "qwen-image-2.1-controlnet-union"
+# The same ControlNet branch beside the Turbo checkpoint, on the Turbo schedule.
+FAMILY_MODELS = ("qwen-image-2.1-turbo-controlnet-union",)
 IGNORED_OPTIONS = {
     "--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora.",
-    "--scheduler": "The ControlNet runs the linear Euler schedule of Qwen-Image-2.1; other schedulers are not wired.",
+    "--scheduler": "The ControlNet runs the Euler schedule of its base checkpoint. Other schedulers are not wired.",
 }
 CONDITIONAL_OPTIONS = {
     "--negative-prompt": {
@@ -77,7 +80,7 @@ class Qwen21ControlnetCommand:
         # Only this model's aliases, or a checkpoint saved from it: another ControlNet entry would send
         # a foreign checkpoint to this loader.
         model_config = ConfigResolution.resolve_restricted(
-            args.model, DEFAULT_MODEL, model_path=args.model_path, base_model=args.base_model
+            args.model, DEFAULT_MODEL, model_path=args.model_path, extra_keys=FAMILY_MODELS, base_model=args.base_model
         )
         if args.controlnet_image_path is None and args.image_path is None:
             raise ValueError("Give --controlnet-image-path, or --image-path with --mask-image to inpaint.")
@@ -129,11 +132,12 @@ def main() -> None:
             {"--negative-prompt": CONDITIONAL_OPTIONS["--negative-prompt"]["reason"]}
         )
     try:
-        Qwen21ControlnetCommand.validate(args)
+        model_config = Qwen21ControlnetCommand.validate(args)
     except ModelConfigError:
         raise
     except ValueError as exc:
         parser.error(str(exc))
+    Qwen21TurboScheduler.check_args(parser, args, model_config)
     model = Qwen21ControlnetCommand.load(args)
     memory_saver = CallbackManager.register_callbacks(
         args=args, model=model, latent_creator=Qwen21ControlnetCommand.latent_creator

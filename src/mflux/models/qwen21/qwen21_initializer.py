@@ -58,7 +58,10 @@ class Qwen21Initializer:
                 supplied = Qwen21Initializer._normalize_transformer_weights(supplied)
                 weights.components[component.name] = tree_unflatten(list(supplied.items()))
             elif component.name == "vae":
-                supplied = Qwen21Initializer._normalize_vae_weights(supplied)
+                supplied = Qwen21Initializer._normalize_vae_weights(supplied, module)
+                weights.components[component.name] = tree_unflatten(list(supplied.items()))
+            elif component.name == "text_encoder":
+                supplied = Qwen21Initializer._normalize_text_encoder_weights(supplied, module)
                 weights.components[component.name] = tree_unflatten(list(supplied.items()))
             if validate and weights.meta_data.quantization_level is None:
                 Qwen21Initializer._validate_weights(component.name, module, supplied, weight_definition)
@@ -133,11 +136,30 @@ class Qwen21Initializer:
         return normalized
 
     @staticmethod
-    def _normalize_vae_weights(supplied: dict[str, mx.array]) -> dict[str, mx.array]:
+    def _normalize_text_encoder_weights(supplied: dict[str, mx.array], module) -> dict[str, mx.array]:
+        # A save from QwenImage21Edit (mflux-save) keeps the language model under language_model.
+        # and also holds the vision tower and lm_head. The text-only encoder uses neither. The
+        # editing encoder has all of them, so its keys stay the same.
+        if hasattr(module, "language_model") or not any(key.startswith("language_model.") for key in supplied):
+            return supplied
+        return {
+            key.removeprefix("language_model."): value
+            for key, value in supplied.items()
+            if not key.startswith(("visual.", "lm_head."))
+        }
+
+    @staticmethod
+    def _normalize_vae_weights(supplied: dict[str, mx.array], module=None) -> dict[str, mx.array]:
         # Saved mflux exports bypass HF mappings. Text VAE exports from before the shared VAE
         # use Qwen21CausalConv (".conv.") and Qwen21RMSNorm (".weight") parameter names.
+        # QwenImage21Edit saves the per-frame video layers (time_conv). A VAE without them never runs them.
+        drop_time_conv = module is not None and not any(
+            ".time_conv." in key for key, _ in tree_flatten(module.parameters())
+        )
         normalized = {}
         for key, value in supplied.items():
+            if drop_time_conv and ".time_conv." in key:
+                continue
             target = key.replace(".downsampler.conv.", ".downsampler.resample.1.")
             target = target.replace(".upsampler.conv.", ".upsampler.resample.1.")
             target = target.replace(".conv.", ".")

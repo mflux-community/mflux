@@ -120,7 +120,12 @@ class TinyCheckpointRoundtrip:
     @staticmethod
     def _quantize(components: dict[str, nn.Module], weight_definition: type, bits: int) -> None:
         group_size = getattr(weight_definition, "quantization_group_size", 64)
-        for module in components.values():
+        # Mirror WeightApplier._quantize: a skip_quantization component stays unquantized
+        # on load, so it must also be saved unquantized or the key sets cannot match.
+        skipped = {c.name for c in weight_definition.get_components() if c.skip_quantization}
+        for name, module in components.items():
+            if name in skipped:
+                continue
             nn.quantize(
                 module,
                 group_size=group_size,

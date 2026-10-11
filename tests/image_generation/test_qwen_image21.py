@@ -66,7 +66,8 @@ assert not hasattr(reference, "missing_attribute")
     def test_registry_and_defaults(self, name):
         assert ModelConfig.from_name(name).model_name == "Qwen/Qwen-Image-2.1"
         assert model_inference_steps(name) == 40
-        assert MODEL_CLASSES["qwen-image-2.1"].__name__ == "QwenImage21"
+        # mflux-save writes the full checkpoint, which both Qwen-Image-2.1 commands load.
+        assert MODEL_CLASSES["qwen-image-2.1"].__name__ == "QwenImage21Edit"
 
     def test_cli_default_and_cache_override(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["qwen21", "--prompt", "test", "--no-use-kv-cache"])

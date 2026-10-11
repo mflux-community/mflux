@@ -76,6 +76,26 @@ mflux-generate-qwen-2.1 --prompt "..." --negative-prompt "blurry, low quality" -
 
 With no negative prompt (or `--guidance 1.0`, the default) the negative pass is skipped entirely.
 
+### Turbo (8 steps)
+
+`Qwen/Qwen-Image-2.1-Turbo` is a distilled checkpoint of the same model. It uses the same architecture and runs in 8 steps without CFG. Select it with `--model qwen-image-2.1-turbo` (aliases: `qwen-2.1-turbo`, `qwen-image-21-turbo`, `qwen-image-turbo-21`). Both `mflux-generate-qwen-2.1` and `mflux-generate-qwen-2.1-edit` accept it:
+
+```sh
+mflux-generate-qwen-2.1-edit \
+  --model qwen-image-2.1-turbo \
+  --prompt "Close-up portrait of a majestic tiger in its natural habitat, detailed fur texture, piercing eyes, natural forest background, soft natural lighting, wildlife photography, photorealistic, high detail, professional wildlife shot" \
+  --seed 42 \
+  -q 8
+```
+
+- The checkpoint stores its 8 sigma values in `model_index.json` (`sample_sigmas`). mflux uses these values without a resolution shift, as the reference pipeline does. The default `linear` scheduler selects this schedule for the Turbo model.
+- Use 1024 px or larger. At small sizes such as 512×320, Turbo turns fine detail into a pixel grid. The diffusers reference does the same.
+- The defaults are 8 steps and guidance 1. Other values for `--steps` or `--guidance`, and `--scheduler viggle_turbo`, stop with an error before the model loads.
+- ControlNet: `mflux-generate-qwen-2.1-controlnet --model qwen-image-2.1-turbo-controlnet` runs the Fun ControlNet-Union on the Turbo checkpoint in 8 steps. alibaba-pai trained the branch with the base model. In a canny test at 1280×768, the Turbo output followed the edges as closely as the base model at 20 steps.
+- LoRAs for Qwen-Image-2.1 load on the Turbo checkpoint. The ausboss Outpaint LoRA v2 kept the original picture in place (kept-area PSNR 37.8 dB, against 20.7 dB without the LoRA). The ausboss Consistency LoRA kept the framing of a watercolor edit.
+- Weights: about 32 GB bf16 on disk (14.2 GB transformer, 17.5 GB text encoder in one file, 0.7 GB VAE). A q8 save from the edit command is 17 GB (measured with `du`). That command quantizes the text encoder too.
+- Validation: the diffusers reference made a bf16 image at 1024², seed 42. The q8 edit command started from the same initial noise and got PSNR 29.5 dB against that image.
+
 ### img2img
 
 Pass `--image-path` and optionally `--image-strength`, like the other models.

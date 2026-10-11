@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
 from mflux.utils.image_compare import ImageCompare
 
@@ -16,6 +17,7 @@ class ImageGeneratorQwenImage21TestHelper:
         width: int,
         quantize: int | None = None,
         mismatch_threshold: float | None = None,
+        model_config: ModelConfig | None = None,
     ):
         reference_image_path = ImageGeneratorQwenImage21TestHelper.resolve_path(reference_image_path)
         output_image_path = ImageGeneratorQwenImage21TestHelper.resolve_path(output_image_path)
@@ -23,6 +25,7 @@ class ImageGeneratorQwenImage21TestHelper:
         try:
             model = QwenImage21(
                 quantize=quantize,
+                model_config=model_config or ModelConfig.qwen_image_21(),
             )
 
             image = model.generate_image(

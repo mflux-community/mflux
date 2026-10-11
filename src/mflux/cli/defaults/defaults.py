@@ -53,6 +53,8 @@ MODEL_INFERENCE_STEPS = {
     "qwen-image-edit-2511": 20,
     "qwen-image-2.1": 40,
     "qwen-image-2.1-controlnet-union": 40,
+    "qwen-image-2.1-turbo": 8,
+    "qwen-image-2.1-turbo-controlnet-union": 8,
     "schnell": 4,
     "schnell-controlnet-canny": 4,
     "z-image": 50,

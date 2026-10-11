@@ -10,6 +10,7 @@ from mflux.models.common.step_cache.step_cache import StepCache
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler
 from mflux.models.qwen21.model.qwen21_text_encoder.qwen21_prompt_encoder import Qwen21PromptEncoder
 from mflux.models.qwen21.model.qwen21_text_encoder.qwen21_text_encoder import Qwen21TextEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
@@ -52,7 +53,7 @@ class QwenImage21(nn.Module):
         self,
         seed: int,
         prompt: str,
-        num_inference_steps: int = 40,
+        num_inference_steps: int | None = None,
         height: int = 1024,
         width: int = 1024,
         guidance: float = 1.0,
@@ -67,11 +68,13 @@ class QwenImage21(nn.Module):
             if step_cache_ratio is not None and step_cache_ratio != teacache_ratio:
                 raise ValueError("Pass step_cache_ratio or its deprecated alias teacache_ratio, not both")
             step_cache_ratio = teacache_ratio
+        if num_inference_steps is None:
+            num_inference_steps = Qwen21TurboScheduler.default_steps(self.model_config)
         config = Config(
             width=width,
             height=height,
             guidance=guidance,
-            scheduler=scheduler,
+            scheduler=Qwen21TurboScheduler.for_model(self.model_config, scheduler),
             image_path=image_path,
             image_strength=image_strength,
             model_config=self.model_config,

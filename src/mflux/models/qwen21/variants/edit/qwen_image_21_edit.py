@@ -9,13 +9,13 @@ import numpy as np
 from mlx import nn
 from PIL import Image
 
-from mflux.cli.defaults.defaults import MODEL_INFERENCE_STEPS
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.common.step_cache.step_cache import StepCache as StepReuse
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler
 from mflux.models.qwen21.model.qwen21_text_encoder.grounding import QwenImage21Grounding
 from mflux.models.qwen21.model.qwen21_text_encoder.prompt_encoder import QwenImage21PromptEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
@@ -63,7 +63,7 @@ class QwenImage21Edit(nn.Module):
         self,
         seed: int,
         prompt: str,
-        num_inference_steps: int = MODEL_INFERENCE_STEPS["qwen-image-2.1"],
+        num_inference_steps: int | None = None,
         height: int | None = None,
         width: int | None = None,
         guidance: float = 1.0,
@@ -82,6 +82,8 @@ class QwenImage21Edit(nn.Module):
         scheduler: str = "linear",
     ) -> GeneratedImage:
         image_paths = image_paths or []
+        if num_inference_steps is None:
+            num_inference_steps = Qwen21TurboScheduler.default_steps(self.model_config)
         QwenImage21Edit._check_reference_count(image_paths)
         if scheduler not in EDIT_SCHEDULERS:
             raise ValueError(f"The Qwen-Image-2.1 edit runs the linear or viggle_turbo schedule, got {scheduler!r}.")
@@ -116,7 +118,7 @@ class QwenImage21Edit(nn.Module):
             # the source noised to that sigma instead of pure noise
             image_path=QwenImage21Edit._recorded_path(image_paths[0]) if strength < 1 else None,
             image_strength=1 - strength if strength < 1 else None,
-            scheduler=scheduler,
+            scheduler=Qwen21TurboScheduler.for_model(self.model_config, scheduler),
         )
         original_prompt = prompt
         if enhance_prompt:

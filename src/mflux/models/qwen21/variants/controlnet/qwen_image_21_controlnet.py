@@ -7,12 +7,12 @@ import numpy as np
 from mlx import nn
 from PIL import Image
 
-from mflux.cli.defaults.defaults import MODEL_INFERENCE_STEPS
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
+from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler
 from mflux.models.qwen21.model.qwen21_text_encoder.prompt_encoder import QwenImage21PromptEncoder
 from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_layout import QwenImage21Layout
@@ -68,7 +68,7 @@ class QwenImage21Controlnet(nn.Module):
         prompt: str,
         controlnet_image_path: str | Path | Image.Image | None = None,
         controlnet_strength: float = 1.0,
-        num_inference_steps: int = MODEL_INFERENCE_STEPS["qwen-image-2.1"],
+        num_inference_steps: int | None = None,
         height: int | None = None,
         width: int | None = None,
         guidance: float = 1.0,
@@ -77,6 +77,8 @@ class QwenImage21Controlnet(nn.Module):
         image_path: str | Path | Image.Image | None = None,
         mask_image: str | Path | Image.Image | None = None,
     ) -> GeneratedImage:
+        if num_inference_steps is None:
+            num_inference_steps = Qwen21TurboScheduler.default_steps(self.model_config)
         if controlnet_image_path is None and image_path is None:
             raise ValueError("Give a control image, or a source image and a mask to inpaint.")
         if (image_path is None) != (mask_image is None):
@@ -101,6 +103,7 @@ class QwenImage21Controlnet(nn.Module):
             height=height,
             guidance=guidance,
             controlnet_strength=controlnet_strength,
+            scheduler=Qwen21TurboScheduler.for_model(self.model_config, "linear"),
         )
         # Under control the joint stream carries only the prompt and the target: the source of an inpaint
         # goes in through the control input, never through the text encoder's vision slots.
