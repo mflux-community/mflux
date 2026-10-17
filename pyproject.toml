@@ -130,6 +130,7 @@ mflux-inspire-fibo = "mflux.models.fibo_vlm.cli.fibo_inspire:main"
 mflux-concept = "mflux.models.flux.cli.flux_concept:main"
 mflux-concept-from-image = "mflux.models.flux.cli.flux_concept_from_image:main"
 mflux-capabilities = "mflux.cli.capabilities:main"
+mflux-check = "mflux.cli.check_model:main"
 mflux-save = "mflux.models.common.cli.save:main"
 mflux-save-depth = "mflux.models.depth_pro.cli.save_depth:main"
 mflux-train = "mflux.models.common.cli.train:main"
@@ -166,7 +167,7 @@ docstring-code-line-length = "dynamic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not slow and not high_memory_requirement"'
+addopts = '-v --failed-first --showlocals --tb=long --full-trace -m "not slow and not high_memory_requirement and not known_model"'
 filterwarnings = [
     "ignore::DeprecationWarning:transformers\\.models\\.clip\\.tokenization_clip",
     "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
@@ -177,6 +178,7 @@ markers = [
     "fast: marks tests as fast (no image generation)",
     "slow: marks tests as slow (generates images)",
     "high_memory_requirement: marks tests that require high memory (deselect with '-m \"not high_memory_requirement\"')",
+    "known_model: marks tests that require a locally installed known model",
 ]
 
 [tool.ruff.lint.isort]

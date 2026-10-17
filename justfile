@@ -75,6 +75,9 @@ test: _test-run
 # Run the suite incl. slow tests, excluding high-memory ones (downloads model weights)
 test-all: (_test-run '-m "not high_memory_requirement"')
 
+# Run all mflux-check tests, including checks that require known local model packages
+test-check: (_test-run '-o addopts="" tests/checking/test_model_checker.py tests/cli/test_check_model_command.py')
+
 # Run fast tests only (no image generation)
 test-fast: (_test-run "-m fast")
 

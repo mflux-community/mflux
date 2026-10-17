@@ -45,6 +45,7 @@ a uv tool.
 | `just test-fast` | Run tests marked `fast`; these do not generate images. |
 | `just test-slow` | Run tests marked `slow`; these generate images. |
 | `just test-all` | Run all tests except those marked `high_memory_requirement`. This can download model weights. |
+| `just test-check` | Run all `mflux-check` tests. Set `MFLUX_CHECK_KNOWN_HF_MODEL` or `MFLUX_CHECK_KNOWN_MFLUX_MODEL` to include the known-model cases. Pytest skips a case when its variable or its package is not available. |
 | `just build` | Build sdist/wheel into `dist/`, then report artifact sizes and flag any oversized files in the sdist (a check that image assets weren't accidentally bundled). |
 | `just release` | Trigger the `release.yml` GitHub Actions workflow via `gh`, then watch the run. Publishing happens on GitHub via PyPI trusted publishing (OIDC); no local credentials are used. |
 | `just clean` | Remove `.venv`. Run `just install` to recreate it. |

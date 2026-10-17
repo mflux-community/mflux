@@ -69,9 +69,9 @@ jobs:
         run: |
           uv sync --all-extras --locked
 
-      - name: Run tests (everything except slow/high_memory_requirement)
+      - name: Run tests (everything except slow/high_memory_requirement/known_model)
         run: |
-          python -m pytest -m "not slow and not high_memory_requirement" -v
+          python -m pytest -m "not slow and not high_memory_requirement and not known_model" -v
 
       # ty version comes from the pinned dev dependency in pyproject.toml (ty==0.0.72)
       # via uv.lock. Runs in this job (not lint) because ty needs the synced venv to
