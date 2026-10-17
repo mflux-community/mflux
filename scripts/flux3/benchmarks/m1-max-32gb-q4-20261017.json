@@ -1,0 +1,264 @@
+{
+  "date": "2026-10-17",
+  "source_sha": "ec705857d20846f5636fdc4acaa7507fa9855782",
+  "benchmark_script_sha256": "f65d6f471ba99c70823123cecf0d40a9afcd8c8edb7d03d886dab9ee9450b9a3",
+  "hardware": "Apple M1 Max, 32 GiB unified memory",
+  "platform": "macOS-14.6-arm64-arm-64bit-Mach-O",
+  "source_mflux_version": "0.23.0",
+  "installed_distribution_versions": {
+    "mlx": "0.32.0",
+    "mlx-metal": "0.32.0",
+    "mflux": "0.22.0"
+  },
+  "runtime_note": "Existing environment reused with PYTHONPATH selecting pinned source; installed mflux distribution metadata is older than imported source.",
+  "checkpoint": "Locally saved 4-bit distilled FLUX 3 Image Klein, converted with our earlier local MFLUX port; external SSD.",
+  "checkpoint_manifest": [
+    {
+      "path": "._text_encoder",
+      "bytes": 4096,
+      "sha256": "459ae676f39b46400eb617a9a6d3539e54780202dda00d5f5f2e65c159b5857c"
+    },
+    {
+      "path": "._transformer",
+      "bytes": 4096,
+      "sha256": "e3afca33166b0ce4b8781eb5d0cbc81780eb29f3713bd5cc9700b795532f4bfd"
+    },
+    {
+      "path": "._vae",
+      "bytes": 4096,
+      "sha256": "55bc64c5a468afede3f7957305649e9a81196322dc7fede6f904b871ad0158aa"
+    },
+    {
+      "path": "text_encoder/._0.safetensors",
+      "bytes": 4096,
+      "sha256": "58c92beaf13734bd6b9ad05a87f9bd919797ce74c25965919b36758762a41cc2"
+    },
+    {
+      "path": "text_encoder/._1.safetensors",
+      "bytes": 4096,
+      "sha256": "0529ece6a8ca2d82556b4f73479861a41e81e803cb02da6db144f8acc48a79c5"
+    },
+    {
+      "path": "text_encoder/._chat_template.jinja",
+      "bytes": 4096,
+      "sha256": "50796c9978f099477ab4aa7dbe50d2d90c77a7464597e7faa867a3adc89b5891"
+    },
+    {
+      "path": "text_encoder/._model.safetensors.index.json",
+      "bytes": 4096,
+      "sha256": "e2c8fa79ada37381f3072d4c818a6630daf24f0b5b75d653e5f8c9f46f8dcd9c"
+    },
+    {
+      "path": "text_encoder/._tokenizer.json",
+      "bytes": 4096,
+      "sha256": "8ca3ca540dca6cfad4e36d3777733d6ad51e126464d6db49500dd532c3bd909c"
+    },
+    {
+      "path": "text_encoder/._tokenizer_config.json",
+      "bytes": 4096,
+      "sha256": "d40291449cd9ac7a9ab2adad6e49258243dfb85065e65d41a5fc4ddb5c2d7be9"
+    },
+    {
+      "path": "text_encoder/0.safetensors",
+      "bytes": 2135435091,
+      "sha256": "8207ff8b990fbb582cf97f20f78ce4c680c1da4b4b269fe803d85acb6de00f6d"
+    },
+    {
+      "path": "text_encoder/1.safetensors",
+      "bytes": 127582109,
+      "sha256": "723da1c8e844f891622935d78965d5e09f985d518404a68a115ee6ccdda683df"
+    },
+    {
+      "path": "text_encoder/chat_template.jinja",
+      "bytes": 5292,
+      "sha256": "3636d0f0bd6bef02654cdffdc447b79cb2cef8ab02cc75267345946291a489e4"
+    },
+    {
+      "path": "text_encoder/model.safetensors.index.json",
+      "bytes": 51332,
+      "sha256": "37123ca9a137abc8d89b684f7fe29753b4c0377f310f58683502dc9ce66c0063"
+    },
+    {
+      "path": "text_encoder/tokenizer.json",
+      "bytes": 11422650,
+      "sha256": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    },
+    {
+      "path": "text_encoder/tokenizer_config.json",
+      "bytes": 692,
+      "sha256": "e1125421b81c2eedb6bf0e40a4aea9558d788018fd5bd19a21f2233839edf164"
+    },
+    {
+      "path": "transformer/._0.safetensors",
+      "bytes": 4096,
+      "sha256": "79c5709245dc88860f07ccc96b3d60552a9f46f7dee9d94c327c4b1d3f06a213"
+    },
+    {
+      "path": "transformer/._1.safetensors",
+      "bytes": 4096,
+      "sha256": "3e4cfae1cb853b26c2616a7d38393ec6d4fc0156e77343829f356f457726105c"
+    },
+    {
+      "path": "transformer/._model.safetensors.index.json",
+      "bytes": 4096,
+      "sha256": "93263d79c925c30d6a8ed4bbad4c65278345a1b100bd6cf44b9268b5ac952173"
+    },
+    {
+      "path": "transformer/0.safetensors",
+      "bytes": 2144245479,
+      "sha256": "b93d45f79688cf95ea16653873f609df3fd13c6fb382b9c4a36a2ee4b2f80fe4"
+    },
+    {
+      "path": "transformer/1.safetensors",
+      "bytes": 977011460,
+      "sha256": "4383d716067666e9fe2663e5ca57b96a9368002d8fae93210e604aa8682d29fd"
+    },
+    {
+      "path": "transformer/model.safetensors.index.json",
+      "bytes": 61760,
+      "sha256": "1c06cdb0665dbaf9e255df5580c6431e0323ee0ad52480bb70382ea8182a995d"
+    },
+    {
+      "path": "vae/._0.safetensors",
+      "bytes": 4096,
+      "sha256": "6110f98d049fb90d413c9cf0a87b71fee000e6946a8d7fae2f97a4fa152b74c6"
+    },
+    {
+      "path": "vae/._model.safetensors.index.json",
+      "bytes": 4096,
+      "sha256": "0be38ab2719e431a5742bed772e8e579c8bb39e3d42363541082cf0f96c0b4f2"
+    },
+    {
+      "path": "vae/0.safetensors",
+      "bytes": 168120752,
+      "sha256": "1dadf0f82ef3ce4a57d1d96b60cf07c90fab59504756d9292349702320a3e72d"
+    },
+    {
+      "path": "vae/model.safetensors.index.json",
+      "bytes": 16467,
+      "sha256": "05f5d3861714b1bbe1099d71416edd145f938ba6cb3212549de8183d08aa7c61"
+    }
+  ],
+  "settings": {
+    "width": 512,
+    "height": 512,
+    "steps": 16,
+    "seed": 42,
+    "precision": "bfloat16",
+    "compute_precision_override": null,
+    "prompt": "A small red ceramic robot standing beside a green fern on a wooden desk, soft morning window light, detailed handmade textures, product photograph."
+  },
+  "run_order": [
+    "lowram-1",
+    "default-1",
+    "default-2",
+    "lowram-2"
+  ],
+  "runs": [
+    {
+      "run": "lowram-1",
+      "external_wall_s": 120.29,
+      "python_wall_s": 119.086691,
+      "denoise_interval_s": 105.992757,
+      "phases_s": {
+        "construct": 3.07721,
+        "encode": 5.836076,
+        "before_loop": 0.190668,
+        "after_loop": 1.075617,
+        "decode": 1.152093,
+        "save": 0.139003
+      },
+      "mlx_lifetime_peak_bytes": 4101735408,
+      "process_peak_rss_bytes": 1811283968,
+      "system_swap_used_mib_before": 25269.62,
+      "system_swap_used_mib_after": 31218.94,
+      "pressure_before": "kern.memorystatus_vm_pressure_level: 2",
+      "pressure_after": "kern.memorystatus_vm_pressure_level: 2",
+      "mlx_active_bytes_after_encode": 2040650824,
+      "mlx_active_bytes_before_denoise": 3278160,
+      "mlx_active_bytes_before_decode": 4080972,
+      "image_rgb_sha256": "f59b89e7b3cb1f534fccc41b1532d2252982f473de4c08dc77640c9c412139f6"
+    },
+    {
+      "run": "default-1",
+      "external_wall_s": 142.85,
+      "python_wall_s": 133.745431,
+      "denoise_interval_s": 115.927836,
+      "phases_s": {
+        "construct": 3.608466,
+        "encode": 6.065288,
+        "before_loop": 0.492414,
+        "after_loop": 0.680692,
+        "decode": 4.473916,
+        "save": 0.79854
+      },
+      "mlx_lifetime_peak_bytes": 6845796336,
+      "process_peak_rss_bytes": 1621442560,
+      "system_swap_used_mib_before": 28333.81,
+      "system_swap_used_mib_after": 37888.0,
+      "pressure_before": "kern.memorystatus_vm_pressure_level: 1",
+      "pressure_after": "kern.memorystatus_vm_pressure_level: 4",
+      "mlx_active_bytes_after_encode": 2040650760,
+      "mlx_active_bytes_before_denoise": 3278160,
+      "mlx_active_bytes_before_decode": 2748141900,
+      "image_rgb_sha256": "f59b89e7b3cb1f534fccc41b1532d2252982f473de4c08dc77640c9c412139f6"
+    },
+    {
+      "run": "default-2",
+      "external_wall_s": 114.83,
+      "python_wall_s": 111.460667,
+      "denoise_interval_s": 91.732061,
+      "phases_s": {
+        "construct": 3.641517,
+        "encode": 5.836882,
+        "before_loop": 0.143714,
+        "after_loop": 1.236508,
+        "decode": 6.709498,
+        "save": 0.195015
+      },
+      "mlx_lifetime_peak_bytes": 6845796336,
+      "process_peak_rss_bytes": 2612232192,
+      "system_swap_used_mib_before": 35080.19,
+      "system_swap_used_mib_after": 37826.06,
+      "pressure_before": "kern.memorystatus_vm_pressure_level: 1",
+      "pressure_after": "kern.memorystatus_vm_pressure_level: 4",
+      "mlx_active_bytes_after_encode": 2040650696,
+      "mlx_active_bytes_before_denoise": 3278160,
+      "mlx_active_bytes_before_decode": 2748141900,
+      "image_rgb_sha256": "f59b89e7b3cb1f534fccc41b1532d2252982f473de4c08dc77640c9c412139f6"
+    },
+    {
+      "run": "lowram-2",
+      "external_wall_s": 132.72,
+      "python_wall_s": 131.703043,
+      "denoise_interval_s": 115.006219,
+      "phases_s": {
+        "construct": 3.981892,
+        "encode": 6.025217,
+        "before_loop": 0.23424,
+        "after_loop": 0.716268,
+        "decode": 1.427922,
+        "save": 0.127325
+      },
+      "mlx_lifetime_peak_bytes": 4101735408,
+      "process_peak_rss_bytes": 2477064192,
+      "system_swap_used_mib_before": 31844.62,
+      "system_swap_used_mib_after": 29568.5,
+      "pressure_before": "kern.memorystatus_vm_pressure_level: 1",
+      "pressure_after": "kern.memorystatus_vm_pressure_level: 2",
+      "mlx_active_bytes_after_encode": 2040650760,
+      "mlx_active_bytes_before_denoise": 3278160,
+      "mlx_active_bytes_before_decode": 4080972,
+      "image_rgb_sha256": "f59b89e7b3cb1f534fccc41b1532d2252982f473de4c08dc77640c9c412139f6"
+    }
+  ],
+  "all_images_pixel_identical": true,
+  "caveats": [
+    "Other apps running; substantial and changing system-wide swap. Timing is not a controlled speed ranking.",
+    "Fresh processes, uncontrolled filesystem cache; no cold-cache claim.",
+    "Instrumented synchronised phase boundaries; constructor is lazy.",
+    "MLX peak is across reset segments; macOS RSS and system swap are separate metrics.",
+    "Only saved q4 512-square txt2img measured here. No unquantised BF16 checkpoint, larger-resolution, Base, editing or repeated-process residency conclusion.",
+    "No staged-loading implementation or claimed staged-loading improvement."
+  ]
+}
