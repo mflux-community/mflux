@@ -21,7 +21,7 @@ mflux-generate-fibo2 \
   --seed 42
 ```
 
-`--steps` defaults to 30 and `--guidance` to 5.0. The model card suggests 50 steps for the best quality. Width and height must be multiples of 16. Long captions are easier to keep in a file with `--prompt-file caption.json`.
+`--steps` defaults to 50 and `--guidance` to 5.0, the model card's settings. Width and height must be multiples of 16. Long captions are easier to keep in a file with `--prompt-file caption.json`.
 
 <details>
 <summary>Python API</summary>
@@ -65,12 +65,21 @@ FIBO 2 was trained on three kinds of prompt, and mflux passes each of them on th
     --seed 42
   ```
 
-Freeform text that is not one of these forms works less well. To turn a short request into a full caption, see the prompt-to-JSON models on the [Bria FIBO](https://huggingface.co/briaai/FIBO) page.
+The commands check a JSON caption before the model loads, against the format of the training captions (ThalesVGL in [bria-vgl](https://github.com/Bria-AI/vgl) 0.10.0). A field of the wrong type stops the command with the field's name, and a prompt that starts with `{` but is not valid JSON stops it with the line and column of the error. An unknown field, or a missing one that every training caption has, gives a warning, since the model still runs on such a caption: `Unknown field 'lightning': the model was not trained on it. Did you mean 'lighting'?`
 
-With guidance on, the default negative prompt is the null caption the model was trained with: the caption keys with every value empty. Pass `--negative-prompt` to use your own.
+Freeform text that is not one of these forms works less well. `--expand-prompt` turns a short request into a full caption with [FIBO-vlm](https://huggingface.co/briaai/FIBO-vlm), FIBO's prompt-to-JSON model (about 8 GB on first use), before FIBO 2 loads. The command prints the caption, and the metadata keeps it. A JSON caption is used as it is:
+
+```sh
+mflux-generate-fibo2 \
+  --prompt "A snowy owl perched on a mossy branch in a misty pine forest at dawn, soft golden light." \
+  --expand-prompt \
+  --seed 42
+```
+
+With guidance on, the default negative prompt is the model card's. Text to image steers away from a caption of soft, featureless images with blur, haze and lens flare. An edit uses the null caption the model was trained with: the caption keys with every value empty. Pass `--negative-prompt` to use your own.
 
 ### Text in images
-When a caption asks for text in its `text_render` entries, mflux also shows Qwen3-VL each text drawn on its own, the way training drew it: one line, black on white, in Pillow's built-in font, with the fonts that ship with the model (Aileron, then DejaVu Sans) for characters that font lacks. FIBO 2 renders text better with them. A generation runs its first steps, while the noise level is above 0.9, on the caption without the images; an edit uses them at every step. A short description gets no images. Turn them off with `--no-text-images`, or `render_text_images=False` in Python.
+When a caption asks for text in its `text_render` entries, mflux also shows Qwen3-VL each text drawn on its own, the way training drew it: one line, black on white, in Pillow's built-in font, with the fonts that ship with the model (Aileron, then DejaVu Sans) for characters that font lacks. FIBO 2 renders text better with them. A generation runs its first steps, while the noise level is above 0.9, on the caption without the images; an edit uses them at every step. A short description gets no images. Turn them off with `--no-text-images`, or `render_text_images=False` in Python. The metadata records it, so `--config-from-metadata` turns them off again unless you pass `--text-images`.
 
 ## Editing
 `mflux-generate-fibo2-edit` edits one to five images. The prompt is the edit instruction:
@@ -82,7 +91,7 @@ mflux-generate-fibo2-edit \
   --seed 42
 ```
 
-Without `--width` and `--height`, the result takes the size FIBO 2 was trained at for the aspect ratio of the first image, about one megapixel. A single image is cropped to the size of the result; several images are each cropped to the trained size for their own aspect ratio.
+Without `--width` and `--height`, the result takes the size FIBO 2 was trained at for the aspect ratio of the first image, about one megapixel. With only one of them, the other keeps that aspect ratio. A single image is cropped to the size of the result; several images are each cropped to the trained size for their own aspect ratio.
 
 The prompt can also be a JSON object with an `"edit_instruction"` key and a caption of the result, either as the caption's own keys or as a `"structured_caption"` key holding a caption or a short description:
 
@@ -125,7 +134,7 @@ image.save("blue_bicycle.png")
 </details>
 
 ## Edit Turbo
-[Fibo 2.0 Edit Turbo](https://huggingface.co/briaai/Fibo-2.0-edit-turbo) is distilled from Dev for editing in 4 steps without guidance, so each step is one transformer pass instead of two. It has the same architecture, text encoder and VAE as Dev; only the transformer weights differ. It is for editing only: `mflux-generate-fibo2` does not accept it.
+[Fibo 2.0 Edit Turbo](https://huggingface.co/briaai/Fibo-2.0-edit-turbo) is distilled from Dev for editing in 4 steps without guidance, so each step is one transformer pass instead of two. It has the same architecture, text encoder and VAE as Dev; only the transformer weights differ.
 
 ```sh
 mflux-generate-fibo2-edit \
@@ -135,7 +144,16 @@ mflux-generate-fibo2-edit \
   --seed 42
 ```
 
-`--steps` defaults to 4 and guidance to 1.0, which turns it off; `--negative-prompt` then has no effect. A 1024×1024 edit takes about 40 seconds on an M5 Pro, against about 10 minutes with Dev. The first run downloads another 25.5 GB, since the Hugging Face cache keeps each repository on its own.
+The model card presents it for editing only, but it also generates from a caption. From the same seed it kept the composition and the text of Dev's images in our tests, with smoother skin, so `mflux-generate-fibo2` accepts it too:
+
+```sh
+mflux-generate-fibo2 \
+  --model fibo2-edit-turbo \
+  --prompt-file caption.json \
+  --seed 42
+```
+
+`--steps` defaults to 4 and guidance to 1.0, which turns it off; `--negative-prompt` then has no effect. A 1024×1024 edit takes about 40 seconds on an M5 Pro, against about 10 minutes with Dev. A 1024×1024 image from a caption took 18 seconds on an M5 Max, model load included. The first run downloads another 25.5 GB, since the Hugging Face cache keeps each repository on its own.
 
 ## LoRA
 Both commands load FIBO 2 LoRAs with `--lora PATH [SCALE]`, for example ones trained with diffusers' [FIBO 2 DreamBooth script](https://github.com/huggingface/diffusers/blob/main/examples/dreambooth/README_bria_fibo2.md), which adapts every linear layer of the transformer:
@@ -150,8 +168,10 @@ mflux-generate-fibo2 \
 mflux reads the diffusers, PEFT and ComfyUI key names, and applies each LoRA at the strength it was trained with, including the `lora_alpha` diffusers keeps in the file's metadata.
 
 ## Notes
-- **Implementation**: the transformer is the Z-Image block with gated cross-attention to the text encoder in five layers, and a Perceiver that turns the text encoder output into 256 to 512 "gist" tokens. mflux reuses the FLUX.2 VAE, the Z-Image feed-forward, timestep, RoPE and final layers, and the shared Qwen3-VL language model and vision tower (also used by Qwen-Image 2.1), with 3D positions and deepstack features for images. The port follows the [diffusers implementation](https://github.com/huggingface/diffusers/tree/main/src/diffusers/pipelines/bria_fibo2) and matches its transformer and text encoder in float32.
+- **Implementation**: the transformer is the Z-Image block with gated cross-attention to the text encoder in five layers, and a Perceiver that turns the text encoder output into 256 to 512 "gist" tokens. mflux reuses the FLUX.2 VAE, the Z-Image feed-forward, timestep, RoPE and final layers, and the shared Qwen3-VL language model and vision tower (also used by Qwen-Image 2.1), with 3D positions and deepstack features for images. The port follows the [diffusers implementation](https://github.com/huggingface/diffusers/tree/main/src/diffusers/pipelines/bria_fibo2) and matches its transformer and text encoder in float32. `tests/test_fibo2_parity.py` checks the transformer against a small diffusers model and the text encoder against `transformers`, layer by layer.
 - **Speed**: about 9 to 12 seconds per step at 1024×1024 on an M5 Pro, since guidance runs the transformer twice per step.
+- **Step cache**: `--step-cache-ratio 0.25` skips the transformer on a quarter of the steps and reuses the velocity of the step before, as described in the [common README](../common/README.md#step-reuse-step-cache). With Dev at 50 steps it kept the composition in our tests, with small changes in detail. Runs under 10 steps, like Edit Turbo's 4, don't change.
+- **VAE decode**: the VAE decodes in bf16 row strips with full-image GroupNorm statistics, as for [FLUX.2](../flux2/README.md#vae-decode). At 1024×1024 on an M5 Max the decode needs 1.6 GB in 0.9 s, against 13.8 GB in 0.75 s for the full-image float32 decode, and the two images are 47 dB apart. `--vae-full-precision` decodes each block on the full image instead (8.6 GB, 50 dB from the full-image decode), and the metadata records it. `--vae-tiling` only tiles the encode of the images to edit.
 
 ## Quantization
 Quantize on load with `-q`, or save a quantized copy once with `mflux-save` and load it by passing its folder to `--model`:

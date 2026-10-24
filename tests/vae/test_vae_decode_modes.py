@@ -14,6 +14,8 @@ from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.ernie_image import ernie_image_initializer
 from mflux.models.ernie_image.cli import ernie_image_generate, ernie_image_turbo_generate
+from mflux.models.fibo2 import fibo2_initializer
+from mflux.models.fibo2.cli import fibo2_edit_generate, fibo2_generate
 from mflux.models.flux2 import flux2_initializer
 from mflux.models.flux2.cli import flux2_edit_generate, flux2_generate
 from mflux.models.flux2.model.flux2_vae import small_decoder
@@ -130,8 +132,13 @@ def test_vae_util_keeps_legacy_for_a_vae_without_a_decode_mode():
             ["ZImageTransformer", "TextEncoder"],
             lambda init, model: init.ZImageInitializer._init_models(model),
         ),  # fmt: skip
+        (
+            fibo2_initializer,
+            ["Fibo2Transformer", "Fibo2TextEncoder"],
+            lambda init, model: init.Fibo2Initializer._init_models(model),
+        ),  # fmt: skip
     ],
-    ids=["flux2", "ernie_image", "ideogram4", "z_image"],
+    ids=["flux2", "ernie_image", "ideogram4", "z_image", "fibo2"],
 )
 def test_each_model_uses_the_low_memory_decode(monkeypatch, tmp_path, module, patched, call):
     for name in patched:
@@ -183,6 +190,8 @@ CLIS = [
     (z_image_turbo_generate_controlnet, "conditional", ["--control", "canny:{ref}"]),
     (flux3_generate, "ignored", []),
     (flux3_edit_generate, "conditional", ["--image-paths", "{ref}"]),
+    (fibo2_generate, "ignored", []),
+    (fibo2_edit_generate, "conditional", ["--image-paths", "{ref}"]),
 ]
 
 

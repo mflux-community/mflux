@@ -1,14 +1,14 @@
-import warnings
-from argparse import Namespace
+from argparse import BooleanOptionalAction, Namespace
 from pathlib import Path
 
 from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.fibo2.cli.fibo2_generate import Fibo2Command
 from mflux.models.fibo2.latent_creator.fibo2_latent_creator import Fibo2LatentCreator
-from mflux.models.fibo2.model.fibo2_text_encoder.prompt_encoder import Fibo2PromptEncoder
+from mflux.models.fibo2.model.fibo2_text_encoder.fibo2_caption_check import Fibo2CaptionCheck
 from mflux.models.fibo2.variants import Fibo2Edit
 from mflux.models.fibo2.variants.edit.fibo2_edit_images import Fibo2EditImages
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -26,9 +26,9 @@ IGNORED_OPTIONS = {
     "--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora.",
 }
 
-TURBO_GUIDANCE_WARNING = (
-    "Edit Turbo is distilled to run without guidance; a value above 1 still runs the negative pass."
-)
+CONDITIONAL_OPTIONS = {
+    **VAEDecodeOptions.conditional_options(),
+}
 
 
 def build_parser() -> CommandLineParser:
@@ -43,9 +43,11 @@ def build_parser() -> CommandLineParser:
     parser.add_image_paths_arguments()
     parser.add_argument("--mask-path", type=Path, default=None, help="Mask of the region to regenerate, white on black, at the image's size. Single image only.")  # fmt: off
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
-    parser.add_argument("--no-text-images", action="store_true", help="Do not show the text encoder images of the caption's text_render texts. FIBO 2 renders text better with them.")  # fmt: off
+    parser.add_argument("--text-images", dest="render_text_images", action=BooleanOptionalAction, default=True, help="Show the text encoder images of the caption's text_render texts (default). FIBO 2 renders text better with them; --no-text-images turns them off.")  # fmt: off
     parser.add_lora_arguments()
+    parser.add_step_cache_arguments()
     parser.add_output_arguments()
+    parser.add_vae_full_precision_arguments()
     return parser
 
 
@@ -58,11 +60,7 @@ class Fibo2EditCommand:
             raise ValueError(f"--image-paths takes 1 to {Fibo2EditImages.MAX_IMAGES} images, got {len(args.image_paths)}.")  # fmt: off
         if args.mask_path is not None and len(args.image_paths) != 1:
             raise ValueError("--mask-path can only be used with a single image.")
-        # stdin ("-") is read once, at generation, and checked there
-        if args.prompt and args.prompt != "-":
-            Fibo2PromptEncoder.check_edit_prompt(args.prompt)
-        elif args.prompt_file is not None and Path(args.prompt_file).is_file():
-            Fibo2PromptEncoder.check_edit_prompt(Path(args.prompt_file).read_text().strip())
+        Fibo2CaptionCheck.check_args(args, edit=True)
         return ConfigResolution.resolve_restricted(
             args.model,
             DEFAULT_MODEL,
@@ -73,12 +71,14 @@ class Fibo2EditCommand:
 
     @staticmethod
     def load(args: Namespace) -> Fibo2Edit:
-        return Fibo2Edit(
+        model = Fibo2Edit(
             model_config=Fibo2EditCommand.validate(args),
             quantize=args.quantize,
             model_path=args.model_path,
             **lora_init_kwargs_from_args(args),
         )
+        VAEDecodeOptions.apply(args, model)
+        return model
 
     @staticmethod
     def generate(model: Fibo2Edit, args: Namespace, seed: int, prompt: str) -> GeneratedImage:
@@ -93,13 +93,9 @@ class Fibo2EditCommand:
             height=height,
             guidance=args.guidance,
             num_inference_steps=args.steps,
-            render_text_images=not args.no_text_images,
+            render_text_images=args.render_text_images,
+            step_cache_ratio=args.step_cache_ratio,
         )
-
-    @staticmethod
-    def warn_guidance_on_turbo(args: Namespace, model_config: ModelConfig) -> None:
-        if not model_config.supports_guidance and args.guidance is not None and args.guidance > 1.0:
-            warnings.warn(f"--guidance {args.guidance}: {TURBO_GUIDANCE_WARNING}", stacklevel=2)
 
     @staticmethod
     def _explicit_size(
@@ -116,6 +112,7 @@ def main():
     # 0. Parse command line arguments
     parser = build_parser()
     args = parser.parse_args()
+    VAEDecodeOptions.warn_encode_only_tiling()
 
     # 1. Check the flags, then load the model
     try:
@@ -123,7 +120,7 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
-    Fibo2EditCommand.warn_guidance_on_turbo(args, model_config)
+    Fibo2Command.warn_guidance_on_turbo(args, model_config)
     Fibo2Command.warn_unused_negative_prompt(args, model_config)
     model = Fibo2EditCommand.load(args)
 

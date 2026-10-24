@@ -17,6 +17,7 @@ from mflux.models.boogu.cli import boogu_image_generate
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.ernie_image.cli import ernie_image_generate, ernie_image_turbo_generate
+from mflux.models.fibo2.cli import fibo2_edit_generate, fibo2_generate
 from mflux.models.flux2.cli import flux2_edit_generate, flux2_generate
 from mflux.models.flux3.cli import flux3_edit_generate, flux3_generate
 from mflux.models.ideogram4.cli import ideogram4_generate
@@ -76,6 +77,9 @@ CLI_MODELS = [
     ),
     (qwen_image_generate, "qwen-image", "dev", (), ()),
     (qwen_image_edit_generate, "qwen-image-edit", "qwen-image", (), ("--image-paths", "ref.png")),
+    # Edit Turbo runs in both FIBO 2 commands; FIBO 1 runs in neither
+    (fibo2_generate, "fibo2", "fibo", fibo2_generate.FAMILY_MODELS, ()),
+    (fibo2_edit_generate, "fibo2", "fibo-edit", fibo2_generate.FAMILY_MODELS, ("--image-paths", "ref.png")),
 ]
 
 

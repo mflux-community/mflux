@@ -6,6 +6,7 @@ from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.tokenizer import TokenizerLoader
+from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
 from mflux.models.common_models.qwen3_vl.qwen3_vl_processor import Qwen3VLProcessor
@@ -40,9 +41,7 @@ class Fibo2Initializer:
         root = PathResolution.resolve(path, Fibo2WeightDefinition.get_download_patterns())
         model.processor = Qwen3VLProcessor(root / "processor", model.tokenizers["qwen3_vl"].tokenizer)
         model.fonts_dir = Fibo2Initializer._fonts_dir(path)
-        model.vae = Flux2VAE()
-        model.transformer = Fibo2Transformer(**model_config.transformer_overrides)
-        model.text_encoder = Fibo2TextEncoder()
+        Fibo2Initializer._init_models(model)
         model.bits = WeightApplier.apply_and_quantize(
             weights=weights,
             quantize_arg=quantize,
@@ -61,6 +60,14 @@ class Fibo2Initializer:
             bake_lora=bake_lora,
             dense_weights=weights.dense_component("transformer"),
         )
+
+    @staticmethod
+    def _init_models(model) -> None:
+        model.vae = Flux2VAE()
+        # The FLUX.2 strip decode: bf16 row strips with full-image GroupNorm statistics
+        model.vae.decode_mode = VAEBlockDecoder.LOW_MEMORY
+        model.transformer = Fibo2Transformer(**model.model_config.transformer_overrides)
+        model.text_encoder = Fibo2TextEncoder()
 
     @staticmethod
     def _fonts_dir(path: str) -> Path | None:

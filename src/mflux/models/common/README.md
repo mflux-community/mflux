@@ -609,7 +609,7 @@ Metadata records the PiD flags, so `--config-from-conf` reproduces a PiD run. `c
 
 ## Step reuse (step cache)
 
-Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-conf`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1` and `mflux-generate-moss-image`.
+Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-conf`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`, `mflux-generate-moss-image`, `mflux-generate-fibo2` and `mflux-generate-fibo2-edit`.
 
 ```sh
 mflux-generate-qwen-2.1 --prompt "a lighthouse at dusk" --steps 40 --step-cache-ratio 0.25

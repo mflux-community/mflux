@@ -32,10 +32,9 @@ class Fibo2EditImages:
                 raise ValueError(f"The mask has size {mask.size} but the image has size {images[0].size}.")
             images = [Fibo2EditImages.grey_out(images[0], mask)]
         first = images[0]
-        if width is None and height is None:
-            width, height = Fibo2EditImages.trained_size(first.width / first.height)
+        width, height = Fibo2EditImages._result_size(first.width / first.height, width, height)
         # Rounded down to a multiple of 16, as the generated latents are
-        width, height = 16 * ((width or 1024) // 16), 16 * ((height or 1024) // 16)
+        width, height = 16 * (width // 16), 16 * (height // 16)
         if len(images) == 1:
             sizes = [(width, height)]
         else:
@@ -64,6 +63,17 @@ class Fibo2EditImages:
             for size in sizes
         ]
         return min(ranked)[3]
+
+    @staticmethod
+    def _result_size(aspect_ratio: float, width: int | None, height: int | None) -> tuple[int, int]:
+        # Without width and height, the trained size for the first image's aspect ratio; with one, the other keeps it
+        if width is not None and height is not None:
+            return width, height
+        if width is not None:
+            return width, round(width / aspect_ratio)
+        if height is not None:
+            return round(height * aspect_ratio), height
+        return Fibo2EditImages.trained_size(aspect_ratio)
 
     @staticmethod
     def grey_out(image: Image.Image, mask: Image.Image) -> Image.Image:

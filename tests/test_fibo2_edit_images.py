@@ -54,6 +54,14 @@ def test_an_explicit_size_crops_to_the_size_of_the_generated_latents(tmp_path, w
     assert crops[0].size == (config.width, config.height)
 
 
+@pytest.mark.parametrize(("width", "height", "size"), [(768, None, (768, 512)), (None, 512, (768, 512)), (1000, None, (992, 656))])  # fmt: off
+def test_one_side_given_keeps_the_aspect_ratio_of_the_first_image(tmp_path, width, height, size):
+    # The other side was 1024, so a 3:2 photo edited at --width 768 came out cropped to 768x1024
+    crops, _, result = Fibo2EditImages.prepare([_Images.save(tmp_path / "a.png", (1200, 800))], width=width, height=height)  # fmt: off
+    assert result == size
+    assert crops[0].size == size
+
+
 def test_exif_orientation_is_applied_to_the_image(tmp_path):
     # A landscape file whose Orientation tag says to show it rotated: the model must see it upright (portrait)
     path = tmp_path / "phone.jpg"

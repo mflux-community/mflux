@@ -281,7 +281,15 @@ OVERLAY: dict[str, tuple[str, str, str, list[str], list[str], str, list[str] | N
         "active",
         FIBO2_QUANTS,
     ),
-    "fibo2-edit-turbo": ("image", "fibo", "fibo2", ["mflux-generate-fibo2-edit"], [], "active", None),
+    "fibo2-edit-turbo": (
+        "image",
+        "fibo",
+        "fibo2",
+        ["mflux-generate-fibo2", "mflux-generate-fibo2-edit"],
+        [],
+        "active",
+        None,
+    ),
     "z-image": ("image", "z-image", "z-image", ["mflux-generate-z-image"], [], "active", STANDARD_QUANTS),
     "z-image-turbo": (
         "image",

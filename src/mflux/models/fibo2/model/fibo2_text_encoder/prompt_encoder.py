@@ -14,11 +14,22 @@ class Fibo2PromptEncoder:
     PROMPT_TEMPLATE = "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
     # Qwen3-VL layers behind the transformer's six text inputs: the Perceiver's, then one per injection block
     OUTPUT_LAYERS = ((9, 20, 31), (5, 16, 27), (7, 18, 29), (9, 20, 31), (11, 22, 33), (13, 24, 35))
-    # The null caption FIBO 2 was trained with, its default negative prompt
+    # The null caption FIBO 2 was trained with, the default negative prompt of an edit
     NULL_CAPTION = (
         '{"short_description":"","objects":[],"background_setting":"","lighting":{},'
         '"aesthetics":{},"photographic_characteristics":{},"style_medium":"",'
         '"context":"","artistic_style":""}'
+    )
+    # The model card's negative prompt for text to image (NEGATIVE_T2I): soft, featureless, artifact-laden images
+    TEXT_TO_IMAGE_NEGATIVE = (
+        '{"short_description":"","objects":[{"description":"the main subject","texture":"smooth, featureless, '
+        'plastic-like, airbrushed, no fine surface detail","appearance_details":"soft blurred edges, simplified shapes, '
+        'no fine detail","skin_tone_and_texture":"waxy airbrushed skin, poreless, plastic smooth"}],"background_setting":'
+        '"a plain seamless studio backdrop, perfectly smooth gradient, blurred and featureless, no visible texture",'
+        '"lighting":{},"aesthetics":{"artifacts":["oversaturated colours","neon colour cast","overexposed highlights",'
+        '"lens flare","slight blur","motion blur","haze"]},"photographic_characteristics":{"depth_of_field":"shallow, '
+        'heavy bokeh obscuring most of the frame","focus":"soft, slightly out of focus, lacking fine texture"},'
+        '"style_medium":"","context":"","artistic_style":""}'
     )
     SCORE_KEYS = ("aesthetic_score", "preference_score")
     VISION_MARKER = "<|vision_start|><|image_pad|><|vision_end|>"

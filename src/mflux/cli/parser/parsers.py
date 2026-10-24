@@ -654,6 +654,14 @@ class CommandLineParser(argparse.ArgumentParser):
                     self.error(f"vae_full_precision in --config-from-metadata must be true or false, not {recorded_vae_full_precision!r}.")  # fmt: off
                 namespace.vae_full_precision = recorded_vae_full_precision
 
+            if hasattr(namespace, "render_text_images") and not self._option_was_provided("--text-images", "--no-text-images"):  # fmt: skip
+                # FIBO 2 records its text images only when they are off. A JSON boolean only, as above.
+                recorded_text_images = prior_gen_metadata.get("render_text_images")
+                recorded_text_images = True if recorded_text_images is None else recorded_text_images
+                if not isinstance(recorded_text_images, bool):
+                    self.error(f"render_text_images in --config-from-metadata must be true or false, not {recorded_text_images!r}.")  # fmt: off
+                namespace.render_text_images = recorded_text_images
+
             if hasattr(namespace, "pid_degrade_sigma") and not self._option_was_provided("--pid-degrade-sigma"):
                 # Non-PiD sidecars omit the key entirely, but a hand-edited one can carry an
                 # explicit null, which `.get(..., 0.0)` returns as-is. Normalize it, or
