@@ -64,7 +64,7 @@ jobs:
 
       # Lockfile-pinned install (runtime + dev extras incl. pytest): dev/CI parity
       # with `just test`, and --locked fails the job if uv.lock drifts from pyproject.
-      # Fresh-PyPI-resolution coverage lives in the py310-smoke leg's dry-run instead.
+      # Fresh-PyPI-resolution coverage lives in the py311-smoke leg's dry-run instead.
       - name: Install dependencies
         run: |
           uv sync --all-extras --locked
@@ -81,9 +81,9 @@ jobs:
         run: |
           uv run --no-sync ty check
 
-  py310-smoke:
-    # Cheap floor guard: ruff target-version catches 3.11+ syntax, but not
-    # 3.10-incompatible dependency markers or import-time stdlib usage.
+  py311-smoke:
+    # Cheap floor guard: ruff target-version catches 3.12+ syntax, but not
+    # 3.11-incompatible dependency markers or import-time stdlib usage.
     runs-on: ubuntu-latest
 
     steps:
@@ -92,17 +92,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install uv and Python 3.10 (requires-python floor)
+      - name: Install uv and Python 3.11 (requires-python floor)
         uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d  # v10.0.0
         with:
           version: "0.12.4"
-          python-version: "3.10"
+          python-version: "3.11"
           activate-environment: true
 
-      - name: Fresh-resolution + byte-compile under 3.10
+      - name: Fresh-resolution + byte-compile under 3.11
         run: |
           # uv-native canary: re-resolve the universal lock against live PyPI
-          # (catches range/marker debt for every platform incl. 3.10), no lock mutation
+          # (catches range/marker debt for every platform incl. 3.11), no lock mutation
           uv lock --upgrade --dry-run
           python -m compileall -q src
 

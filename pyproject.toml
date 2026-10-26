@@ -21,7 +21,7 @@ keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-sil
 authors = [{ name = "Filip Strand", email = "strand.filip@gmail.com" }]
 maintainers = [{ name = "Filip Strand", email = "strand.filip@gmail.com" }]
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "filelock>=3.20.1",
     "fonttools>=4.60.2",
@@ -33,7 +33,7 @@ dependencies = [
     "numpy>=2.0.1,<3.0",
     "opencv-python>=4.10.0,<6.0",
     "piexif>=1.1.3,<2.0",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "platformdirs>=4.0,<5.0",
     "regex>=2024.11.6",
     "requests>=2.33.0",
@@ -63,7 +63,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -146,7 +145,7 @@ mflux-completions = "mflux.cli.completions.install:main"
 [tool.ruff]
 line-length = 120
 indent-width = 4
-target-version = "py310"
+target-version = "py311"
 respect-gitignore = true
 # Vendored skill. Keep it the same as the upstream skill.
 extend-exclude = [".cursor/skills/asd-ste100"]
