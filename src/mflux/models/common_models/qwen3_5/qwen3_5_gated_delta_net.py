@@ -109,15 +109,16 @@ class Qwen35GatedDeltaNet(nn.Module):
         # Mask before exp: above the diagonal the difference is positive and can overflow.
         decay = mx.where(lower, mx.exp(mx.where(lower, g[..., :, None] - g[..., None, :], 0.0)), 0.0)
 
-        # The reference solves (I - A) T = I row by row. A is strictly lower triangular, so
-        # A^chunk = 0 and (I - A)^-1 = (I + A)(I + A^2)(I + A^4)...(I + A^(chunk/2)).
+        # Solve (I - A) T = I row by row (forward substitution), as the reference does.
+        # Do not use the product (I + A)(I + A^2)(I + A^4)... here. When the keys in a chunk
+        # are similar, the powers of A become very large, float32 cannot cancel them and the
+        # result becomes inf or NaN (issue #920).
         a = mx.where(strictly_lower, -((key_beta @ key.swapaxes(-1, -2)) * decay), 0.0)
-        identity = mx.eye(chunk, dtype=mx.float32)
-        inverse = identity + a
-        power = a
-        for _ in range(chunk.bit_length() - 2):
-            power = power @ power
-            inverse = inverse @ (identity + power)
+        rows = [a[..., :1, :]]
+        for i in range(1, chunk):
+            row = a[..., i : i + 1, :]
+            rows.append(row + row[..., :i] @ mx.concatenate(rows, axis=-2))
+        inverse = mx.concatenate(rows, axis=-2) + mx.eye(chunk, dtype=mx.float32)
 
         value_chunks = inverse @ value_beta
         key_cumulative_decay = inverse @ (key_beta * mx.exp(g)[..., None])

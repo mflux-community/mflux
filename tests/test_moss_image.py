@@ -343,3 +343,24 @@ def test_the_chunked_delta_rule_matches_the_recurrence_on_a_long_prompt():
 
     assert actual.shape == expected.shape
     assert np.abs(actual - expected).max() < 1e-3
+
+
+@pytest.mark.fast
+def test_the_chunked_delta_rule_survives_correlated_keys():
+    # Deep Qwen3.5 DeltaNet layers have key cosines of 0.8 to 0.98 in a chunk. I.i.d. keys do not (issue #920).
+    rng = np.random.default_rng(0)
+    shape = (1, 1024, 2, 128)
+    base = rng.standard_normal((1, 1, 2, 128))
+    query = base + 0.3 * rng.standard_normal(shape)
+    key = base + 0.3 * rng.standard_normal(shape)
+    value = rng.standard_normal(shape)
+    g = -np.abs(rng.standard_normal((1, 1024, 2))) * 0.02
+    beta = 1 / (1 + np.exp(-(2.0 + rng.standard_normal((1, 1024, 2)))))
+
+    expected = _SequentialDeltaRule.run(query, key, value, g, beta)
+    arrays = (mx.array(x.astype(np.float32)) for x in (query, key, value, g, beta))
+    actual = np.array(Qwen35GatedDeltaNet._gated_delta_rule(*arrays))
+
+    assert np.isfinite(actual).all()
+    # The GPU error is approximately 2e-3 (5e-7 on the CPU). The product form gives NaN.
+    assert np.abs(actual - expected).max() < 1e-2
