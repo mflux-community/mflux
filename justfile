@@ -1,4 +1,4 @@
-# justfile for mflux Python 3.10+ project, using 3.13 as recommended maintainer Python as of Jan 2026
+# justfile for mflux Python 3.11+ project, using 3.13 as recommended maintainer Python as of Jan 2026
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 

@@ -92,7 +92,7 @@ You can also call the steps of `mflux-generate-z-image-turbo` from Python. `ZIma
 ```python
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11"
 # dependencies = ["mflux"]
 # ///
 # Takes the same flags as mflux-generate-z-image-turbo, for example:
