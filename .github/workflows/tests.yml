@@ -83,7 +83,8 @@ jobs:
 
   py311-smoke:
     # Cheap floor guard: ruff target-version catches 3.12+ syntax, but not
-    # 3.11-incompatible dependency markers or import-time stdlib usage.
+    # 3.11-incompatible dependency markers or stdlib calls that need a newer Python.
+    # The step byte-compiles only. It does not install dependencies or import mflux.
     runs-on: ubuntu-latest
 
     steps:
