@@ -2,6 +2,7 @@ import inspect
 import textwrap
 
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
+from mflux.models.anima.variants.txt2img.anima import Anima
 from mflux.models.boogu.variants.txt2img.boogu_image import BooguImage
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
@@ -43,6 +44,9 @@ from mflux.utils.exceptions import ModelConfigError
 # txt2img FIBO, and the Z-Image ControlNet as a plain ZImage — each one writing a
 # checkpoint under the wrong architecture with no error at all.
 MODEL_CLASSES: dict[str, type] = {
+    "anima-aesthetic": Anima,
+    "anima-base": Anima,
+    "anima-turbo": Anima,
     "boogu-image-turbo": BooguImage,
     "dev": Flux1,
     "dev-controlnet-canny": Flux1Controlnet,

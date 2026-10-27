@@ -57,9 +57,13 @@ class Qwen3TextEncoder(nn.Module):
         attention_mask: mx.array | None = None,
         output_hidden_states: bool = False,
         position_ids: mx.array | None = None,
+        dtype: mx.Dtype | None = None,
     ) -> tuple[mx.array, list[mx.array] | None]:
         batch_size, seq_len = input_ids.shape
         hidden_states = self.embed_tokens(input_ids)
+        # The activations set the compute dtype of every layer, so dtype=mx.float32 runs bfloat16 weights in float32.
+        if dtype is not None:
+            hidden_states = hidden_states.astype(dtype)
 
         if attention_mask is None:
             attention_mask = mx.ones((batch_size, seq_len), dtype=mx.int32)

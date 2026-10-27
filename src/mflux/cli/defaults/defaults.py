@@ -23,6 +23,9 @@ DEFAULT_INFERENCE_STEPS = 25
 # what let `--model klein-4b` (and every other non-literal spelling) fall through to the
 # 25-step FLUX.1-dev default.
 MODEL_INFERENCE_STEPS = {
+    "anima-aesthetic": 30,
+    "anima-base": 30,
+    "anima-turbo": 10,
     "boogu-image-turbo": 4,
     "dev": 25,
     "dev-controlnet-canny": 25,

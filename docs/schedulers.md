@@ -24,6 +24,7 @@ mflux-generate-krea2 --prompt "a chrome teapot" --steps 8 --scheduler euler -q 8
 | Z-Image Turbo (dedicated command) | `linear`, `flow_match_euler_discrete` | `linear` |
 | ERNIE-Image | `linear`, `flow_match_euler_discrete` | `linear` |
 | Krea 2 | `er_sde`, `euler` | `er_sde` |
+| Anima | `er_sde`, `euler` | `er_sde` |
 
 Other models set the scheduler for you: FLUX.2, FIBO, Ideogram 4, SeedVR2, Lens, Ming-Image and Boogu Image. Lens, Ming-Image and Boogu Image ignore `--scheduler`. Lens and Ming-Image show a warning. Boogu Image shows no warning. FLUX.2 and FIBO commands also use their own scheduler.
 
@@ -33,7 +34,7 @@ Ideogram 4 has `--preset`. It selects the step count and noise schedule. Ideogra
 
 - `linear`: the standard schedule. Use it unless you have a reason not to.
 - `flow_match_euler_discrete`: a different noise schedule for flow-match models.
-- `er_sde`, `euler`: two samplers for Krea 2. `er_sde` is the default.
+- `er_sde`, `euler`: two samplers for Krea 2 and Anima. `er_sde` is the default.
 - `viggle_turbo`: for the Viggle turbo LoRA on Qwen Image 2.1. Use `--steps 6` and `--lora-paths` with the turbo LoRA. Other step counts give an error.
 
 ## Use your own scheduler

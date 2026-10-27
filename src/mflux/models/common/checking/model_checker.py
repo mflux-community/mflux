@@ -326,6 +326,10 @@ class ModelChecker:
             from mflux.models.moss_image.weights.moss_image_weight_definition import MOSSImageWeightDefinition
 
             return MOSSImageWeightDefinition
+        if key in {"anima-turbo", "anima-aesthetic", "anima-base"}:
+            from mflux.models.anima.weights.anima_weight_definition import AnimaWeightDefinition
+
+            return AnimaWeightDefinition
         if key in {"iris-3b", "iris-3b-base"}:
             from mflux.models.iris.weights.iris_weight_definition import (
                 IrisTurboWeightDefinition,

@@ -36,7 +36,7 @@ These commands do not need torch, if you do not use a feature from "What needs t
 - `mflux-generate-z-image`, `-z-image-turbo`
 - `mflux-generate-z-image-controlnet` with `canny` or `mlsd` controls
 - `mflux-generate-krea2`, `mflux-generate-krea2-controlnet` with `--depth-image-path`
-- `mflux-generate-ernie-image*`, `-ideogram4`, `-lens`, `-ming`, `-iris`, `-boogu`
+- `mflux-generate-ernie-image*`, `-ideogram4`, `-lens`, `-ming`, `-iris`, `-boogu`, `-anima`
 - `mflux-upscale-seedvr2`, `mflux-upscale-controlnet`
 - `mflux-train`, `mflux-save` (for the models above), `mflux-info`, `mflux-check`, `mflux-capabilities`, `mflux-lora-library`
 - FIBO, if you load a checkpoint that `mflux-save` wrote. The loader reads the mflux saved format first, and that format uses `mx.load`.

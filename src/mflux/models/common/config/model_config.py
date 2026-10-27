@@ -219,6 +219,21 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def anima_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["anima-turbo"]
+
+    @staticmethod
+    @lru_cache
+    def anima_aesthetic() -> "ModelConfig":
+        return AVAILABLE_MODELS["anima-aesthetic"]
+
+    @staticmethod
+    @lru_cache
+    def anima_base() -> "ModelConfig":
+        return AVAILABLE_MODELS["anima-base"]
+
+    @staticmethod
+    @lru_cache
     def fibo() -> "ModelConfig":
         return AVAILABLE_MODELS["fibo"]
 
@@ -1081,5 +1096,43 @@ AVAILABLE_MODELS = {
         sigma_max_shift=0.9,
         sigma_max_seq_len=8192,
         sigma_shift_terminal=0.02,
+    ),
+    # Anima (circlestone-labs and Comfy Org): one repo of ComfyUI single files, three transformer variants.
+    # Turbo is the distilled one the model card recommends to start with, so the bare repo id and "anima" run it.
+    "anima-turbo": ModelConfig(
+        priority=39,
+        aliases=["anima-turbo", "anima"],
+        model_name="circlestone-labs/Anima",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=4096,
+        supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "anima-aesthetic": ModelConfig(
+        priority=40,
+        aliases=["anima-aesthetic"],
+        model_name="circlestone-labs/Anima",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=4096,
+        supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "anima-base": ModelConfig(
+        priority=41,
+        aliases=["anima-base"],
+        model_name="circlestone-labs/Anima",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=4096,
+        supports_guidance=True,
+        requires_sigma_shift=False,
     ),
 }

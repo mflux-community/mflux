@@ -705,6 +705,46 @@ class QwenWeightMapping(WeightMapping):
             ),
         ]
 
+    _COMFY_VAE_RESIDUAL = {
+        "residual.0.gamma": "norm1.gamma",
+        "residual.2.weight": "conv1.weight",
+        "residual.2.bias": "conv1.bias",
+        "residual.3.gamma": "norm2.gamma",
+        "residual.6.weight": "conv2.weight",
+        "residual.6.bias": "conv2.bias",
+        "shortcut.weight": "conv_shortcut.weight",
+        "shortcut.bias": "conv_shortcut.bias",
+    }
+
+    @staticmethod
+    def vae_key_from_comfy(key: str) -> str:
+        # The VAE as ComfyUI ships it (qwen_image_vae.safetensors) keeps the original Wan 2.1 names. This gives
+        # the diffusers name that get_vae_mapping reads. The decoder's upsamples list holds three residual
+        # blocks and one upsampler per up block, the last up block has no upsampler.
+        residual = QwenWeightMapping._COMFY_VAE_RESIDUAL
+        parts = key.split(".")
+        if parts[0] in ("conv1", "conv2"):
+            return f"{'quant_conv' if parts[0] == 'conv1' else 'post_quant_conv'}.{parts[1]}"
+        if parts[0] not in ("encoder", "decoder") or len(parts) < 3:
+            return key
+        side, section, tail = parts[0], parts[1], ".".join(parts[3:])
+        if section == "conv1":
+            return f"{side}.conv_in.{parts[2]}"
+        if section == "head":
+            return f"{side}.norm_out.gamma" if parts[2] == "0" else f"{side}.conv_out.{parts[3]}"
+        if section == "middle":
+            if parts[2] == "1":
+                return f"{side}.mid_block.attentions.0.{tail}"
+            return f"{side}.mid_block.resnets.{int(parts[2]) // 2}.{residual.get(tail, tail)}"
+        if section == "downsamples":
+            return f"{side}.down_blocks.{parts[2]}.{residual.get(tail, tail)}"
+        if section == "upsamples":
+            block, index = divmod(int(parts[2]), 4)
+            if index == 3:
+                return f"{side}.up_blocks.{block}.upsamplers.0.{tail}"
+            return f"{side}.up_blocks.{block}.resnets.{index}.{residual.get(tail, tail)}"
+        return key
+
     @staticmethod
     def get_text_encoder_mapping() -> List[WeightTarget]:
         return [

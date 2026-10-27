@@ -131,6 +131,7 @@ MFLUX supports the following model families. They have different strengths and w
 |[Lens](src/mflux/models/lens/README.md) | May 2026 | 3.8B (+20B TE) | Turbo (distilled) | No | Dual-stream MMDiT from Microsoft with a GPT-OSS text encoder. Strong prompt adherence in 4 steps. |
 |[Ming-Image](src/mflux/models/ming_image/README.md) | Sep 2026 | 6.15B (+16B MoE TE) | Base | No | Design-focused (posters, cards, UI) with strong typography; outputs RGBA. |
 |[MOSS-Image](src/mflux/models/moss_image/README.md) | Oct 2026 | 4.9B (+9B TE) | SFT & Base | No | Single-stream DiT from OpenMOSS with a Qwen3.5 text encoder. Takes natural-language, tag and JSON-layout prompts. Renders English and Chinese text. 50 steps with CFG, or 8 or 4 steps with a community step-distilled LoRA. |
+|[Anima](src/mflux/models/anima/README.md) | Jan 2026 | 2B (+0.6B TE) | Turbo (distilled), Aesthetic & Base | No | Anime and illustration model from CircleStone Labs and Comfy Org on Cosmos-Predict2, with a Qwen3 text encoder. Danbooru tags and natural language. 10 steps Turbo, 30 steps with CFG for Aesthetic and Base. |
 |[Boogu Image](src/mflux/models/boogu/README.md) | Jun 2026 | 10B | Turbo (distilled) | No | DMD-distilled 4-step model with a photographic look and bilingual (EN/ZH) text rendering. |
 |[FIBO 2](src/mflux/models/fibo2/README.md) | Oct 2026 | 8.1B (+4B TE) | Base & Edit Turbo (distilled) | No | Trained on long structured JSON captions for precise control; renders text. Text-to-image and editing of 1 to 5 images, with masks. 30 steps with CFG. |
 |[SeedVR2](src/mflux/models/seedvr2/README.md) | Jun 2025 | 3B & 7B | — | No | Best upscaling model. |
@@ -153,7 +154,7 @@ MFlux supports a small number of schedulers - see;<br>
 - Quantization and local model loading
 - LoRA support (multi-LoRA, scales, library lookup), including LyCORIS LoKr on FLUX.1 and FLUX.2
 - Metadata export + reuse, plus prompt file support
-- Float16 compute for Apple M1-family GPUs on FLUX.2, FLUX 3 Image Klein, Z-Image and Qwen-Image 2.1 (`--compute-precision float16`, see the [common README](src/mflux/models/common/README.md#float16-compute-apple-m1-family))
+- Float16 compute for Apple M1-family GPUs on FLUX.2, FLUX 3 Image Klein, Z-Image, Qwen-Image 2.1 and Anima (`--compute-precision float16`, see the [common README](src/mflux/models/common/README.md#float16-compute-apple-m1-family))
 
 **Model-specific highlights**
 - Text-to-image and image-to-image generation.
@@ -215,6 +216,7 @@ Where the models and the main features came from, read from the merge history (`
 | Fused-qkv LoRA loading | [@deadmansahil](https://github.com/deadmansahil) | [#459](https://github.com/mflux-community/mflux/pull/459) |
 | Boogu-Image | [@plz12345](https://github.com/plz12345) | [#446](https://github.com/mflux-community/mflux/pull/446) |
 | MOSS-Image | [@vanch007](https://github.com/vanch007) | [#895](https://github.com/mflux-community/mflux/pull/895) |
+| Anima | [@fxd0h](https://github.com/fxd0h) | [#931](https://github.com/mflux-community/mflux/pull/931) |
 | PiD pixel-diffusion decoder | [@azrahello](https://github.com/azrahello) | [#490](https://github.com/mflux-community/mflux/pull/490) |
 | Z-Image Union ControlNet | [@fxd0h](https://github.com/fxd0h) | [#482](https://github.com/mflux-community/mflux/pull/482) |
 | Krea 2 Raw, LoRA training, diffusers loading | [@fxd0h](https://github.com/fxd0h) | [#462](https://github.com/mflux-community/mflux/pull/462) |
@@ -313,6 +315,7 @@ MFLUX would not be possible without the great work of:
 - Microsoft for the Lens (Turbo) model, and Comfy-Org for the [weights repackage](https://huggingface.co/Comfy-Org/Lens)
 - inclusionAI for the [Ming-Image project](https://github.com/inclusionAI/Ming-Image)
 - OpenMOSS for the [MOSS-Image project](https://github.com/OpenMOSS/MOSS-Image)
+- CircleStone Labs and Comfy Org for the [Anima project](https://huggingface.co/circlestone-labs/Anima)
 - The Boogu team for the [Boogu Image project](https://huggingface.co/Boogu/Boogu-Image-0.1-Turbo)
 - ByteDance, @numz and @adrientoupet for the [SeedVR2 project](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
 - Hugging Face for the [Diffusers library implementations](https://github.com/huggingface/diffusers) 
