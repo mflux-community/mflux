@@ -9,12 +9,12 @@ from PIL import Image
 from transformers import AutoTokenizer
 
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common_models.qwen3_vl.qwen3_vl_multimodal import Qwen3VLMultimodal
+from mflux.models.common_models.qwen3_vl.qwen3_vl_processor import Qwen3VLProcessor
 from mflux.models.common_models.qwen3_vl.qwen3_vl_vision_model import Qwen3VLVisionModel
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_text_fusion import Qwen21TextFusion
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen35_language_model import Qwen35LanguageModel
 from mflux.models.qwen21.model.qwen21_small_text_encoder.zen_image_edit_weights import ZenImageEditWeights
-from mflux.models.qwen21.model.qwen21_text_encoder.processor import QwenImage21Processor
-from mflux.models.qwen21.model.qwen21_text_encoder.text_encoder import QwenImage21TextEncoder
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
 
@@ -44,9 +44,7 @@ class Qwen21SmallTextEncoder(nn.Module):
         self.visual = Qwen3VLVisionModel(**vision, preserve_input_dtype=True)
         self.visual.deepstack_visual_indexes = []
         self.visual.deepstack_merger_list = []
-        for block in self.visual.blocks:
-            block.mlp.act_fn = QwenImage21TextEncoder._tanh_gelu
-        self.visual.merger.act_fn = QwenImage21TextEncoder._exact_gelu
+        Qwen3VLMultimodal.use_reference_activations(self.visual)
         self.text_fusion = Qwen21TextFusion(fusion_config)
         self.image_token_id = encoder_config["image_token_id"]
         self.merge_size = vision_config["spatial_merge_size"]
@@ -55,9 +53,7 @@ class Qwen21SmallTextEncoder(nn.Module):
         if text["hidden_size"] * len(self.student_layers) != fusion_config["in_dim"]:
             raise ValueError("text_fusion_config.in_dim does not match the encoder width and student_layers.")
 
-    def encode(
-        self, prompt: str, images: list[Image.Image], processor: QwenImage21Processor
-    ) -> tuple[mx.array, mx.array]:
+    def encode(self, prompt: str, images: list[Image.Image], processor: Qwen3VLProcessor) -> tuple[mx.array, mx.array]:
         prefix = " ".join(f"<image{i + 1}><|vision_start|><|image_pad|><|vision_end|>" for i in range(len(images)))
         text = (
             f"{Qwen21SmallTextEncoder.SYSTEM_PREFIX}"
@@ -97,19 +93,17 @@ class Qwen21SmallTextEncoder(nn.Module):
             if features.shape[0] != image_indices.size:
                 raise ValueError("Vision feature count does not match the image placeholders.")
             hidden[:, image_indices] = features.astype(hidden.dtype)[None]
-        positions = QwenImage21TextEncoder.mrope_positions(
-            input_ids, image_grid_thw, self.image_token_id, self.merge_size
-        )
+        positions = Qwen3VLMultimodal.mrope_positions(input_ids, image_grid_thw, self.image_token_id, self.merge_size)
         # (1, L, K * d): the student layers side by side, the layout the adapter was trained on.
         return mx.concatenate(self.language_model.hidden_states(hidden, positions, self.student_layers), axis=-1)
 
     @staticmethod
-    def load() -> tuple["Qwen21SmallTextEncoder", QwenImage21Processor]:
+    def load() -> tuple["Qwen21SmallTextEncoder", Qwen3VLProcessor]:
         root = ZenImageEditWeights.snapshot()
         encoder_config = json.loads((root / "text_encoder" / "config.json").read_text())
         fusion_config = json.loads((root / "transformer" / "config.json").read_text())["text_fusion_config"]
         encoder = Qwen21SmallTextEncoder(encoder_config, fusion_config)
-        processor = QwenImage21Processor(
+        processor = Qwen3VLProcessor(
             root / "processor", AutoTokenizer.from_pretrained(str(root / "processor"), local_files_only=True)
         )
         Qwen21SmallTextEncoder._check_drop_idx(processor, encoder.drop_idx)
@@ -169,7 +163,7 @@ class Qwen21SmallTextEncoder(nn.Module):
         module.load_weights(list(weights.items()), strict=False)
 
     @staticmethod
-    def _check_drop_idx(processor: QwenImage21Processor, drop_idx: int) -> None:
+    def _check_drop_idx(processor: Qwen3VLProcessor, drop_idx: int) -> None:
         # The prefix is cut by position, so a tokenizer that disagrees would shift the whole condition.
         prefix = processor.tokenizer(Qwen21SmallTextEncoder.SYSTEM_PREFIX, add_special_tokens=False)["input_ids"]
         if len(prefix) != drop_idx:

@@ -70,8 +70,8 @@ class ZImageAttention(nn.Module):
 
         # Apply RoPE
         if freqs_cis is not None:
-            query = precision.to_compute(ZImageAttention._apply_rotary_emb(query, freqs_cis, keep_float32=self.float32))
-            key = precision.to_compute(ZImageAttention._apply_rotary_emb(key, freqs_cis, keep_float32=self.float32))
+            query = precision.to_compute(ZImageAttention.apply_rotary_emb(query, freqs_cis, keep_float32=self.float32))
+            key = precision.to_compute(ZImageAttention.apply_rotary_emb(key, freqs_cis, keep_float32=self.float32))
 
         # Transpose for attention: (batch, heads, seq_len, head_dim)
         query = mx.transpose(query, axes=(0, 2, 1, 3))
@@ -94,7 +94,7 @@ class ZImageAttention(nn.Module):
         return precision.to_stream(hidden_states, dtype, ZImageAttention.FLOAT16_HEADROOM)
 
     @staticmethod
-    def _apply_rotary_emb(x: mx.array, freqs_cis: mx.array, keep_float32: bool = False) -> mx.array:
+    def apply_rotary_emb(x: mx.array, freqs_cis: mx.array, keep_float32: bool = False) -> mx.array:
         dtype = x.dtype
         batch_size, seq_len, n_heads, head_dim = x.shape
         x = x.reshape(batch_size, seq_len, n_heads, head_dim // 2, 2)

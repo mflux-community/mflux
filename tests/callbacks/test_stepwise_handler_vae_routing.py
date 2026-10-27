@@ -6,6 +6,7 @@ import pytest
 from mflux.callbacks.instances.stepwise_handler import StepwiseHandler
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.fibo2.latent_creator.fibo2_latent_creator import Fibo2LatentCreator
 from mflux.models.flux.latent_creator.flux_latent_creator import FluxLatentCreator
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux3.latent_creator.flux3_latent_creator import Flux3LatentCreator
@@ -106,6 +107,20 @@ def test_stepwise_flux3_uses_packed_decode(tmp_path, model_config) -> None:
     assert Flux3LatentCreator.unpack_latents(latents, SIZE, SIZE).shape[1] == 4 * vae.latent_channels
 
     handler.call_before_loop(seed=1, prompt="a", latents=latents, config=_config(model_config))
+
+    assert vae.calls == ["decode_packed_latents"]
+    assert (tmp_path / "seed_1_step0of1.png").exists()
+
+
+@pytest.mark.fast
+def test_stepwise_fibo2_uses_packed_decode(tmp_path) -> None:
+    # FIBO 2 keeps 32ch latents at 1/8 size but normalizes them in the FLUX.2 VAE's patchified space, so previews
+    # must take the packed decode that undoes that normalization.
+    vae = RecordingPackedVAE()
+    handler = _handler(tmp_path, vae, Fibo2LatentCreator)
+    latents = mx.zeros((1, 32, SIZE // 8, SIZE // 8))
+
+    handler.call_before_loop(seed=1, prompt="a", latents=latents, config=_config(ModelConfig.fibo2()))
 
     assert vae.calls == ["decode_packed_latents"]
     assert (tmp_path / "seed_1_step0of1.png").exists()

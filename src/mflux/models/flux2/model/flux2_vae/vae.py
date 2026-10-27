@@ -4,6 +4,7 @@ from mlx import nn
 from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.common.vae.vae_util import VAEUtil
+from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.model.flux2_vae.common.batch_norm_stats import Flux2BatchNormStats
 from mflux.models.flux2.model.flux2_vae.decoder.decoder import Flux2Decoder
 from mflux.models.flux2.model.flux2_vae.encoder.encoder import Flux2Encoder
@@ -65,6 +66,14 @@ class Flux2VAE(nn.Module):
         bn_mean = self.bn.running_mean.reshape(1, -1, 1, 1)
         bn_std = mx.sqrt(self.bn.running_var.reshape(1, -1, 1, 1) + self.bn.eps)
         return self._unpatchify_latents(packed_latents * bn_std + bn_mean)
+
+    def normalize_latents(self, latents: mx.array) -> mx.array:
+        # Plain [B, 32, H/8, W/8] latents normalized with the BatchNorm statistics, which apply in the 2x2-patchified
+        # space: the inverse of unpack_packed_latents, followed by unpatchifying
+        packed = Flux2LatentCreator.patchify_latents(latents)
+        bn_mean = self.bn.running_mean.astype(mx.float32).reshape(1, -1, 1, 1)
+        bn_std = mx.sqrt(self.bn.running_var.astype(mx.float32).reshape(1, -1, 1, 1) + self.bn.eps)
+        return self._unpatchify_latents((packed.astype(mx.float32) - bn_mean) / bn_std)
 
     def decode_packed_latents(self, packed_latents: mx.array, tiling_config: TilingConfig | None = None) -> mx.array:
         return VAEUtil.decode(vae=self, latent=self.unpack_packed_latents(packed_latents), tiling_config=tiling_config)

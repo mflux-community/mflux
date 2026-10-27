@@ -13,6 +13,8 @@ from mflux.models.common.weights.saving.saved_model_info import SavedModelInfo, 
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
+from mflux.models.fibo2.variants.edit.fibo2_edit import Fibo2Edit
+from mflux.models.fibo2.variants.txt2img.fibo2 import Fibo2
 from mflux.models.flux.variants.controlnet.flux_controlnet import Flux1Controlnet
 from mflux.models.flux.variants.redux.flux_redux import Flux1Redux
 from mflux.models.flux.variants.txt2img.flux import Flux1
@@ -56,6 +58,8 @@ MODEL_CLASSES: dict[str, type] = {
     "fibo-edit": FIBOEdit,
     "fibo-edit-rmbg": FIBOEdit,
     "fibo-lite": FIBO,
+    "fibo2": Fibo2,
+    "fibo2-edit-turbo": Fibo2Edit,
     "flux2-klein-4b": Flux2Klein,
     "flux2-klein-9b": Flux2Klein,
     "flux2-klein-9b-kv": Flux2Klein,

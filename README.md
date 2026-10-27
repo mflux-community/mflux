@@ -132,11 +132,12 @@ MFLUX supports the following model families. They have different strengths and w
 |[Ming-Image](src/mflux/models/ming_image/README.md) | Sep 2026 | 6.15B (+16B MoE TE) | Base | No | Design-focused (posters, cards, UI) with strong typography; outputs RGBA. |
 |[MOSS-Image](src/mflux/models/moss_image/README.md) | Oct 2026 | 4.9B (+9B TE) | SFT & Base | No | Single-stream DiT from OpenMOSS with a Qwen3.5 text encoder. Takes natural-language, tag and JSON-layout prompts. Renders English and Chinese text. 50 steps with CFG, or 8 or 4 steps with a community step-distilled LoRA. |
 |[Boogu Image](src/mflux/models/boogu/README.md) | Jun 2026 | 10B | Turbo (distilled) | No | DMD-distilled 4-step model with a photographic look and bilingual (EN/ZH) text rendering. |
-|[FIBO](src/mflux/models/fibo/README.md) | Oct 2025+ | 8B | Distilled & Base | No | Very good JSON-based prompt understanding. Has edit capabilities. |
+|[FIBO 2](src/mflux/models/fibo2/README.md) | Oct 2026 | 8.1B (+4B TE) | Base & Edit Turbo (distilled) | No | Trained on long structured JSON captions for precise control; renders text. Text-to-image and editing of 1 to 5 images, with masks. 30 steps with CFG. |
 |[SeedVR2](src/mflux/models/seedvr2/README.md) | Jun 2025 | 3B & 7B | — | No | Best upscaling model. |
 |[Qwen Image](src/mflux/models/qwen/README.md) | Aug 2025+ | 20B | Base | No | Large model (slower); strong prompt understanding and world knowledge. Has edit capabilities |
 |[Qwen Image 2.1](src/mflux/models/qwen21/README.md) | Sep 2026+ | 7.1B (+8B TE) | Distilled & Base | No | Single-stream block-causal DiT with a Qwen3-VL text encoder. Base: 40 steps without guidance. Turbo: 8 steps. [Multi-reference editing, LoRA, and RGBA](src/mflux/models/qwen21/reference/README.md). |
 |[Depth Pro](src/mflux/models/depth_pro/README.md) | Oct 2024 | — | — | No | Very fast and accurate depth estimation model from Apple. |
+|[FIBO](src/mflux/models/fibo/README.md) | Oct 2025+ | 8B | Distilled & Base | No | Legacy option, superseded by FIBO 2. JSON-based prompt understanding and edit capabilities. |
 |[FLUX.1](src/mflux/models/flux/README.md) | Aug 2024 | 12B | Distilled & Base | No (legacy) | Legacy option with decent quality. Has edit capabilities with 'Kontext' model and upscaling support via ControlNet |
 
 **Schedulers**<br>
@@ -200,6 +201,7 @@ Where the models and the main features came from, read from the merge history (`
 | Depth Pro | [@filipstrand](https://github.com/filipstrand) | [#159](https://github.com/mflux-community/mflux/pull/159) |
 | Qwen Image | [@filipstrand](https://github.com/filipstrand) | [#269](https://github.com/mflux-community/mflux/pull/269) |
 | FIBO | [@filipstrand](https://github.com/filipstrand) | [#279](https://github.com/mflux-community/mflux/pull/279) |
+| FIBO 2 | [@filipstrand](https://github.com/filipstrand) | — |
 | Z-Image | [@filipstrand](https://github.com/filipstrand) | [#284](https://github.com/mflux-community/mflux/pull/284) |
 | SeedVR2 | [@filipstrand](https://github.com/filipstrand) | [#297](https://github.com/mflux-community/mflux/pull/297) |
 | FLUX.2 Klein | [@filipstrand](https://github.com/filipstrand) | [#323](https://github.com/mflux-community/mflux/pull/323) |

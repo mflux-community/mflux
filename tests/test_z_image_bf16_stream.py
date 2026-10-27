@@ -60,8 +60,8 @@ def test_rotary_output_is_the_float32_rotation_cast_to_the_input_dtype():
     angles = mx.random.uniform(shape=(5, 16))
     freqs_cis = mx.stack([mx.cos(angles), mx.sin(angles)], axis=-1)
 
-    full = ZImageAttention._apply_rotary_emb(x, freqs_cis, keep_float32=True)
-    cast = ZImageAttention._apply_rotary_emb(x, freqs_cis)
+    full = ZImageAttention.apply_rotary_emb(x, freqs_cis, keep_float32=True)
+    cast = ZImageAttention.apply_rotary_emb(x, freqs_cis)
 
     assert full.dtype == mx.float32
     assert cast.dtype == mx.bfloat16

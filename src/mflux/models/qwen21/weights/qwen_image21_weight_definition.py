@@ -3,6 +3,7 @@ import mlx.core as mx
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.tokenizer import LanguageTokenizer
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition, TokenizerDefinition
+from mflux.models.common_models.qwen3_vl.qwen3_vl_multimodal import Qwen3VLMultimodal
 
 
 class QwenImage21WeightDefinition:
@@ -65,9 +66,7 @@ class QwenImage21WeightDefinition:
 
     @staticmethod
     def text_weight(key: str, weight: mx.array) -> mx.array:
-        if key.endswith("patch_embed.proj.weight"):
-            return weight.transpose(0, 2, 3, 4, 1)
-        return weight
+        return Qwen3VLMultimodal.vision_weight(key, weight)
 
     @staticmethod
     def vae_weight(key: str, weight: mx.array) -> mx.array:

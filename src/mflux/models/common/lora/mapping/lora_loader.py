@@ -13,6 +13,7 @@ from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.lora.mapping.lokr_factors import is_lokr_adapter, rebuild_lokr_factors
 from mflux.models.common.lora.mapping.lora_mapping import LoRATarget
 from mflux.models.common.lora.mapping.lora_saver import LoRASaver
+from mflux.models.common.lora.mapping.peft_lora_metadata import PeftLoRAMetadata
 from mflux.models.common.resolution.lora_resolution import LoraResolution
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,8 @@ class LoRALoader:
         print(f"🔧 Applying LoRA: {Path(lora_file).name} (scale={scale})")
 
         try:
-            weights = dict(mx.load(lora_file, return_metadata=True)[0].items())
+            loaded, metadata = mx.load(lora_file, return_metadata=True)
+            weights = dict(loaded.items())
         except (FileNotFoundError, ValueError, RuntimeError) as e:
             raise ValueError(f"Failed to load LoRA file {lora_file}: {e}") from e
 
@@ -127,7 +129,14 @@ class LoRALoader:
 
         # Apply LoRA using the mappings (allows multiple targets per source)
         applied_count, matched_keys, failed_targets = LoRALoader._apply_lora_with_mapping(
-            transformer, weights, scale, pattern_mappings, role=role, bake_lora=bake_lora, direct_deltas=direct_deltas
+            transformer,
+            weights,
+            scale,
+            pattern_mappings,
+            role=role,
+            bake_lora=bake_lora,
+            direct_deltas=direct_deltas,
+            adapter_configs=PeftLoRAMetadata.configs(metadata),
         )
 
         if failed_targets:
@@ -311,6 +320,7 @@ class LoRALoader:
         role: str | None,
         bake_lora: bool = True,
         direct_deltas: list[tuple[str, dict, float]] | None = None,
+        adapter_configs: dict[str, dict] | None = None,
     ) -> tuple[int, set, list[str]]:
         applied_count = 0
         lora_data_by_target: dict[str, dict] = {}
@@ -357,6 +367,9 @@ class LoRALoader:
                     )
                 lora_data_by_target[target_path][mapping.matrix_name] = transformed_value
 
+        if adapter_configs:
+            LoRALoader._fill_alpha_from_metadata(lora_data_by_target, source_keys, adapter_configs)
+
         # Direct deltas change base weights in place, which neither stripping nor a failed
         # load can undo. Validate them all before touching the model, and write them only
         # once every LoRA target has applied.
@@ -388,6 +401,19 @@ class LoRALoader:
                     direct_deltas.append((target_path, lora_data_by_target[target_path], scale))
 
         return applied_count, matched_keys, failed_targets
+
+    @staticmethod
+    def _fill_alpha_from_metadata(
+        lora_data_by_target: dict[str, dict], source_keys: dict[tuple[str, str], str], adapter_configs: dict[str, dict]
+    ) -> None:
+        # A diffusers or PEFT file keeps lora_alpha in its metadata; a layer with its own .alpha tensor keeps that
+        for target_path, lora_data in lora_data_by_target.items():
+            if "alpha" in lora_data or "lora_A" not in lora_data or is_lokr_adapter(lora_data):
+                continue
+            rank = lora_data["lora_A"].shape[1]
+            alpha = PeftLoRAMetadata.alpha(source_keys[(target_path, "lora_A")], adapter_configs, rank)
+            if alpha is not None:
+                lora_data["alpha"] = mx.array(alpha)
 
     @staticmethod
     def _direct_delta_module(transformer: nn.Module, target_path: str) -> nn.Module:

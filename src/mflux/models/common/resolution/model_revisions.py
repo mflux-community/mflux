@@ -29,6 +29,8 @@ class ModelRevisions:
         "black-forest-labs/FLUX.2-small-decoder": "a3efc24f613ef42d9428af62fdbd6f5fd8856c4a",
         "Boogu/Boogu-Image-0.1-Turbo": "53ad54522023f64d049f7f38e4d679359ef3fb92",
         "briaai/FIBO": "7c7e00ca081f6cd24bbbd745d13cc214484c9199",
+        "briaai/Fibo-2.0-dev": "fb2b781f9e9e5572a6c348a5af7a4d155a2b1ed0",
+        "briaai/Fibo-2.0-edit-turbo": "901c02672d969ed21e44ff58f1a0872c7581ddb0",
         "briaai/Fibo-Edit": "1bee4ae9b119d2634ec9f378370f2a1ae49d89cc",
         "briaai/Fibo-Edit-RMBG": "cb134b058d1a6089fc3b9e5fc04a4511337b53ed",
         "briaai/Fibo-lite": "dcd26dfe1051e59b77b88acbacc025613aaa09de",

@@ -239,6 +239,16 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def fibo2() -> "ModelConfig":
+        return AVAILABLE_MODELS["fibo2"]
+
+    @staticmethod
+    @lru_cache
+    def fibo2_edit_turbo() -> "ModelConfig":
+        return AVAILABLE_MODELS["fibo2-edit-turbo"]
+
+    @staticmethod
+    @lru_cache
     def ernie_image_turbo() -> "ModelConfig":
         return AVAILABLE_MODELS["ernie-image-turbo"]
 
@@ -792,6 +802,30 @@ AVAILABLE_MODELS = {
         num_train_steps=1000,
         max_sequence_length=512,
         supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "fibo2": ModelConfig(
+        priority=38,
+        aliases=["fibo2", "fibo-2.0-dev"],
+        model_name="briaai/Fibo-2.0-dev",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=4096,
+        supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "fibo2-edit-turbo": ModelConfig(
+        priority=39,
+        aliases=["fibo2-edit-turbo", "fibo-2-edit-turbo", "fibo-2.0-edit-turbo"],
+        model_name="briaai/Fibo-2.0-edit-turbo",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=4096,
+        supports_guidance=False,
         requires_sigma_shift=False,
     ),
     "z-image": ModelConfig(

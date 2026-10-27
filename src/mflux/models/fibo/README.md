@@ -1,4 +1,8 @@
 # FIBO
+
+> [!NOTE]
+> FIBO is still fully supported, but [FIBO 2](../fibo2/README.md) is its successor: a new architecture that the model card describes as sharper at text rendering, texture and anatomy, with generation and editing in one model. We do not plan to add new features to FIBO beyond maintenance fixes.
+
 [FIBO](https://huggingface.co/briaai/FIBO) from [Bria.ai](https://bria.ai), the first open-source JSON-native text-to-image model trained on long structured captions. FIBO delivers high image quality, strong prompt adherence, and professional-grade control—trained exclusively on licensed data. ([Technical Paper](https://arxiv.org/abs/2511.06876))
 
 ![FIBO Example](../../assets/fibo_example.jpg)

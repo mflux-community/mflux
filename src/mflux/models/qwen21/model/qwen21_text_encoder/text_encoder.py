@@ -4,24 +4,22 @@ import mlx.core as mx
 import numpy as np
 from mlx import nn
 
+from mflux.models.common_models.qwen3_vl.qwen3_vl_language_model import Qwen3VLLanguageModel
+from mflux.models.common_models.qwen3_vl.qwen3_vl_multimodal import Qwen3VLMultimodal
 from mflux.models.common_models.qwen3_vl.qwen3_vl_vision_model import Qwen3VLVisionModel
-from mflux.models.qwen21.model.qwen21_text_encoder.language_model import LanguageModel
 
 
 class QwenImage21TextEncoder(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
-        self.language_model = LanguageModel(config["text_config"])
+        self.language_model = Qwen3VLLanguageModel(config["text_config"])
         vision = {
             key: value
             for key, value in config["vision_config"].items()
             if key in inspect.signature(Qwen3VLVisionModel).parameters
         }
         self.visual = Qwen3VLVisionModel(**vision, preserve_input_dtype=True)
-        for block in self.visual.blocks:
-            block.mlp.act_fn = self._tanh_gelu
-        for merger in [self.visual.merger, *self.visual.deepstack_merger_list]:
-            merger.act_fn = self._exact_gelu
+        Qwen3VLMultimodal.use_reference_activations(self.visual)
         text = config["text_config"]
         self.lm_head = nn.Linear(text["hidden_size"], text["vocab_size"], bias=False)
         self.has_generation_head = True  # the initializer clears it for checkpoints without lm_head
@@ -94,39 +92,4 @@ class QwenImage21TextEncoder(nn.Module):
         return generated
 
     def position_ids(self, input_ids: mx.array, grids: mx.array | None) -> mx.array:
-        return QwenImage21TextEncoder.mrope_positions(input_ids, grids, self.image_token_id, self.merge_size)
-
-    @staticmethod
-    def mrope_positions(input_ids: mx.array, grids: mx.array | None, image_token_id: int, merge_size: int) -> mx.array:
-        ids = np.asarray(input_ids[0])
-        result = np.zeros((3, len(ids)), dtype=np.int32)
-        cursor, position = 0, 0
-        if grids is not None:
-            for t, h, w in grids.tolist():
-                h, w = h // merge_size, w // merge_size
-                start = int(np.flatnonzero(ids[cursor:] == image_token_id)[0]) + cursor
-                result[:, cursor:start] = np.arange(position, position + start - cursor)[None]
-                position += start - cursor
-                length = t * h * w
-                result[:, start : start + length] = (
-                    np.stack(
-                        [
-                            np.repeat(np.arange(t), h * w),
-                            np.tile(np.repeat(np.arange(h), w), t),
-                            np.tile(np.arange(w), t * h),
-                        ]
-                    )
-                    + position
-                )
-                cursor = start + length
-                position += max(h, w)
-        result[:, cursor:] = np.arange(position, position + len(ids) - cursor)[None]
-        return mx.array(result[:, None])
-
-    @staticmethod
-    def _exact_gelu(value: mx.array) -> mx.array:
-        return nn.gelu(value.astype(mx.float32)).astype(value.dtype)
-
-    @staticmethod
-    def _tanh_gelu(value: mx.array) -> mx.array:
-        return nn.gelu_approx(value.astype(mx.float32)).astype(value.dtype)
+        return Qwen3VLMultimodal.mrope_positions(input_ids, grids, self.image_token_id, self.merge_size)

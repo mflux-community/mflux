@@ -340,6 +340,8 @@ image.save("portrait_hf_lora.png")
 
 For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames.
 
+A LoRA's strength is `lora_alpha / rank`. mflux reads `lora_alpha` from per-layer `.alpha` tensors (kohya, ComfyUI) or, for files saved by diffusers or PEFT, from the `lora_adapter_metadata` the file carries, including per-layer `alpha_pattern` values and rsLoRA (`lora_alpha / sqrt(rank)`). A file with neither loads at `lora_alpha = rank`, a strength of 1.
+
 DoRA adapters saved with `lora_A` / `lora_B` matrices (the PEFT layout, with `lora_magnitude_vector` or `dora_scale`) are not supported for any model. mflux stops with an error instead of loading them without their magnitude. LoKr files with `dora_scale` still load (see below).
 
 ### LyCORIS LoKr (FLUX.1 and FLUX.2)

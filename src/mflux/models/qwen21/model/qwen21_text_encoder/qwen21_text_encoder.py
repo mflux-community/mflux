@@ -1,9 +1,9 @@
 import mlx.core as mx
 
-from mflux.models.qwen21.model.qwen21_text_encoder.language_model import LanguageModel
+from mflux.models.common_models.qwen3_vl.qwen3_vl_language_model import Qwen3VLLanguageModel
 
 
-class Qwen21TextEncoder(LanguageModel):
+class Qwen21TextEncoder(Qwen3VLLanguageModel):
     # Qwen3-VL text stack of Qwen-Image-2.1: interleaved mrope, but text-only inputs use
     # one shared position ladder replicated across the three mrope axes.
 
