@@ -1,13 +1,17 @@
 import inspect
+import json
 import sys
 
+import mlx.core as mx
 import PIL.Image
 import pytest
 
 from mflux.cli.defaults import defaults as ui_defaults
+from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.qwen.cli import qwen_image_generate as cli
 from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
+from mflux.utils.image_util import ImageUtil
 from tests.cli.helpers.command_fakes import FakeModel, reset_cli_globals
 
 
@@ -379,3 +383,43 @@ def test_generate_applies_the_guidance_default_without_writing_it_into_args(monk
     cli.QwenImageCommand.generate(model, args, 1, "x")
     assert model.generate_calls[0]["guidance"] == 3.5
     assert args.guidance is None
+
+
+def image_run_at(model_key, guidance):
+    # The image a generate_image run returns: ImageUtil.to_image on the run's Config, which carries the guidance.
+    config = Config(
+        model_config=AVAILABLE_MODELS[model_key], num_inference_steps=2, height=64, width=64, guidance=guidance
+    )
+    return ImageUtil.to_image(
+        decoded_latents=mx.zeros((1, 3, 64, 64)),
+        config=config,
+        seed=7,
+        prompt="a puffin",
+        quantization=None,
+        generation_time=1.0,
+    )
+
+
+def sidecar_of(image, tmp_path):
+    image.save(path=tmp_path / "out.png", export_json_metadata=True)
+    return json.loads((tmp_path / "out.metadata.json").read_text())
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("model_key", ["qwen-image", "qwen-image-edit", "qwen-image-edit-2511"])
+def test_the_sidecar_records_the_guidance_a_qwen_run_applied(tmp_path, model_key):
+    # Both Qwen commands run true CFG at --guidance, so a null here replays at the command default instead.
+    assert sidecar_of(image_run_at(model_key, 4.0), tmp_path)["guidance"] == 4.0
+
+
+@pytest.mark.fast
+def test_a_config_from_conf_replay_runs_at_the_recorded_guidance(monkeypatch, tmp_path):
+    sidecar_of(image_run_at("qwen-image", 4.0), tmp_path)
+    model = run_main(monkeypatch, ["-C", str(tmp_path / "out.metadata.json"), "--output", str(tmp_path / "again.png")])
+    assert model.generate_calls[0]["guidance"] == 4.0
+
+
+@pytest.mark.fast
+def test_a_model_without_cfg_still_records_no_guidance(tmp_path):
+    # Qwen-Image-2.1-Turbo runs only at guidance 1, so its sidecar keeps null and a replay takes the default.
+    assert sidecar_of(image_run_at("qwen-image-2.1-turbo", 1.0), tmp_path)["guidance"] is None
