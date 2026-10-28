@@ -598,7 +598,7 @@ class CommandLineParser(argparse.ArgumentParser):
             # all configs from the metadata config defers to any explicitly defined args
             guidance_default = self.get_default("guidance")
             guidance_from_metadata = prior_gen_metadata.get("guidance")
-            if namespace.guidance == guidance_default and guidance_from_metadata:
+            if namespace.guidance == guidance_default and guidance_from_metadata is not None:
                 namespace.guidance = guidance_from_metadata
             if namespace.quantize is None:
                 namespace.quantize = prior_gen_metadata.get("quantize", None)

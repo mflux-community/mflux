@@ -413,10 +413,11 @@ def test_the_sidecar_records_the_guidance_a_qwen_run_applied(tmp_path, model_key
 
 
 @pytest.mark.fast
-def test_a_config_from_conf_replay_runs_at_the_recorded_guidance(monkeypatch, tmp_path):
-    sidecar_of(image_run_at("qwen-image", 4.0), tmp_path)
+@pytest.mark.parametrize("guidance", [4.0, 0.0])
+def test_a_config_from_conf_replay_runs_at_the_recorded_guidance(monkeypatch, tmp_path, guidance):
+    sidecar_of(image_run_at("qwen-image", guidance), tmp_path)
     model = run_main(monkeypatch, ["-C", str(tmp_path / "out.metadata.json"), "--output", str(tmp_path / "again.png")])
-    assert model.generate_calls[0]["guidance"] == 4.0
+    assert model.generate_calls[0]["guidance"] == guidance
 
 
 @pytest.mark.fast
