@@ -573,8 +573,11 @@ class CommandLineParser(argparse.ArgumentParser):
                 namespace.compute_precision = recorded_precision
             # Anima records its sampler (er_sde or euler) apart from the schedule, and --scheduler picks it.
             # Only those names: anything else would reach the scheduler lookup, which imports a dotted name.
+            # Only on a command whose --scheduler takes them (its default is one), so an Anima sidecar given
+            # to another command keeps that command's scheduler.
             if (
                 hasattr(namespace, "scheduler")
+                and self.get_default("scheduler") in ("er_sde", "euler")
                 and prior_gen_metadata.get("sampler") is not None
                 and not self._option_was_provided("--scheduler")
             ):

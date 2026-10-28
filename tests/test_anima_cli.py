@@ -258,3 +258,14 @@ class TestAnimaReplayGuards:
         with pytest.raises(ValueError, match="not a finite number"):
             anima_generate.main()
         assert _StubAnima.instances == []
+
+
+@pytest.mark.fast
+def test_an_anima_sidecar_keeps_another_commands_scheduler(monkeypatch, tmp_path):
+    # Only Anima's --scheduler takes er_sde or euler; mflux-generate would fail after the model loaded
+    from mflux.models.flux.cli import flux_generate
+
+    sidecar = tmp_path / "image.metadata.json"
+    sidecar.write_text(json.dumps({"prompt": "1girl", "seed": 1, "sampler": "euler"}))
+    monkeypatch.setattr(sys, "argv", ["mflux-generate", "--model", "schnell", "-C", str(sidecar)])
+    assert flux_generate.build_parser().parse_args().scheduler != "euler"
