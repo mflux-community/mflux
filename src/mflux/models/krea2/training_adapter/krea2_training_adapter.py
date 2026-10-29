@@ -159,8 +159,7 @@ class Krea2TrainingAdapter(TrainingAdapter):
 
     def _append_train_lora_weights(self, weights: dict[str, mx.array], module_path: str) -> None:
         train_lora = TrainingUtil.get_train_lora(self._krea2.transformer, module_path)
-        weights[f"transformer.{module_path}.lora_A.weight"] = mx.transpose(train_lora.lora_A)
-        weights[f"transformer.{module_path}.lora_B.weight"] = mx.transpose(train_lora.lora_B)
+        weights.update(TrainingUtil.lora_weights(f"transformer.{module_path}", train_lora))
 
     @staticmethod
     def _caption_text(prompt: str) -> str:

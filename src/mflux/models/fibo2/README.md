@@ -3,7 +3,7 @@ This directory contains MFLUX's MLX implementation of **FIBO 2**.
 
 MFLUX supports [Fibo 2.0 Dev](https://huggingface.co/briaai/Fibo-2.0-dev) from [Bria](https://bria.ai) for text-to-image generation and image editing, in one model, and [Fibo 2.0 Edit Turbo](https://huggingface.co/briaai/Fibo-2.0-edit-turbo) for fast editing. FIBO 2 is an 8.1B-parameter flow-matching transformer trained on long structured JSON captions, with a Qwen3-VL-4B text encoder and the FLUX.2 VAE. It is not a new version of the [FIBO](../fibo/README.md) architecture: the transformer, the text encoder and the VAE are all different.
 
-Quantization (`-q 4`, `-q 6`, `-q 8`), `mflux-save`, LoRA, `--low-ram`, step-by-step previews and metadata export work as for other models. Image-to-image with `--image-path` and training are not supported; for changing an existing image, use the editing command.
+Quantization (`-q 4`, `-q 6`, `-q 8`), `mflux-save`, LoRA, LoRA training for text to image, `--low-ram`, step-by-step previews and metadata export work as for other models. Image-to-image with `--image-path` is not supported; for changing an existing image, use the editing command.
 
 ![FIBO 2 Example](../../assets/fibo2_example.jpg)
 
@@ -198,6 +198,46 @@ mflux-generate-fibo2 \
 ```
 
 mflux reads the diffusers, PEFT, kohya (`lora_down`/`lora_up`) and ComfyUI key names, and applies each LoRA at the strength it was trained with, including the `lora_alpha` diffusers keeps in the file's metadata. LoRAs made for ComfyUI or with ai-toolkit use the Comfy-Org repack (`Comfy-Org/Fibo-2.0`), which fuses q/k/v into `attention.qkv`, cross-attention k/v into `to_kv` and the feed-forward gate and up into `w13`, and pads the feed-forward from 9536 to 9728: mflux splits those layers and drops the padding. Extracted LoRAs that also patch norms and biases directly (`.diff`, `.diff_b`) load too, baked into the weights as by default; with `--no-bake-lora` they stop with an error. LoKr on the fused layers does not load yet: such a file stops with "No LoRA layers were applied".
+
+## Training
+`mflux-train` trains a LoRA on Fibo 2.0 Dev for text to image with the recipe of Bria's trainer, `fine_tuning/train_lora.py` in the [model repository](https://huggingface.co/briaai/Fibo-2.0-dev). Edit training is not supported. For the folder of images and captions, see the common [training docs](../common/README.md#training-lora).
+
+```sh
+mflux-train --config train.json
+```
+
+The `.txt` next to each image holds its caption: a JSON caption, the form FIBO 2 was trained on, or a short description. mflux encodes it as it encodes a prompt: a JSON caption is cleaned and serialized compactly, and a caption with text in its `text_render` entries gets the images of that text, which the steps above noise level 0.9 leave out. The noise level of each step follows Bria's trainer: `sigmoid(N(shift, 1))` 90% of the time and uniform otherwise, with a shift of 0.5 at 256 image tokens that grows to 1.15 at 4096 (1024×1024). So `timestep_low`, `timestep_high` and `timestep_type` do not apply.
+
+A config for the 44 transformer layers, attention and feed-forward, with rank 16 and Bria's optimizer settings. Bria's trainer adapts all 415 linear layers; add targets for `layers.{block}.adaLN_modulation.0`, `noise_refiner`, `layers.{block}.cross_attention` (blocks 6, 14, 22, 30 and 38), `perceiver.layers`, `x_embedder`, `t_embedder` and `final_layer` to do the same:
+
+```json
+{
+  "model": "fibo2",
+  "data": "/path/to/images",
+  "seed": 42,
+  "steps": 20,
+  "guidance": 5.0,
+  "max_resolution": 768,
+  "gradient_checkpointing": true,
+  "cache_limit_gb": 2,
+  "training_loop": { "num_epochs": 50, "batch_size": 1 },
+  "optimizer": { "name": "AdamW", "learning_rate": 1e-4, "optimizer_params": { "weight_decay": 0.01 }, "max_grad_norm": 1.0 },
+  "checkpoint": { "output_path": "output", "save_frequency": 200 },
+  "lora_layers": { "targets": [
+    { "module_path": "layers.{block}.attention.to_q",     "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.attention.to_k",     "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.attention.to_v",     "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.attention.to_out.0", "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.feed_forward.w1",    "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.feed_forward.w2",    "blocks": { "start": 0, "end": 44 }, "rank": 16 },
+    { "module_path": "layers.{block}.feed_forward.w3",    "blocks": { "start": 0, "end": 44 }, "rank": 16 }
+  ] }
+}
+```
+
+`steps` and `guidance` are for the preview images; FIBO 2 Dev needs guidance for them. Once the captions are encoded, mflux encodes the preview prompts and lets the 8.7 GB Qwen3-VL text encoder go, unless a preview caption has `text_render` entries. The LoRA is saved with ComfyUI's keys and layout (`diffusion_model.*`, q, k and v in `attention.qkv`, the feed-forward gate and up in `w13`, padded to 9728), so it loads with `--lora` and in ComfyUI.
+
+On an M5 Max in bf16, with rank 16 on all of those layers at 512×512, gradient checkpointing and `cache_limit_gb: 2`, a step took about 2.3 seconds and a 300-step run peaked at 21 GB, about 13 minutes in all. The results aren't stable yet: on a 12-image style dataset, 2 of 6 runs (3 with Bria's noise levels, 3 with uniform ones) learned the style fully, against 3 of 3 for ai-toolkit, and the cause isn't known. Watch the preview images. Without `cache_limit_gb` MLX keeps freed buffers and the peak looks higher than the training needs. `"quantize": 8` trains over a quantized base.
 
 ## Notes
 - **Implementation**: the transformer is the Z-Image block with gated cross-attention to the text encoder in five layers, and a Perceiver that turns the text encoder output into 256 to 512 "gist" tokens. mflux reuses the FLUX.2 VAE, the Z-Image feed-forward, timestep, RoPE and final layers, and the shared Qwen3-VL language model and vision tower (also used by Qwen-Image 2.1), with 3D positions and deepstack features for images. The port follows the [diffusers implementation](https://github.com/huggingface/diffusers/tree/main/src/diffusers/pipelines/bria_fibo2) and matches its transformer and text encoder in float32. `tests/test_fibo2_parity.py` checks the transformer against a small diffusers model and the text encoder against `transformers`, layer by layer.

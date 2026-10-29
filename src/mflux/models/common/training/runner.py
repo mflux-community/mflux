@@ -24,6 +24,7 @@ from mflux.models.common.training.trainer import TrainingTrainer
 from mflux.models.common.training.utils import TrainingUtil
 from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.ernie_image.training_adapter.ernie_training_adapter import ErnieTrainingAdapter
+from mflux.models.fibo2.training_adapter.fibo2_training_adapter import Fibo2TrainingAdapter
 from mflux.models.flux2.training_adapter.flux2_edit_training_adapter import Flux2EditTrainingAdapter
 from mflux.models.flux2.training_adapter.flux2_training_adapter import Flux2TrainingAdapter
 from mflux.models.krea2.training_adapter.krea2_training_adapter import Krea2TrainingAdapter
@@ -41,6 +42,18 @@ class TrainingRunner:
         # Ensure any assistant LoRA(s) do not affect inference outputs after training.
         for lora in TrainingUtil.iter_assistant_loras(transformer):
             lora.scale = 0.0
+
+    @staticmethod
+    def _check_timestep_options(adapter_class: type[TrainingAdapter], training_spec: TrainingSpec) -> None:
+        # An adapter that draws its own noise levels (it overrides sample_sigma) has no grid for the timestep options
+        # to select from. Checked on the class, so a bad config stops before the model loads
+        loop = training_spec.training_loop
+        timestep_options = loop.timestep_low != 0 or loop.timestep_high is not None or loop.timestep_type is not None
+        if timestep_options and adapter_class.sample_sigma is not TrainingAdapter.sample_sigma:
+            raise ValueError(
+                f"{training_spec.model} draws the noise level of each step itself: remove timestep_low, timestep_high "
+                "and timestep_type from training_loop."
+            )
 
     @staticmethod
     def _apply_low_ram_tiling(model) -> None:
@@ -89,35 +102,31 @@ class TrainingRunner:
             ModelConfig.krea2().model_name,
             ModelConfig.krea2_raw().model_name,
         }
+        is_fibo2 = model_config.model_name == ModelConfig.fibo2().model_name
         is_anima = model_config.model_name == ModelConfig.anima_base().model_name
         if training_spec.is_edit and not is_flux2_base:
             raise ValueError("Edit training currently supports only FLUX.2-klein-base models.")
         if is_ernie:
-            adapter = ErnieTrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = ErnieTrainingAdapter
         elif is_zimage:
-            adapter = ZImageTrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = ZImageTrainingAdapter
         elif training_spec.is_edit:
-            adapter = Flux2EditTrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = Flux2EditTrainingAdapter
         elif is_flux2:
-            adapter = Flux2TrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = Flux2TrainingAdapter
         elif is_krea2:
-            adapter = Krea2TrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = Krea2TrainingAdapter
+        elif is_fibo2:
+            adapter_class = Fibo2TrainingAdapter
         elif is_anima:
-            adapter = AnimaTrainingAdapter(
-                model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
-            )
+            adapter_class = AnimaTrainingAdapter
         else:
             raise ValueError("Flux1 training is no longer supported.")
+
+        TrainingRunner._check_timestep_options(adapter_class, training_spec)
+        adapter = adapter_class(
+            model_config=model_config, quantize=training_spec.quantize, model_path=training_spec.model_path
+        )
 
         if training_spec.low_ram:
             TrainingRunner._apply_low_ram_tiling(adapter.model())
@@ -204,6 +213,11 @@ class TrainingRunner:
                     )
                 )
             dataset = Dataset(encoded_data)
+        # With the dataset encoded, an adapter that can serve its previews from prompts encoded now lets its text
+        # encoder go: training never runs it again (FIBO 2's Qwen3-VL is 8.7 GB)
+        if adapter.release_text_encoder(training_spec):
+            gc.collect()
+            mx.clear_cache()
         iterator = Iterator.from_spec(training_spec=training_spec, dataset=dataset)
         optimizer = Optimizer.from_spec(training_spec)
         statistics = Statistics.from_spec(training_spec)

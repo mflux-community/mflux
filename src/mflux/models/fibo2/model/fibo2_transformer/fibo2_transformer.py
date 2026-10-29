@@ -63,11 +63,14 @@ class Fibo2Transformer(nn.Module):
         hidden_states = self.x_embedder(mx.concatenate(tokens, axis=1).astype(ModelConfig.precision))
         image_freqs = self.rope_embedder(self.image_position_ids(latents, context_latents))
 
+        # Training can recompute each block's activations in the backward pass instead of keeping them
+        gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
         refiner_noise_mask = None
         if context_latents:
             refiner_noise_mask = Fibo2Transformer._noise_mask(batch_size, hidden_states.shape[1], 0, num_image_tokens)
         for block in self.noise_refiner:
-            hidden_states = block(hidden_states, image_freqs, t_noisy, t_clean, refiner_noise_mask)
+            run = nn.utils.checkpoint(block) if gradient_checkpointing else block
+            hidden_states = run(hidden_states, image_freqs, t_noisy, t_clean, refiner_noise_mask)
 
         # Gist tokens from the first text bundle, then one stream: gist, image, context
         num_gist_tokens = self.perceiver.gist_count(encoder_hidden_states.shape[2])
@@ -80,7 +83,8 @@ class Fibo2Transformer(nn.Module):
         bundle_index = {layer_id: index + 1 for index, layer_id in enumerate(self.injection_layer_ids)}
         for layer_id, block in enumerate(self.layers):
             text = encoder_hidden_states[:, bundle_index[layer_id]] if layer_id in bundle_index else None
-            hidden_states = block(
+            run = nn.utils.checkpoint(block) if gradient_checkpointing else block
+            hidden_states = run(
                 hidden_states,
                 freqs_cis,
                 t_noisy,

@@ -4,12 +4,26 @@ import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import mlx.core as mx
+
 from mflux.models.common.lora.layer.fused_linear_lora_layer import FusedLoRALinear
 from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.training.lora.path_util import get_at_path
 
 
 class TrainingUtil:
+    @staticmethod
+    def lora_weights(name: str, lora: LoRALinear) -> dict[str, mx.array]:
+        # A trained layer as PEFT keys under name. A scale other than 1 (alpha != rank) is saved as .alpha, so the file
+        # loads at the strength it trained at and a resumed run gets the scale back
+        weights = {
+            f"{name}.lora_A.weight": mx.transpose(lora.lora_A),
+            f"{name}.lora_B.weight": mx.transpose(lora.lora_B),
+        }
+        if lora.scale != 1.0:
+            weights[f"{name}.alpha"] = mx.array(lora.scale * lora.lora_A.shape[1])
+        return weights
+
     @staticmethod
     def iter_assistant_loras(transformer) -> Iterator[LoRALinear]:
         for _, child in transformer.named_modules():

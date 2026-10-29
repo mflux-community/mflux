@@ -8,6 +8,19 @@ class Fibo2LoRAMapping:
     # Bria's feed-forward is 9536 wide; ComfyUI's repack (and ai-toolkit, which trains on it) zero-pads it to 9728, so
     # their LoRAs carry 192 extra rows per half of w13 and 192 extra columns of w2. Those are cut off here.
     FFN_HIDDEN = Fibo2TransformerBlock.ffn_hidden_dim(3584)
+    # The MLX modules diffusers names differently, since it keeps them in an nn.Sequential
+    DIFFUSERS_NAMES = {
+        "t_embedder.linear1": "t_embedder.mlp.0",
+        "t_embedder.linear2": "t_embedder.mlp.2",
+        "final_layer.adaLN_modulation.0": "final_layer.adaLN_modulation.1",
+    }
+    TOP_LEVEL = (
+        "x_embedder",
+        "t_embedder.linear1",
+        "t_embedder.linear2",
+        "final_layer.linear",
+        "final_layer.adaLN_modulation.0",
+    )
     ATTENTION = ("to_q", "to_k", "to_v", "to_out.0")
     BLOCK = (
         *(f"attention.{name}" for name in ATTENTION),
@@ -27,13 +40,7 @@ class Fibo2LoRAMapping:
 
     @staticmethod
     def get_mapping() -> list[LoRATarget]:
-        targets = [
-            Fibo2LoRAMapping._target("x_embedder"),
-            Fibo2LoRAMapping._target("t_embedder.linear1", "t_embedder.mlp.0"),
-            Fibo2LoRAMapping._target("t_embedder.linear2", "t_embedder.mlp.2"),
-            Fibo2LoRAMapping._target("final_layer.linear"),
-            Fibo2LoRAMapping._target("final_layer.adaLN_modulation.0", "final_layer.adaLN_modulation.1"),
-        ]
+        targets = [Fibo2LoRAMapping._target(name) for name in Fibo2LoRAMapping.TOP_LEVEL]
         targets += [Fibo2LoRAMapping._target(f"noise_refiner.{{block}}.{name}") for name in Fibo2LoRAMapping.BLOCK]
         targets += [
             Fibo2LoRAMapping._target(f"layers.{{block}}.{name}")
@@ -45,6 +52,11 @@ class Fibo2LoRAMapping:
         targets += Fibo2LoRAMapping._comfy_targets()
         targets += Fibo2LoRAMapping._norm_targets()
         return targets
+
+    @staticmethod
+    def diffusers_name(model_path: str) -> str:
+        # The name diffusers, PEFT and ComfyUI give the module at this MLX path, which a saved LoRA's keys use
+        return Fibo2LoRAMapping.DIFFUSERS_NAMES.get(model_path, model_path)
 
     @staticmethod
     def _norm_targets() -> list[LoRATarget]:
@@ -113,7 +125,7 @@ class Fibo2LoRAMapping:
 
     @staticmethod
     def _target(model_path: str, source_path: str | None = None, up_transform=None) -> LoRATarget:
-        source = source_path or model_path
+        source = source_path or Fibo2LoRAMapping.diffusers_name(model_path)
         down_transform = Fibo2LoRAMapping._unpad_down if model_path.endswith(("feed_forward.w2", "ffn.w2")) else None
         prefixes = Fibo2LoRAMapping.PREFIXES
         defaults = ("", ".default")

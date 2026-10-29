@@ -106,6 +106,10 @@ class ZImageLoRAMapping(LoRAMapping):
                     "transformer.all_x_embedder.2-1.lora_A.weight",
                     "transformer.all_x_embedder.2-1.lora_A.default.weight",
                 ],
+                possible_alpha_patterns=[
+                    "diffusion_model.all_x_embedder.2-1.alpha",
+                    "transformer.all_x_embedder.2-1.alpha",
+                ],
             ),
             LoRATarget(
                 model_path="all_final_layer.2-1.linear",
@@ -120,6 +124,10 @@ class ZImageLoRAMapping(LoRAMapping):
                     "diffusion_model.all_final_layer.2-1.linear.lora_A.default.weight",
                     "transformer.all_final_layer.2-1.linear.lora_A.weight",
                     "transformer.all_final_layer.2-1.linear.lora_A.default.weight",
+                ],
+                possible_alpha_patterns=[
+                    "diffusion_model.all_final_layer.2-1.linear.alpha",
+                    "transformer.all_final_layer.2-1.linear.alpha",
                 ],
             ),
             LoRATarget(
@@ -151,6 +159,7 @@ class ZImageLoRAMapping(LoRAMapping):
                     "transformer.cap_embedder.1.lora_A.weight",
                     "transformer.cap_embedder.1.lora_A.default.weight",
                 ],
+                possible_alpha_patterns=["diffusion_model.cap_embedder.1.alpha", "transformer.cap_embedder.1.alpha"],
             ),
             LoRATarget(
                 model_path="t_embedder.linear1",

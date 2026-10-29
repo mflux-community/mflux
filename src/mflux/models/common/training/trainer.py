@@ -72,9 +72,9 @@ class TrainingTrainer:
         # Flux uses config.width/height for rotary embeddings, so this must match the latent layout.
         config = adapter.create_config(training_spec, width=item.width, height=item.height)
 
-        # Reuse the base scheduler only when compatible with the item's dimensions.
-        # Some schedulers depend on image seq len when sigma shift is enabled.
-        if not config.model_config.requires_sigma_shift or config.image_seq_len == base_config.image_seq_len:
+        # Reuse the base scheduler only when the item has the preview's size: a sigma shift (requires_sigma_shift) or a
+        # custom scheduler can depend on the size, and a scheduler for another size is cheap to build.
+        if config.width == base_config.width and config.height == base_config.height:
             config._scheduler = base_config.scheduler  # type: ignore[attr-defined]
         else:
             _ = config.scheduler
@@ -82,27 +82,36 @@ class TrainingTrainer:
         time_seed = rng.randint(0, 2**32 - 1)
         noise_seed = rng.randint(0, 2**32 - 1)
 
-        low = int(training_spec.training_loop.timestep_low)
-        high = int(
-            config.num_inference_steps
-            if training_spec.training_loop.timestep_high is None
-            else training_spec.training_loop.timestep_high
-        )
-
-        timestep_type = training_spec.training_loop.timestep_type
-        if timestep_type and timestep_type != "uniform":
-            # Non-uniform timestep-index sampling (sigmoid/content/style). Identity learning
-            # lives in the mid/low-noise band that flat sampling under-weights.
-            t = TrainingTrainer._sample_timestep_index(timestep_type, low, high, rng)
+        sigma = adapter.sample_sigma(rng=rng, image_seq_len=config.image_seq_len)
+        if sigma is not None:
+            # The adapter draws the noise level from a continuous distribution (FIBO 2 follows its reference
+            # trainer). predict_noise gets it as a grid of one value, sigmas[t] with t = 0. The runner refuses the
+            # timestep options for such an adapter, since they select from the scheduler's grid.
+            sigmas = mx.array([sigma], dtype=mx.float32)
+            t = 0
         else:
-            t = int(
-                mx.random.randint(
-                    low=low,
-                    high=high,
-                    shape=[],
-                    key=mx.random.key(time_seed),
-                )
+            sigmas = config.scheduler.sigmas
+            low = int(training_spec.training_loop.timestep_low)
+            high = int(
+                config.num_inference_steps
+                if training_spec.training_loop.timestep_high is None
+                else training_spec.training_loop.timestep_high
             )
+
+            timestep_type = training_spec.training_loop.timestep_type
+            if timestep_type and timestep_type != "uniform":
+                # Non-uniform timestep-index sampling (sigmoid/content/style). Identity learning
+                # lives in the mid/low-noise band that flat sampling under-weights.
+                t = TrainingTrainer._sample_timestep_index(timestep_type, low, high, rng)
+            else:
+                t = int(
+                    mx.random.randint(
+                        low=low,
+                        high=high,
+                        shape=[],
+                        key=mx.random.key(time_seed),
+                    )
+                )
 
         clean_image = item.clean_latents
         pure_noise = mx.random.normal(
@@ -114,13 +123,13 @@ class TrainingTrainer:
         latents_t = LatentCreator.add_noise_by_interpolation(
             clean=clean_image,
             noise=pure_noise,
-            sigma=config.scheduler.sigmas[t],
+            sigma=sigmas[t],
         )
 
         predicted_noise = adapter.predict_noise(
             t=t,
             latents_t=latents_t,
-            sigmas=config.scheduler.sigmas,
+            sigmas=sigmas,
             cond=item.cond,
             config=config,
         )

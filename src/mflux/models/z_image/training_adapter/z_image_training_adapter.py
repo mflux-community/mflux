@@ -141,9 +141,7 @@ class ZImageTrainingAdapter(TrainingAdapter):
     @staticmethod
     def _append_train_lora_weights(weights: dict[str, mx.array], transformer, module_path: str) -> None:
         train_lora = TrainingUtil.get_train_lora(transformer, module_path)
-
-        weights[f"diffusion_model.{module_path}.lora_A.weight"] = mx.transpose(train_lora.lora_A)
-        weights[f"diffusion_model.{module_path}.lora_B.weight"] = mx.transpose(train_lora.lora_B)
+        weights.update(TrainingUtil.lora_weights(f"diffusion_model.{module_path}", train_lora))
 
     def _assistant_disabled(self):
         # Context manager that temporarily disables the assistant/training adapter LoRA(s).

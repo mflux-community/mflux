@@ -144,5 +144,4 @@ class ErnieTrainingAdapter(TrainingAdapter):
     @staticmethod
     def _append_lora_weights(weights: dict, transformer, module_path: str) -> None:
         lora = TrainingUtil.get_train_lora(transformer, module_path)
-        weights[f"transformer.{module_path}.lora_A.weight"] = mx.transpose(lora.lora_A)
-        weights[f"transformer.{module_path}.lora_B.weight"] = mx.transpose(lora.lora_B)
+        weights.update(TrainingUtil.lora_weights(f"transformer.{module_path}", lora))

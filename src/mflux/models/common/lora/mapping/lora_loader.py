@@ -518,6 +518,11 @@ class LoRALoader:
 
         # Calculate final scale - only use user scale, matching Diffusers approach
         effective_scale = scale
+        # A LoRA loaded back to resume training keeps alpha / rank as the layer's scale, as it trained: folded into B,
+        # it would change B and leave the restored optimizer state matching the old one
+        fold_alpha = "alpha" in lora_data and role != "train"
+        if role == "train":
+            effective_scale = scale * alpha_scale
 
         # Create new LoRA layer
         # Check if it's a linear layer (either nn.Linear, LoRALinear, or FusedLoRALinear)
@@ -534,7 +539,7 @@ class LoRALoader:
                 lora_layer._mflux_lora_role = role
                 lora_layer.lora_A = lora_A
                 lora_layer.lora_B = lora_B
-                if "alpha" in lora_data:
+                if fold_alpha:
                     lora_layer.lora_B = lora_layer.lora_B * alpha_scale
                 fused_layer = FusedLoRALinear(base_linear=current_module.linear, loras=[current_module, lora_layer])
                 replacement_layer = fused_layer
@@ -546,7 +551,7 @@ class LoRALoader:
                 lora_layer._mflux_lora_role = role
                 lora_layer.lora_A = lora_A
                 lora_layer.lora_B = lora_B
-                if "alpha" in lora_data:
+                if fold_alpha:
                     lora_layer.lora_B = lora_layer.lora_B * alpha_scale
                 fused_layer = FusedLoRALinear(
                     base_linear=current_module.base_linear, loras=current_module.loras + [lora_layer]
@@ -558,7 +563,7 @@ class LoRALoader:
                 lora_layer._mflux_lora_role = role
                 lora_layer.lora_A = lora_A
                 lora_layer.lora_B = lora_B
-                if "alpha" in lora_data:
+                if fold_alpha:
                     lora_layer.lora_B = lora_layer.lora_B * alpha_scale
                 replacement_layer = lora_layer
 

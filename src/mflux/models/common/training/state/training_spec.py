@@ -1,5 +1,6 @@
 import datetime
 import json
+import math
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -80,7 +81,7 @@ class TrainingLoopSpec:
     # Timestep-index sampling distribution: None/"uniform" (flat), "sigmoid" (mid-concentrated,
     # ai-toolkit's default — best for subject identity), "content" (cubic, favors low-noise /
     # fine detail), "style" (favors high-noise / coarse style). Applies to adapters that sample
-    # sigma from the index grid (flux/z-image/ernie); Ideogram has its own sample_sigma override.
+    # sigma from the index grid (flux/z-image/ernie/krea2); FIBO 2 draws its own (sample_sigma).
     timestep_type: str | None = None
 
 
@@ -411,6 +412,10 @@ class TrainingSpec:
             blocks = None
             if t.get("blocks") is not None:
                 blocks = BlockRange(**t["blocks"])
+            # alpha / rank scales the LoRA: at 0 or below it learns nothing, and a resumed run could not recover B.
+            # json reads NaN and Infinity, which would pass a plain comparison
+            if t.get("alpha") is not None and not (math.isfinite(float(t["alpha"])) and float(t["alpha"]) > 0):
+                raise ValueError(f"lora_layers target {t['module_path']}: 'alpha' must be a number > 0")
             targets.append(
                 LoraTargetSpec(
                     module_path=t["module_path"],
