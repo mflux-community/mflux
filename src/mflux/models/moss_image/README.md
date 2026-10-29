@@ -50,7 +50,8 @@ mflux-generate-moss-image --model ~/models/moss-image-q4 --prompt "a lighthouse 
 
 On an M-series Mac with 36 GB, a 1024x1024 image with the 4-bit copy uses about 10.5 GB of
 MLX memory and takes about 9.7 seconds for each step. The 8-bit model at 512x512 takes about
-2.2 seconds for each step.
+2.2 seconds for each step. With `--low-ram`, a 1024x1024 image peaks at about 7.6 GB at 4-bit
+(the VAE decode) and about 9.3 GB at 8-bit (the text encoder), measured on an M4 Pro.
 
 <details>
 <summary>Python API</summary>

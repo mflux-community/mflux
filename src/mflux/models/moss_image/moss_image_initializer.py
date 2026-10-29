@@ -36,8 +36,10 @@ class MOSSImageInitializer:
         MOSSImageInitializer._init_models(model, model_config)
         MOSSImageInitializer._apply_weights(model, weights, quantize)
         MOSSImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
+        # The parameters stay lazy: each one is read (and quantized) when a forward pass first needs
+        # it. Evaluating them here held the text encoder, transformer and VAE at once, so --low-ram
+        # could only free the text encoder after that peak (#948).
         del weights
-        mx.eval(model.parameters())
         mx.clear_cache()
 
     @staticmethod
