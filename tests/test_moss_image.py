@@ -16,6 +16,8 @@ from torch.nn import functional as F
 from mflux.models.common_models.qwen3_5 import Qwen35GatedDeltaNet, Qwen35TextModel
 from mflux.models.moss_image.latent_creator.moss_image_latent_creator import MOSSImageLatentCreator
 from mflux.models.moss_image.model.moss_image_scheduler.moss_image_scheduler import MOSSImageScheduler
+from mflux.models.moss_image.model.moss_image_transformer.moss_image_block import MOSSImageAttention
+from mflux.models.moss_image.model.moss_image_transformer.moss_image_rope import MOSSImageRoPE
 from mflux.models.moss_image.model.moss_image_transformer.moss_image_transformer import MOSSImageTransformer
 from mflux.models.moss_image.variants.txt2img.moss_image import MOSSImage
 from mflux.models.moss_image.weights.moss_image_weight_mapping import MOSSImageWeightMapping
@@ -364,3 +366,33 @@ def test_the_chunked_delta_rule_survives_correlated_keys():
     assert np.isfinite(actual).all()
     # The GPU error is approximately 2e-3 (5e-7 on the CPU). The product form gives NaN.
     assert np.abs(actual - expected).max() < 1e-2
+
+
+@pytest.mark.fast
+def test_the_fused_bfloat16_activation_and_rotation_round_like_the_op_by_op_chain():
+    # situ and rotate run as compiled kernels. In bfloat16 they must stay as close to a float64 reference
+    # as the op-by-op chain does: the fusion is a speedup, not a change of precision.
+    rng = np.random.default_rng(0)
+    hidden = mx.array(rng.standard_normal((2, 64, 512)) * 30).astype(mx.bfloat16)
+    gate = mx.array(rng.standard_normal((2, 64, 512)) * 6).astype(mx.bfloat16)
+    h, g = (np.array(x.astype(mx.float32), dtype=np.float64) for x in (hidden, gate))
+    reference = (4 * np.tanh(g / 4) / (1 + np.exp(-g))) * (25 * np.tanh(h / 25))
+    chain = (4.0 * mx.tanh(gate / 4.0) * mx.sigmoid(gate)) * (25.0 * mx.tanh(hidden / 25.0))
+    fused = MOSSImageAttention.situ(hidden, gate)
+
+    x = mx.array(rng.standard_normal((2, 64, 4, 32))).astype(mx.bfloat16)
+    rope = mx.array(rng.standard_normal((1, 64, 32))).astype(mx.bfloat16)
+    xs, r = (np.array(a.astype(mx.float32), dtype=np.float64) for a in (x, rope))
+    sin, cos = (np.concatenate([half, half], axis=-1)[:, :, None] for half in np.split(r, 2, axis=-1))
+    first, second = np.split(xs, 2, axis=-1)
+    rotation_reference = xs * cos + np.concatenate([-second, first], axis=-1) * sin
+    sin_b, cos_b = (mx.concatenate([half, half], axis=-1)[:, :, None] for half in mx.split(rope, 2, axis=-1))
+    first_b, second_b = mx.split(x, 2, axis=-1)
+    rotation_chain = x * cos_b + mx.concatenate([-second_b, first_b], axis=-1) * sin_b
+    rotation_fused = MOSSImageRoPE.rotate(x, rope)
+
+    for actual, chained, expected in ((fused, chain, reference), (rotation_fused, rotation_chain, rotation_reference)):
+        assert actual.dtype == mx.bfloat16
+        error = np.abs(np.array(actual.astype(mx.float32)) - expected).mean()
+        chain_error = np.abs(np.array(chained.astype(mx.float32)) - expected).mean()
+        assert error <= chain_error * 1.01
