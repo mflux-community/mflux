@@ -59,7 +59,7 @@ class StepCache:
         ratio: float | None,
         signal_fn: Callable[[mx.array], mx.array] | None = None,
         *,
-        protected_fraction: float = PROTECTED_FRACTION,
+        protected_fraction: float | None = None,
     ) -> StepCache:
         """Build the per-run cache; ``ratio=None`` returns an inactive cache."""
         if ratio is None:
@@ -77,10 +77,12 @@ class StepCache:
         ratio: float,
         signal_fn: Callable[[mx.array], mx.array] | None = None,
         *,
-        protected_fraction: float = PROTECTED_FRACTION,
+        protected_fraction: float | None = None,
     ) -> frozenset[int]:
         if not 0 < ratio < 1:
             raise ValueError(f"step cache ratio must be within (0, 1), got {ratio}")
+        if protected_fraction is None:
+            protected_fraction = StepCache.PROTECTED_FRACTION
         if not 0 <= protected_fraction <= 0.5:
             raise ValueError(f"step cache protected fraction must be within [0, 0.5], got {protected_fraction}")
         total = len(steps)
@@ -93,7 +95,7 @@ class StepCache:
         diffs = mx.sqrt(mx.sum(mx.square(signals[1:] - signals[:-1]), axis=-1))
         diffs = mx.concatenate([mx.array([float("inf")]), diffs])
         diff_values = diffs.tolist()
-        protected = int(total * protected_fraction)
+        protected = int(total * protected_fraction + 1e-9)
         eligible = list(range(max(protected, 1), total - protected))
         if not eligible:
             return frozenset()

@@ -122,3 +122,16 @@ class TestStepCacheProtectedWindow:
     def test_invalid_window_raises(self, fraction):
         with pytest.raises(ValueError, match="protected fraction"):
             StepCache.for_run(_config(40), ratio=0.3, protected_fraction=fraction)
+
+    def test_near_integer_window_is_not_shortened(self):
+        cache = StepCache.for_run(_config(100), ratio=0.9, protected_fraction=0.29)
+        assert cache.skip_steps == frozenset(range(29, 71))
+
+    def test_default_reads_class_constant_at_call_time(self, monkeypatch):
+        monkeypatch.setattr(StepCache, "PROTECTED_FRACTION", 0.3)
+        config = _config(40)
+        cache = StepCache.for_run(config, ratio=0.9)
+        direct = StepCache.select_skip_steps(list(range(40)), config.scheduler.sigmas, 0.9)
+        assert cache.skip_steps == direct == frozenset(range(12, 28))
+        explicit = StepCache.for_run(config, ratio=0.9, protected_fraction=0.1)
+        assert explicit.skip_steps == frozenset(range(4, 36))

@@ -327,22 +327,3 @@ MFLUX would not be possible without the great work of:
 ### ⚖️ License
 
 This project is licensed under the [MIT License](LICENSE).
-
-### Protecting steps during cache reuse
-
-Python integrations that use `StepCache.for_run` can set `protected_fraction`
-to keep more of the start and end of a denoising run outside the cache:
-
-```python
-from mflux.models.common.step_cache.step_cache import StepCache
-
-step_cache = StepCache.for_run(config, ratio=0.3, protected_fraction=0.32)
-```
-
-The default is `0.1`. Values from `0` to `0.5` are accepted. The fraction applies
-to each end of the actual run, including an image-to-image run that starts partway
-through the schedule. A value of `0.5` disables reuse for an even-length run.
-Model integrations can use a larger window when early steps are important for
-image structure, as reported for MOSS-Image in [#950](https://github.com/mflux-community/mflux/issues/950).
-Check output quality against the same seed without caching before choosing a
-window for a model. The CLI defaults are unchanged.
