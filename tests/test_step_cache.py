@@ -115,8 +115,9 @@ class TestStepCacheProtectedWindow:
         assert cache.skip_steps
         assert all(config.init_time_step + protected <= t < 40 - protected for t in cache.skip_steps)
 
-    def test_fully_protected_run_skips_nothing(self):
-        assert not StepCache.for_run(_config(40), ratio=0.3, protected_fraction=0.5).active
+    @pytest.mark.parametrize("num_steps", [25, 40])
+    def test_fully_protected_run_skips_nothing(self, num_steps):
+        assert not StepCache.for_run(_config(num_steps), ratio=0.3, protected_fraction=0.5).active
 
     @pytest.mark.parametrize("fraction", [-0.1, 0.51, float("nan"), float("inf")])
     def test_invalid_window_raises(self, fraction):

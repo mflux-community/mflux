@@ -87,6 +87,8 @@ class StepCache:
             protected_fraction = StepCache.PROTECTED_FRACTION
         if not 0 <= protected_fraction <= 0.5:
             raise ValueError(f"step cache protected fraction must be within [0, 0.5], got {protected_fraction}")
+        if protected_fraction == 0.5:
+            return frozenset()
         total = len(steps)
         if total < StepCache.MIN_STEPS:
             return frozenset()
