@@ -369,6 +369,19 @@ def test_the_chunked_delta_rule_survives_correlated_keys():
 
 
 @pytest.mark.fast
+def test_the_activation_and_the_rotation_are_dispatched_through_mx_compile():
+    # The numerical test below also passes on main, so it cannot catch a dropped decorator. mx.compile
+    # returns a wrapper object of its own type, while an undecorated function stays a plain Python
+    # function, so this fails as soon as @mx.compile goes away from situ or rotate. Comparing against the
+    # wrapper type that mx.compile builds at runtime keeps the check independent of MLX's internal name.
+    compiled_type = type(mx.compile(lambda value: value))
+    assert type(MOSSImageAttention.situ) is compiled_type
+    assert type(MOSSImageRoPE.rotate) is compiled_type
+    # Control: an uncompiled callable in the same module must not look compiled to this check.
+    assert type(MOSSImageAttention.attend) is not compiled_type
+
+
+@pytest.mark.fast
 def test_the_fused_bfloat16_activation_and_rotation_round_like_the_op_by_op_chain():
     # situ and rotate run as compiled kernels. In bfloat16 they must stay as close to a float64 reference
     # as the op-by-op chain does: the fusion is a speedup, not a change of precision.
@@ -390,6 +403,12 @@ def test_the_fused_bfloat16_activation_and_rotation_round_like_the_op_by_op_chai
     first_b, second_b = mx.split(x, 2, axis=-1)
     rotation_chain = x * cos_b + mx.concatenate([-second_b, first_b], axis=-1) * sin_b
     rotation_fused = MOSSImageRoPE.rotate(x, rope)
+
+    # rotate is fused without changing a single value: unlike situ, it can keep the golden images comparable.
+    assert np.array_equal(
+        np.array(rotation_chain.astype(mx.float32)),
+        np.array(rotation_fused.astype(mx.float32)),
+    )
 
     for actual, chained, expected in ((fused, chain, reference), (rotation_fused, rotation_chain, rotation_reference)):
         assert actual.dtype == mx.bfloat16
