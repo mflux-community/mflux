@@ -63,6 +63,8 @@ class StepCache:
     ) -> StepCache:
         """Build the per-run cache; ``ratio=None`` returns an inactive cache."""
         if ratio is None:
+            if protected_fraction is not None and not 0 <= protected_fraction <= 0.5:
+                raise ValueError(f"step cache protected fraction must be within [0, 0.5], got {protected_fraction}")
             return StepCache(frozenset())
         steps = list(range(config.init_time_step, config.num_inference_steps))
         sigmas = config.scheduler.sigmas

@@ -135,3 +135,11 @@ class TestStepCacheProtectedWindow:
         assert cache.skip_steps == direct == frozenset(range(12, 28))
         explicit = StepCache.for_run(config, ratio=0.9, protected_fraction=0.1)
         assert explicit.skip_steps == frozenset(range(4, 36))
+
+    @pytest.mark.parametrize("fraction", [-0.1, 0.51, float("nan"), float("inf")])
+    def test_invalid_window_raises_with_disabled_cache(self, fraction):
+        with pytest.raises(ValueError, match="protected fraction"):
+            StepCache.for_run(_config(40), ratio=None, protected_fraction=fraction)
+
+    def test_disabled_cache_accepts_valid_window(self):
+        assert not StepCache.for_run(_config(40), ratio=None, protected_fraction=0.5).active
