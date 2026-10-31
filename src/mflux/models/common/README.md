@@ -609,7 +609,7 @@ Metadata records the PiD flags, so `--config-from-conf` reproduces a PiD run. `c
 
 ## Step reuse (step cache)
 
-Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. The first and last 10% of the run always run, and runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-conf`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`, `mflux-generate-moss-image`, `mflux-generate-fibo2` and `mflux-generate-fibo2-edit`.
+Commands that support it take `--step-cache-ratio` (TeaCache-style step reuse). On that fraction of denoise steps the transformer is skipped and the previous step's prediction is reused, while the scheduler still takes its normal step. The skipped steps are the ones whose timestep signal changes least. By default, the first and last 10% of the run always run; Python integrations can adjust this window with `protected_fraction`. Runs under 10 steps are unaffected, so this only pays off on models sampled for many steps. It trades a little detail for speed: the ratio is recorded in image metadata and replayed by `--config-from-conf`. Check `mflux-capabilities` for the commands that honor it; today that is `mflux-generate-qwen-2.1`, `mflux-generate-moss-image`, `mflux-generate-fibo2` and `mflux-generate-fibo2-edit`.
 
 ```sh
 mflux-generate-qwen-2.1 --prompt "a lighthouse at dusk" --steps 40 --step-cache-ratio 0.25
@@ -629,6 +629,8 @@ for t in config.time_steps:
         step_cache.store(noise)
     latents = config.scheduler.step(noise=noise, timestep=t, latents=latents)
 ```
+
+Python integrations can pass `protected_fraction=0.32` to `StepCache.for_run` to protect 32% at each end of the actual run, including an image-to-image run. The accepted range is `0` to `0.5`; the default is `StepCache.PROTECTED_FRACTION` (0.1). A larger window may help preserve early image structure, but compare the output against an uncached run for each model. CLI defaults are unchanged.
 
 Pass `generation_parameters=StepCache.generation_parameters(step_cache_ratio)` to `ImageUtil.to_image` so the ratio lands in metadata. Samplers that keep their own history across steps (multistep solvers) need a review before reuse is enabled, and each model should be quality-checked against its uncached output.
 

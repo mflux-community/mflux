@@ -23,11 +23,12 @@ class StepCache:
       Liu et al., "Timestep Embedding Tells: It's All You Need for Accelerating
       DiT-based Diffusion Models", ICLR 2025).
     - The ``ratio``-fraction of steps with the smallest step-to-step signal change
-      are skipped, inside a protected window: the first and last 10% of the run
-      are always computed, and runs shorter than ``MIN_STEPS`` skip nothing.
+      are skipped, inside a protected window: the first and last
+      ``protected_fraction`` of the run (10% by default) are always computed,
+      and runs shorter than ``MIN_STEPS`` skip nothing.
 
     The signal depends only on the schedule, so selection is deterministic for a
-    given (steps, resolution, ratio) and costs one batched evaluation per run.
+    given (steps, resolution, ratio, protected_fraction) and costs one batched evaluation per run.
 
     The skip set is derived from ``config.init_time_step`` and
     ``config.num_inference_steps`` rather than by iterating ``config.time_steps``:
@@ -57,13 +58,19 @@ class StepCache:
         config: Config,
         ratio: float | None,
         signal_fn: Callable[[mx.array], mx.array] | None = None,
+        *,
+        protected_fraction: float | None = None,
     ) -> StepCache:
         """Build the per-run cache; ``ratio=None`` returns an inactive cache."""
         if ratio is None:
+            if protected_fraction is not None and not 0 <= protected_fraction <= 0.5:
+                raise ValueError(f"step cache protected fraction must be within [0, 0.5], got {protected_fraction}")
             return StepCache(frozenset())
         steps = list(range(config.init_time_step, config.num_inference_steps))
         sigmas = config.scheduler.sigmas
-        return StepCache(StepCache.select_skip_steps(steps, sigmas, ratio, signal_fn))
+        return StepCache(
+            StepCache.select_skip_steps(steps, sigmas, ratio, signal_fn, protected_fraction=protected_fraction)
+        )
 
     @staticmethod
     def select_skip_steps(
@@ -71,9 +78,17 @@ class StepCache:
         sigmas: mx.array,
         ratio: float,
         signal_fn: Callable[[mx.array], mx.array] | None = None,
+        *,
+        protected_fraction: float | None = None,
     ) -> frozenset[int]:
         if not 0 < ratio < 1:
             raise ValueError(f"step cache ratio must be within (0, 1), got {ratio}")
+        if protected_fraction is None:
+            protected_fraction = StepCache.PROTECTED_FRACTION
+        if not 0 <= protected_fraction <= 0.5:
+            raise ValueError(f"step cache protected fraction must be within [0, 0.5], got {protected_fraction}")
+        if protected_fraction == 0.5:
+            return frozenset()
         total = len(steps)
         if total < StepCache.MIN_STEPS:
             return frozenset()
@@ -84,7 +99,7 @@ class StepCache:
         diffs = mx.sqrt(mx.sum(mx.square(signals[1:] - signals[:-1]), axis=-1))
         diffs = mx.concatenate([mx.array([float("inf")]), diffs])
         diff_values = diffs.tolist()
-        protected = int(total * StepCache.PROTECTED_FRACTION)
+        protected = int(total * protected_fraction + 1e-9)
         eligible = list(range(max(protected, 1), total - protected))
         if not eligible:
             return frozenset()
