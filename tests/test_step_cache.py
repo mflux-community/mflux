@@ -96,3 +96,29 @@ class TestStepCacheReuse:
     def test_generation_parameters_only_record_reuse_runs(self):
         assert StepCache.generation_parameters(None) == {}
         assert StepCache.generation_parameters(0.25) == {"step_cache_ratio": 0.25}
+
+
+@pytest.mark.fast
+class TestStepCacheProtectedWindow:
+    @pytest.mark.parametrize("num_steps", [25, 50])
+    def test_larger_window_protects_early_structure_steps(self, num_steps):
+        config = _config(num_steps)
+        cache = StepCache.for_run(config, ratio=0.3, protected_fraction=0.32)
+        protected = int(num_steps * 0.32)
+        assert len(cache.skip_steps) == round(num_steps * 0.3)
+        assert all(protected <= t < num_steps - protected for t in cache.skip_steps)
+
+    def test_window_is_relative_to_img2img_run(self):
+        config = _config(40, image_strength=0.6)
+        cache = StepCache.for_run(config, ratio=0.3, protected_fraction=0.32)
+        protected = int((40 - config.init_time_step) * 0.32)
+        assert cache.skip_steps
+        assert all(config.init_time_step + protected <= t < 40 - protected for t in cache.skip_steps)
+
+    def test_fully_protected_run_skips_nothing(self):
+        assert not StepCache.for_run(_config(40), ratio=0.3, protected_fraction=0.5).active
+
+    @pytest.mark.parametrize("fraction", [-0.1, 0.51, float("nan"), float("inf")])
+    def test_invalid_window_raises(self, fraction):
+        with pytest.raises(ValueError, match="protected fraction"):
+            StepCache.for_run(_config(40), ratio=0.3, protected_fraction=fraction)
