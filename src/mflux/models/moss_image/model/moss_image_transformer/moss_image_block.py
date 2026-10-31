@@ -17,6 +17,7 @@ class MOSSImageAttention:
         return out.transpose(0, 2, 1, 3).reshape(batch, seq_len, -1)
 
     @staticmethod
+    @mx.compile  # one kernel instead of a chain of elementwise passes over the (B, L, ffn_dim) activations
     def situ(hidden: mx.array, gate: mx.array) -> mx.array:
         return (4.0 * mx.tanh(gate / 4.0) * mx.sigmoid(gate)) * (25.0 * mx.tanh(hidden / 25.0))
 
