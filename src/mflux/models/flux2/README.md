@@ -90,6 +90,8 @@ image.save("flux2_edit.png")
 ```
 </details>
 
+You can also call the steps of both commands from Python, for example to wrap them in a plugin. `Flux2Command` in `mflux.models.flux2.cli.flux2_generate` runs `mflux-generate-flux2`, and `Flux2EditCommand` in `mflux.models.flux2.cli.flux2_edit_generate` runs `mflux-generate-flux2-edit`. Each has `validate(args)`, `load(args)` and `generate(model, args, seed, prompt)`. They work like the Z-Image Turbo steps; the [Z-Image README](../z_image/README.md#z-image-turbo-example) has a full script and the rules for keeping a model loaded. `validate()` loads no weights (the edit command does not open the input images) and returns the model config; it raises `ValueError` for a refused flag, such as `--guidance` on a distilled model, and `ModelConfigError` for a `--model` outside the klein family. `load()` runs it first. `generate()` uses guidance 1.0 when `--guidance` is not set.
+
 ### KV-cache editing (`flux2-klein-9b-kv`)
 For image-conditioned editing with reference images, [FLUX.2-klein-9b-kv](https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-kv) is a 9B variant tuned for KV-cache inference. Select the model with `--model`; KV caching is enabled automatically when `--image-paths` provides reference tokens to cache. No extra CLI flag is required.
 
