@@ -22,6 +22,7 @@ class MOSSImageRoPE:
         return rope.reshape(1, phase.shape[0], -1).astype(dtype)
 
     @staticmethod
+    @mx.compile  # fuses the multiply-add; MLX cannot fuse split/concatenate, so those stay separate
     def rotate(x: mx.array, rope: mx.array) -> mx.array:
         # x: (B, L, heads, head_dim), rope: (1, L, head_dim) as [sin | cos]
         sin, cos = mx.split(rope, 2, axis=-1)
