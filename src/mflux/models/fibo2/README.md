@@ -206,7 +206,7 @@ mflux reads the diffusers, PEFT, kohya (`lora_down`/`lora_up`) and ComfyUI key n
 mflux-train --config train.json
 ```
 
-The `.txt` next to each image holds its caption: a JSON caption, the form FIBO 2 was trained on, or a short description. mflux encodes it as it encodes a prompt: a JSON caption is cleaned and serialized compactly, and a caption with text in its `text_render` entries gets the images of that text, which the steps above noise level 0.9 leave out. The noise level of each step follows Bria's trainer: `sigmoid(N(shift, 1))` 90% of the time and uniform otherwise, with a shift of 0.5 at 256 image tokens that grows to 1.15 at 4096 (1024×1024). So `timestep_low`, `timestep_high` and `timestep_type` do not apply.
+The `.txt` next to each image holds its caption: a JSON caption, the form FIBO 2 was trained on, or a short description. mflux encodes it as it encodes a prompt: a JSON caption is cleaned and serialized compactly, and a caption with text in its `text_render` entries gets the images of that text, which the steps above noise level 0.9 leave out. The noise level of each step follows Bria's trainer: `sigmoid(N(shift, 1))` 90% of the time and uniform otherwise, with a shift of 0.5 at 256 image tokens that grows to 1.15 at 4096 (1024×1024). So `timestep_low`, `timestep_high` and `timestep_type` do not apply. As in Bria's trainer, 10% of the steps get the null caption instead of the image's.
 
 A config for the 44 transformer layers, attention and feed-forward, with rank 16 and Bria's optimizer settings. Bria's trainer adapts all 415 linear layers; add targets for `layers.{block}.adaLN_modulation.0`, `noise_refiner`, `layers.{block}.cross_attention` (blocks 6, 14, 22, 30 and 38), `perceiver.layers`, `x_embedder`, `t_embedder` and `final_layer` to do the same:
 
@@ -220,8 +220,8 @@ A config for the 44 transformer layers, attention and feed-forward, with rank 16
   "max_resolution": 768,
   "gradient_checkpointing": true,
   "cache_limit_gb": 2,
-  "training_loop": { "num_epochs": 50, "batch_size": 1 },
-  "optimizer": { "name": "AdamW", "learning_rate": 1e-4, "optimizer_params": { "weight_decay": 0.01 }, "max_grad_norm": 1.0 },
+  "training_loop": { "num_epochs": 100, "batch_size": 1 },
+  "optimizer": { "name": "AdamW", "learning_rate": 1e-4, "optimizer_params": { "weight_decay": 0.01 }, "max_grad_norm": 1.0, "gradient_accumulation_steps": 4 },
   "checkpoint": { "output_path": "output", "save_frequency": 200 },
   "lora_layers": { "targets": [
     { "module_path": "layers.{block}.attention.to_q",     "blocks": { "start": 0, "end": 44 }, "rank": 16 },
@@ -237,7 +237,9 @@ A config for the 44 transformer layers, attention and feed-forward, with rank 16
 
 `steps` and `guidance` are for the preview images; FIBO 2 Dev needs guidance for them. Once the captions are encoded, mflux encodes the preview prompts and lets the 8.7 GB Qwen3-VL text encoder go, unless a preview caption has `text_render` entries. The LoRA is saved with ComfyUI's keys and layout (`diffusion_model.*`, q, k and v in `attention.qkv`, the feed-forward gate and up in `w13`, padded to 9728), so it loads with `--lora` and in ComfyUI.
 
-On an M5 Max in bf16, with rank 16 on all of those layers at 512×512, gradient checkpointing and `cache_limit_gb: 2`, a step took about 2.3 seconds and a 300-step run peaked at 21 GB, about 13 minutes in all. The results aren't stable yet: on a 12-image style dataset, 2 of 6 runs (3 with Bria's noise levels, 3 with uniform ones) learned the style fully, against 3 of 3 for ai-toolkit, and the cause isn't known. Watch the preview images. Without `cache_limit_gb` MLX keeps freed buffers and the peak looks higher than the training needs. `"quantize": 8` trains over a quantized base.
+Keep `gradient_accumulation_steps`. Bria's trainer averages 8 images per optimizer step. With one image per step, the LoRA learns the line work of a style quickly but its background color late, and when depends on the seed: on a 12-image blueprint dataset at 512, three 300-step runs learned it once, and at 600 steps one seed still had it on black. With 4 images per step and 1200 steps (300 optimizer steps), all three seeds learned it, also for prompts worded unlike the captions.
+
+On an M5 Max in bf16, with rank 16 on all of those layers at 512×512, gradient checkpointing and `cache_limit_gb: 2`, a step (one image) took about 2.4 seconds and the peak was 21.6 GB, so the 1200 steps above take about 50 minutes. Without `cache_limit_gb` MLX keeps freed buffers and the peak looks higher than the training needs. `"quantize": 8` trains over a quantized base.
 
 ## Notes
 - **Implementation**: the transformer is the Z-Image block with gated cross-attention to the text encoder in five layers, and a Perceiver that turns the text encoder output into 256 to 512 "gist" tokens. mflux reuses the FLUX.2 VAE, the Z-Image feed-forward, timestep, RoPE and final layers, and the shared Qwen3-VL language model and vision tower (also used by Qwen-Image 2.1), with 3D positions and deepstack features for images. The port follows the [diffusers implementation](https://github.com/huggingface/diffusers/tree/main/src/diffusers/pipelines/bria_fibo2) and matches its transformer and text encoder in float32. `tests/test_fibo2_parity.py` checks the transformer against a small diffusers model and the text encoder against `transformers`, layer by layer.
