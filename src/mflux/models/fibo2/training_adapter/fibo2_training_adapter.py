@@ -37,17 +37,21 @@ class Fibo2TrainingAdapter(TrainingAdapter):
     The trainer noises the latent to (1 - sigma) * clean + sigma * noise, and the transformer, given sigma, predicts the
     velocity noise - clean, which is the loss target. Captions are encoded as at inference: a JSON caption cleaned and
     serialized compactly, a short description as it is, and a caption with text_render entries with the images of its
-    text, and without them above noise level 0.9. The LoRA is saved in ComfyUI's layout (Fibo2ComfyLoRA): diffusion_model.*
+    text, and without them above noise level 0.9. TEXT_DROP of the steps get the null caption FIBO 2 was trained with,
+    as Bria's trainer does (--text-drop 0.1). The LoRA is saved in ComfyUI's layout (Fibo2ComfyLoRA): diffusion_model.*
     keys, fused q/k/v, k/v and w13, alpha / rank folded into the up weights, and each module's rank in the metadata so a
     resumed run gets its own layers back.
     """
 
     UNIFORM_SHARE = 0.1
+    # Bria's --text-drop: this share of the steps is conditioned on the null caption instead
+    TEXT_DROP = 0.1
 
     def __init__(self, *, model_config: ModelConfig, quantize: int | None, model_path: str | None = None):
         self._model_config = model_config
         self._fibo2 = Fibo2(quantize=quantize, model_config=model_config, model_path=model_path)
         self._guidance: float | None = None
+        self._null: mx.array | None = None
 
     def model(self):
         return self._fibo2
@@ -101,14 +105,18 @@ class Fibo2TrainingAdapter(TrainingAdapter):
         encoded = VAEUtil.encode(self._fibo2.vae, pixels, tiling_config=self._fibo2.tiling_config)
         clean_latents = self._fibo2.vae.normalize_latents(Fibo2LatentCreator.pack_latents(encoded))
         embeds, base_embeds = self._fibo2._encode_prompts(prompt, None, None, render_text_images=True)
-        self._clear_prompt_cache()
         cond = {"embeds": embeds} if base_embeds is None else {"embeds": embeds, "base_embeds": base_embeds}
+        self._null_embeds()
+        self._clear_prompt_cache()
         mx.eval(clean_latents, cond)
         return clean_latents, cond
 
     def predict_noise(self, *, t: int, latents_t: mx.array, sigmas: mx.array, cond: Any, config: Config) -> mx.array:  # noqa: ARG002
         sigma = sigmas[t : t + 1]
-        embeds = _Fibo2Core._embeds_for_step(float(sigma[0]), cond["embeds"], cond.get("base_embeds"))
+        if mx.random.uniform().item() < Fibo2TrainingAdapter.TEXT_DROP:
+            embeds = self._null_embeds()
+        else:
+            embeds = _Fibo2Core._embeds_for_step(float(sigma[0]), cond["embeds"], cond.get("base_embeds"))
         velocity = self._fibo2.transformer(latents_t, sigma, embeds)
         return velocity.astype(latents_t.dtype)
 
@@ -202,6 +210,7 @@ class Fibo2TrainingAdapter(TrainingAdapter):
             for prompt in prompts
         ):
             return False
+        self._null_embeds()  # the data may come from a cache, without encode_data
         for prompt in prompts:
             self._fibo2._encode_prompts(prompt, None, None, render_text_images=True)
         if training_spec.guidance is not None and training_spec.guidance > 1.0:
@@ -211,6 +220,14 @@ class Fibo2TrainingAdapter(TrainingAdapter):
         self._clear_prompt_cache()
         self._fibo2.text_encoder = None
         return True
+
+    def _null_embeds(self) -> mx.array:
+        # Encoded once, while the text encoder is there (encode_data runs before release_text_encoder)
+        if self._null is None:
+            self._null = self._fibo2._encode_prompt(Fibo2PromptEncoder.NULL_CAPTION)
+            mx.eval(self._null)
+            self._clear_prompt_cache()
+        return self._null
 
     def _clear_prompt_cache(self) -> None:
         # The model is a module, so arrays left in its prompt cache would be trained and decayed with the LoRA
