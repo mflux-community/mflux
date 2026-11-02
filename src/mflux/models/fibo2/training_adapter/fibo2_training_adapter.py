@@ -113,12 +113,17 @@ class Fibo2TrainingAdapter(TrainingAdapter):
 
     def predict_noise(self, *, t: int, latents_t: mx.array, sigmas: mx.array, cond: Any, config: Config) -> mx.array:  # noqa: ARG002
         sigma = sigmas[t : t + 1]
-        if mx.random.uniform().item() < Fibo2TrainingAdapter.TEXT_DROP:
-            embeds = self._null_embeds()
+        if cond.get("null_caption"):
+            embeds = cond["embeds"]
         else:
             embeds = _Fibo2Core._embeds_for_step(float(sigma[0]), cond["embeds"], cond.get("base_embeds"))
         velocity = self._fibo2.transformer(latents_t, sigma, embeds)
         return velocity.astype(latents_t.dtype)
+
+    def training_condition(self, *, cond: Any, rng: random.Random) -> Any:
+        if rng.random() < Fibo2TrainingAdapter.TEXT_DROP:
+            return {"embeds": self._null_embeds(), "null_caption": True}
+        return cond
 
     def generate_preview_image(
         self,
