@@ -60,6 +60,12 @@ class TrainingAdapter(Protocol):
         # distribution (FIBO 2). None, the default, draws an index into the scheduler's grid.
         return None
 
+    def training_condition(self, *, cond: Any, rng: random.Random) -> Any:  # noqa: ARG002
+        # The conditioning of one training step (not validation). An adapter whose reference trainer drops the caption
+        # on some steps (FIBO 2) draws that from rng, which the checkpoint saves, so a resumed run repeats the draws.
+        # The default draws nothing and keeps the cond.
+        return cond
+
     def release_text_encoder(self, training_spec: TrainingSpec) -> bool:  # noqa: ARG002
         # Called once the dataset is encoded. An adapter that no longer needs its text encoder frees it and returns True.
         return False

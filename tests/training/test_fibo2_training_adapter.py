@@ -14,6 +14,7 @@ from mflux.models.common.training.dataset.batch import Batch, DataItem
 from mflux.models.common.training.lora.target_injector import inject_lora_targets
 from mflux.models.common.training.state.training_spec import LoraLayersSpec, LoraTargetSpec
 from mflux.models.common.training.trainer import TrainingTrainer
+from mflux.models.fibo2.model.fibo2_text_encoder.prompt_encoder import Fibo2PromptEncoder
 from mflux.models.fibo2.model.fibo2_transformer.fibo2_perceiver import Fibo2Perceiver
 from mflux.models.fibo2.model.fibo2_transformer.fibo2_transformer import Fibo2Transformer
 from mflux.models.fibo2.training_adapter import fibo2_training_adapter as adapter_module
@@ -74,6 +75,8 @@ class _Fake:
     def adapter(monkeypatch) -> Fibo2TrainingAdapter:
         monkeypatch.setattr(ModelConfig, "precision", mx.float32)
         monkeypatch.setattr(adapter_module, "Fibo2", _TinyFibo2)
+        # The caption drop is random per step; tests that don't look at it keep every step on its caption
+        monkeypatch.setattr(Fibo2TrainingAdapter, "TEXT_DROP", 0.0)
         return Fibo2TrainingAdapter(model_config=ModelConfig.fibo2(), quantize=None)
 
     @staticmethod
@@ -165,6 +168,67 @@ def test_the_caption_without_its_text_images_conditions_noise_levels_above_0_9(m
     assert [float(sigma[0]) for sigma, _ in seen] == pytest.approx([0.95, 0.5, 0.95])
     assert [embeds is without for _, embeds in seen] == [True, False, False]
     assert mx.array_equal(velocity, latents * 2).item()
+
+
+def test_the_null_caption_conditions_a_tenth_of_the_steps_drawn_from_the_step_rng(monkeypatch):
+    # Bria's trainer drops the caption for 10% of the steps (--text-drop), to the null caption FIBO 2 was trained with.
+    # Without it, at 300 single-image steps the LoRA learned the line work on every run but the background color on
+    # one run in three
+    adapter = _Fake.adapter(monkeypatch)
+    monkeypatch.setattr(Fibo2TrainingAdapter, "TEXT_DROP", 0.1)
+    seen = []
+    monkeypatch.setattr(adapter._fibo2, "transformer", lambda latents, sigma, embeds: seen.append(embeds) or latents)
+    full, null = mx.zeros(TEXT_SHAPE), mx.full(TEXT_SHAPE, 2.0)
+    adapter._null = null
+    rng = random.Random(0)
+    for _ in range(1000):
+        cond = adapter.training_condition(cond={"embeds": full}, rng=rng)
+        adapter.predict_noise(t=0, latents_t=mx.ones(LATENT_SHAPE), sigmas=mx.array([0.5]), cond=cond, config=None)
+    assert sum(embeds is null for embeds in seen) / len(seen) == pytest.approx(0.1, abs=0.03)
+    assert all(embeds is full or embeds is null for embeds in seen)
+
+
+def test_a_resumed_run_drops_the_same_captions(monkeypatch):
+    # The checkpoint saves the iterator's rng, so the same rng state must give the same drops
+    adapter = _Fake.adapter(monkeypatch)
+    monkeypatch.setattr(Fibo2TrainingAdapter, "TEXT_DROP", 0.5)
+    adapter._null = mx.full(TEXT_SHAPE, 2.0)
+    rng = random.Random(3)
+    rng.random()
+    saved = rng.getstate()
+
+    def drops(r):
+        return [adapter.training_condition(cond={"embeds": None}, rng=r).get("null_caption", False) for _ in range(50)]
+
+    uninterrupted = drops(rng)
+    resumed = random.Random()
+    resumed.setstate(saved)
+    assert drops(resumed) == uninterrupted and any(uninterrupted) and not all(uninterrupted)
+
+
+def test_the_validation_loss_never_drops_the_caption(monkeypatch):
+    adapter = _Fake.adapter(monkeypatch)
+    spec = _Fake.training_spec(_Fake.with_lora(adapter))
+    base_config = adapter.create_config(spec, width=64, height=64)
+    item = _Fake.item()
+    adapter._null = mx.full(TEXT_SHAPE, 2.0)
+
+    def loss(**kwargs):
+        batch = Batch(data=[item], rng=random.Random(7))
+        return float(TrainingTrainer.compute_loss(adapter, spec, base_config, batch, **kwargs))
+
+    clean = loss()
+    monkeypatch.setattr(Fibo2TrainingAdapter, "TEXT_DROP", 1.0)
+    assert loss(training=False) == loss(training=False) == clean
+    assert loss() != clean
+
+
+def test_the_null_caption_is_encoded_before_the_text_encoder_goes(monkeypatch):
+    adapter = _Fake.adapter(monkeypatch)
+    model = _with_prompt_encoding(adapter)
+    spec = SimpleNamespace(guidance=5.0, monitoring=SimpleNamespace(preview_prompts=[]))
+    assert adapter.release_text_encoder(spec)
+    assert Fibo2PromptEncoder.NULL_CAPTION in model.encoded and adapter._null is not None and model.prompt_cache == {}
 
 
 def test_a_few_training_steps_lower_the_loss_of_a_tiny_fibo2(monkeypatch):
