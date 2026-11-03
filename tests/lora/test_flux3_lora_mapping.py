@@ -137,6 +137,31 @@ def test_bake_adds_the_scaled_update(tmp_path):
         np.testing.assert_allclose(np.array(_module(transformer, target).weight), weight, rtol=1e-5, atol=1e-5)
 
 
+@pytest.mark.parametrize("bake_lora", [True, False])
+def test_kohya_alpha_scales_the_update(tmp_path, bake_lora):
+    # Alpha 1 at rank 2 halves the update. At alpha = rank (as in the published kohya Klein LoRAs) the scale is 1,
+    # and a loader that never read the alpha would still pass.
+    transformer = _tiny_transformer()
+    key = "diffusion_model.single_blocks.0.q_proj"
+    module = transformer.single_transformer_blocks[0].attn.to_q
+    pair = _lora_pair(key, module, seed=0)
+    down, up = pair[f"{key}.lora_A.weight"], pair[f"{key}.lora_B.weight"]
+    expected = np.array(module.weight) + 1.5 * (1.0 / RANK) * (np.array(up) @ np.array(down))
+    x = mx.array(np.random.default_rng(1).standard_normal((3, module.weight.shape[1])).astype(np.float32))
+
+    _apply(
+        transformer,
+        tmp_path,
+        {f"{key}.lora_down.weight": down, f"{key}.lora_up.weight": up, f"{key}.alpha": mx.array(1.0)},
+        scale=1.5,
+        bake_lora=bake_lora,
+    )
+
+    np.testing.assert_allclose(
+        np.array(transformer.single_transformer_blocks[0].attn.to_q(x)), np.array(x) @ expected.T, rtol=1e-4, atol=1e-4
+    )
+
+
 def test_bfl_final_modulation_is_swapped_to_the_diffusers_order(tmp_path):
     bfl, diffusers = _tiny_transformer(), _tiny_transformer()
     diffusers.update(bfl.parameters())
