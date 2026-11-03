@@ -68,7 +68,7 @@ class _PublishedLoRA:
         buckets = defaultdict(list)
         for match in LoRALoader._build_pattern_mappings(mapping.get_mapping()):
             buckets[match.source_pattern.rsplit("{block}", 1)[-1].removesuffix(".weight")].append(match)
-        problems, by_target = [], defaultdict(dict)
+        problems, by_target, sources = [], defaultdict(dict), {}
         for name, shape in shapes.items():
             stem = name.removesuffix(".weight")
             candidates = [match for tail, matches in buckets.items() if stem.endswith(tail) for match in matches]
@@ -81,6 +81,10 @@ class _PublishedLoRA:
                 problems.append(f"{name}: matches {sorted(hits) or 'no layer'}")
                 continue
             target, matrix = hits.pop()
+            # Two names for one slot (a BFL and a diffusers alias, say): the loader rejects the file.
+            if (first := sources.setdefault((target, matrix), name)) != name:
+                problems.append(f"{name}: fills {target}.{matrix}, which {first} fills already")
+                continue
             by_target[target][matrix] = shape
         for target, matrices in by_target.items():
             problems += _PublishedLoRA._layer_problems(target, matrices, transformer)
@@ -113,6 +117,23 @@ class _PublishedLoRA:
 def test_a_published_lora_reaches_a_layer_with_every_tensor(fixture, repo_id, filename, mapping, build):
     # Building the full-size transformer only reads shapes: MLX allocates its weights on first evaluation.
     assert _PublishedLoRA.problems(_PublishedLoRA.shapes(fixture), mapping, build()) == []
+
+
+@pytest.mark.fast
+def test_two_names_for_one_matrix_are_a_problem():
+    shapes = {
+        "diffusion_model.single_blocks.0.q_proj.lora_A.weight": (4, 3072),
+        "diffusion_model.single_blocks.0.q_proj.lora_B.weight": (3072, 4),
+        "transformer.single_transformer_blocks.0.attn.to_q.lora_A.weight": (4, 3072),
+    }
+
+    problems = _PublishedLoRA.problems(shapes, Flux3LoRAMapping, Flux3Transformer(flow_map=False))
+
+    assert problems == [
+        "transformer.single_transformer_blocks.0.attn.to_q.lora_A.weight: fills "
+        "single_transformer_blocks.0.attn.to_q.lora_A, which diffusion_model.single_blocks.0.q_proj.lora_A.weight "
+        "fills already"
+    ]
 
 
 @pytest.mark.slow
