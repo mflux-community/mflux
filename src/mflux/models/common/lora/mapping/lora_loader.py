@@ -120,7 +120,7 @@ class LoRALoader:
             if any(
                 name == f"{layer}.{matrix}" or name.startswith(f"{layer}.{matrix}.")
                 for name in weights
-                for matrix in ("lora_A", "lora_B")
+                for matrix in ("lora_A", "lora_B", "lora_down", "lora_up", "lora.down", "lora.up")
             ):
                 raise ValueError(f"DoRA with LoRA matrices is not supported: {key}")
 

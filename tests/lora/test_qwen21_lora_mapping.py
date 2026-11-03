@@ -114,8 +114,16 @@ def test_qwen21_lora_matches_fused_mlp(tmp_path, bake_lora, prefix):
     "magnitude_key",
     ["dora_scale", "lora_magnitude_vector", "lora_magnitude_vector.weight", "lora_magnitude_vector.default.weight"],
 )
-@pytest.mark.parametrize("suffix", ["", ".weight"])
-def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, suffix):
+@pytest.mark.parametrize(
+    "down,up",
+    [
+        ("lora_A", "lora_B"),
+        ("lora_A.weight", "lora_B.weight"),
+        ("lora_down.weight", "lora_up.weight"),
+        ("lora.down", "lora.up"),
+    ],
+)
+def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, down, up):
     model = nn.Module()
     model.transformer_blocks = [Qwen21TransformerBlock(dim=8, num_attention_heads=2, attention_head_dim=4)]
     attn = model.transformer_blocks[0].attn
@@ -124,10 +132,10 @@ def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, s
     mx.save_safetensors(
         str(adapter),
         {
-            f"{prefix}.to_k.lora_A{suffix}": mx.ones((2, 8)),
-            f"{prefix}.to_k.lora_B{suffix}": mx.ones((8, 2)),
-            f"{prefix}.to_q.lora_A{suffix}": mx.ones((2, 8)),
-            f"{prefix}.to_q.lora_B{suffix}": mx.ones((8, 2)),
+            f"{prefix}.to_k.{down}": mx.ones((2, 8)),
+            f"{prefix}.to_k.{up}": mx.ones((8, 2)),
+            f"{prefix}.to_q.{down}": mx.ones((2, 8)),
+            f"{prefix}.to_q.{up}": mx.ones((8, 2)),
             f"{prefix}.to_q.{magnitude_key}": mx.ones((8, 1)),
         },
     )
