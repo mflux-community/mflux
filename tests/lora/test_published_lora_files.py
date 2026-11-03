@@ -16,8 +16,11 @@ from mflux.models.flux3.weights.flux3_lora_mapping import Flux3LoRAMapping
 #                           flux3-klein-distil-4step.safetensors (lora_down/up with an alpha per layer)
 #   flux3_klein_diffusers   diffusers-modular/flux3-tarot-lora @ 96fe1071462e
 #                           pytorch_lora_weights.safetensors (diffusers training script, transformer. prefix)
-# All three were trained on Klein Base. To regenerate one, write "<name> <shape joined by x>" for each tensor of
-# the header, sorted by name; a scalar has shape 1.
+#   flux3_klein_distill_extract  WAS/flux3_klein @ 1e5b75f47f85
+#                           flux3_image_klein_distill_r32.safetensors (the distilled model minus Base: lora_down/up
+#                           without alpha, and .diff for the q and k norm scales)
+# The first three were trained on Klein Base, and the extract goes on Base. To regenerate one, write
+# "<name> <shape joined by x>" for each tensor of the header, sorted by name; a scalar has shape 1.
 
 PUBLISHED = [
     pytest.param(
@@ -43,6 +46,14 @@ PUBLISHED = [
         Flux3LoRAMapping,
         lambda: Flux3Transformer(flow_map=False),
         id="flux3_klein_diffusers",
+    ),
+    pytest.param(
+        "flux3_klein_distill_extract",
+        "WAS/flux3_klein",
+        "flux3_image_klein_distill_r32.safetensors",
+        Flux3LoRAMapping,
+        lambda: Flux3Transformer(flow_map=False),
+        id="flux3_klein_distill_extract",
     ),
 ]
 
@@ -97,12 +108,22 @@ class _PublishedLoRA:
         except (AttributeError, IndexError, KeyError):
             return [f"{target}: no such layer"]
         if not hasattr(module, "weight"):
-            return [f"{target}: not a linear layer"]
-        if set(matrices) - {"alpha"} != {"lora_A", "lora_B"}:
+            return [f"{target}: has no weight"]
+        # A .diff (.diff_b) is added to the weight (bias) vector of the layer itself, such as a norm scale.
+        problems = []
+        for name, attribute in (("diff", "weight"), ("diff_b", "bias")):
+            if name in matrices:
+                vector = getattr(module, attribute, None)
+                if vector is None or vector.ndim != 1 or matrices[name] != tuple(vector.shape):
+                    problems.append(
+                        f"{target}: {name} is {matrices[name]}, the layer has no {attribute} vector of that shape"
+                    )
+        if set(matrices) <= {"diff", "diff_b"}:
+            return problems
+        if set(matrices) - {"alpha", "diff", "diff_b"} != {"lora_A", "lora_B"}:
             return [f"{target}: has {sorted(matrices)}, needs lora_A and lora_B"]
         out_dim, in_dim = module.weight.shape
         rank = matrices["lora_A"][0]
-        problems = []
         if matrices["lora_A"] != (rank, in_dim):
             problems.append(f"{target}: down is {matrices['lora_A']}, the layer takes {in_dim} inputs")
         if matrices["lora_B"] != (out_dim, rank):
@@ -133,6 +154,20 @@ def test_two_names_for_one_matrix_are_a_problem():
         "transformer.single_transformer_blocks.0.attn.to_q.lora_A.weight: fills "
         "single_transformer_blocks.0.attn.to_q.lora_A, which diffusion_model.single_blocks.0.q_proj.lora_A.weight "
         "fills already"
+    ]
+
+
+@pytest.mark.fast
+def test_a_diff_must_fit_the_vector_it_patches():
+    shapes = {
+        "diffusion_model.single_blocks.0.norm.query_norm.diff": (128,),
+        "diffusion_model.single_blocks.0.norm.key_norm.diff": (3072,),
+    }
+
+    problems = _PublishedLoRA.problems(shapes, Flux3LoRAMapping, Flux3Transformer(flow_map=False))
+
+    assert problems == [
+        "single_transformer_blocks.0.attn.norm_k: diff is (3072,), the layer has no weight vector of that shape"
     ]
 
 
