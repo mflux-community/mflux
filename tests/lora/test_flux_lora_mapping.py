@@ -1,8 +1,27 @@
+import mlx.core as mx
+import mlx.nn as nn
+import pytest
+
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.flux.weights.flux_lora_mapping import FluxLoRAMapping
 
 
 class TestFluxLoRAMapping:
+    def test_kohya_dora_is_rejected(self, tmp_path):
+        # A kohya DoRA file used to load with its magnitude dropped
+        adapter = tmp_path / "dora.safetensors"
+        layer = "lora_unet_transformer_blocks_0_attn_to_q"
+        mx.save_safetensors(
+            str(adapter),
+            {
+                f"{layer}.lora_down.weight": mx.ones((2, 8)),
+                f"{layer}.lora_up.weight": mx.ones((8, 2)),
+                f"{layer}.dora_scale": mx.ones((8, 1)),
+            },
+        )
+        with pytest.raises(ValueError, match="DoRA with LoRA matrices is not supported"):
+            LoRALoader.load_and_apply_lora(FluxLoRAMapping.get_mapping(), nn.Module(), [str(adapter)], [1.0])
+
     def test_matches_factorized_lycoris_lokr_keys(self):
         keys = [
             "lycoris_transformer_blocks_0_attn_to_q.lokr_w1_a",

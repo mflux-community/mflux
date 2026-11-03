@@ -130,6 +130,11 @@ class TestPeftLoRAMetadata:
         configs = PeftLoRAMetadata.configs(_metadata({"transformer.r": 16, "transformer.lora_alpha": 8}))
         assert PeftLoRAMetadata.alpha("transformer.layers.0.to_q.lora_A.default.weight", configs, rank=16) == 8.0
 
+    @pytest.mark.parametrize("matrix", ["lora_A", "lora_down.weight", "lora_up.weight", "lora.down.weight", "lora.up"])
+    def test_every_matrix_spelling_the_loader_reads(self, matrix):
+        configs = PeftLoRAMetadata.configs(_metadata({"r": 4, "lora_alpha": 8}))
+        assert PeftLoRAMetadata.alpha(f"layers.0.to_q.{matrix}", configs, rank=4) == 8.0
+
     def test_alpha_pattern_matches_whole_module_name_parts(self):
         config = {"transformer.r": 4, "transformer.lora_alpha": 4, "transformer.alpha_pattern": {"to_q": 2}}
         configs = PeftLoRAMetadata.configs(_metadata(config))
