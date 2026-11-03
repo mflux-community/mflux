@@ -11,6 +11,7 @@ from mflux.models.common.lora.layer.linear_lora_layer import LoRALinear
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.qwen21.cli import qwen21_edit_generate, qwen21_generate
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_time_text_embed import Qwen21TimeTextEmbed
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
 from mflux.models.qwen21.weights.qwen21_lora_mapping import Qwen21LoRAMapping
 
@@ -113,8 +114,16 @@ def test_qwen21_lora_matches_fused_mlp(tmp_path, bake_lora, prefix):
     "magnitude_key",
     ["dora_scale", "lora_magnitude_vector", "lora_magnitude_vector.weight", "lora_magnitude_vector.default.weight"],
 )
-@pytest.mark.parametrize("suffix", ["", ".weight"])
-def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, suffix):
+@pytest.mark.parametrize(
+    "down,up",
+    [
+        ("lora_A", "lora_B"),
+        ("lora_A.weight", "lora_B.weight"),
+        ("lora_down.weight", "lora_up.weight"),
+        ("lora.down", "lora.up"),
+    ],
+)
+def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, down, up):
     model = nn.Module()
     model.transformer_blocks = [Qwen21TransformerBlock(dim=8, num_attention_heads=2, attention_head_dim=4)]
     attn = model.transformer_blocks[0].attn
@@ -123,10 +132,10 @@ def test_qwen21_dora_rejected_before_applying_weights(tmp_path, magnitude_key, s
     mx.save_safetensors(
         str(adapter),
         {
-            f"{prefix}.to_k.lora_A{suffix}": mx.ones((2, 8)),
-            f"{prefix}.to_k.lora_B{suffix}": mx.ones((8, 2)),
-            f"{prefix}.to_q.lora_A{suffix}": mx.ones((2, 8)),
-            f"{prefix}.to_q.lora_B{suffix}": mx.ones((8, 2)),
+            f"{prefix}.to_k.{down}": mx.ones((2, 8)),
+            f"{prefix}.to_k.{up}": mx.ones((8, 2)),
+            f"{prefix}.to_q.{down}": mx.ones((2, 8)),
+            f"{prefix}.to_q.{up}": mx.ones((8, 2)),
             f"{prefix}.to_q.{magnitude_key}": mx.ones((8, 1)),
         },
     )
@@ -213,3 +222,99 @@ def test_edit_metadata_restores_lora_with_explicit_override(monkeypatch, tmp_pat
     args = qwen21_edit_generate.build_parser().parse_args()
     assert args.lora_paths == [str(adapters[1])]
     assert args.lora_scales == [0.8]
+
+
+def _block_model():
+    model = nn.Module()
+    model.transformer_blocks = [Qwen21TransformerBlock(dim=8, num_attention_heads=2, attention_head_dim=4)]
+    return model
+
+
+def _check_lora(tmp_path, model, path, keys, scale, factor):
+    # keys maps each tensor name in the file to "down", "up" or a value; factor is the expected update size.
+    linear = LoRALoader._get_target_module(model, path)
+    output_dims, input_dims = linear.weight.shape
+    down = mx.arange(2 * input_dims, dtype=mx.float32).reshape(2, input_dims) / 1000
+    up = mx.arange(output_dims * 2, dtype=mx.float32).reshape(output_dims, 2) / 1000
+    x = mx.ones((1, input_dims))
+    expected = linear(x) + factor * (x @ down.T @ up.T)
+    mx.eval(expected)
+    adapter = tmp_path / "adapter.safetensors"
+    tensors = {"down": down, "up": up}
+    mx.save_safetensors(str(adapter), {k: tensors.get(v, v) for k, v in keys.items()})
+
+    LoRALoader.load_and_apply_lora(Qwen21LoRAMapping.get_mapping(), model, [str(adapter)], [scale])
+
+    assert mx.allclose(LoRALoader._get_target_module(model, path)(x), expected, atol=1e-4).item()
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize(
+    "prefix,down_name,up_name",
+    [
+        ("", "lora_A.weight", "lora_B.weight"),  # Comfy-Org 5/8-step
+        ("diffusion_model.", "lora_down.weight", "lora_up.weight"),  # Comfy-Org avg_rank_178
+        ("", "lora_down", "lora_up"),  # Fun-Acc
+        ("transformer.", "lora.down.weight", "lora.up.weight"),  # lightx2v Lightning
+    ],
+)
+def test_qwen21_lora_accepts_comfyui_spellings(tmp_path, prefix, down_name, up_name):
+    path = "transformer_blocks.0.attn.to_q"
+    keys = {f"{prefix}{path}.{down_name}": "down", f"{prefix}{path}.{up_name}": "up"}
+    _check_lora(tmp_path, _block_model(), path, keys, scale=0.7, factor=0.7)
+
+
+@pytest.mark.fast
+def test_qwen21_lora_applies_per_layer_alpha(tmp_path):
+    # rank 2, alpha 4: the update is applied at twice its stored size
+    path = "transformer_blocks.0.attn.to_k"
+    keys = {f"{path}.lora_A.weight": "down", f"{path}.lora_B.weight": "up", f"{path}.alpha": mx.array(4.0)}
+    _check_lora(tmp_path, _block_model(), path, keys, scale=1.0, factor=2.0)
+
+
+@pytest.mark.fast
+def test_qwen21_lora_gate_up_alpha_scales_both_halves(tmp_path):
+    model = _block_model()
+    mlp = model.transformer_blocks[0].img_mlp
+    output_dims, input_dims = mlp.gate_layer.weight.shape
+    down = mx.arange(2 * input_dims, dtype=mx.float32).reshape(2, input_dims) / 100 - 0.1
+    up = mx.arange(2 * output_dims * 2, dtype=mx.float32).reshape(2 * output_dims, 2) / 100 - 0.5
+    x = mx.arange(3 * input_dims, dtype=mx.float32).reshape(3, input_dims) / 10 - 1
+    delta = 3.0 * (up @ down)
+    expected_gate = x @ (mlp.gate_layer.weight + delta[:output_dims]).T
+    expected_proj = x @ (mlp.proj.weight + delta[output_dims:]).T
+    mx.eval(expected_gate, expected_proj)
+    adapter = tmp_path / "adapter.safetensors"
+    source = "transformer_blocks.0.img_mlp.gate_up"
+    mx.save_safetensors(
+        str(adapter),
+        {f"{source}.lora_A.weight": down, f"{source}.lora_B.weight": up, f"{source}.alpha": mx.array(6.0)},
+    )
+
+    LoRALoader.load_and_apply_lora(Qwen21LoRAMapping.get_mapping(), model, [str(adapter)], [1.0])
+
+    assert mx.allclose(mlp.gate_layer(x), expected_gate, atol=1e-5).item()
+    assert mx.allclose(mlp.proj(x), expected_proj, atol=1e-5).item()
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("name", ["img_in", "proj_out", "norm_out.linear", "txt_in.in_layer", "txt_in.out_layer"])
+def test_qwen21_lora_updates_input_and_output_layers(tmp_path, name):
+    model = Qwen21Transformer(num_layers=1, num_attention_heads=2, attention_head_dim=4, context_in_dim=16)
+    keys = {f"diffusion_model.{name}.lora_A": "down", f"diffusion_model.{name}.lora_B": "up"}
+    _check_lora(tmp_path, model, name, keys, scale=0.5, factor=0.5)
+
+
+@pytest.mark.fast
+def test_qwen21_lora_applies_norm_weight_diff(tmp_path):
+    model = _block_model()
+    norm = model.transformer_blocks[0].attn.norm_q
+    diff = mx.arange(norm.weight.shape[0], dtype=mx.float32)
+    expected = norm.weight + 0.5 * diff
+    mx.eval(expected)
+    adapter = tmp_path / "adapter.safetensors"
+    mx.save_safetensors(str(adapter), {"diffusion_model.transformer_blocks.0.attn.norm_q.diff": diff})
+
+    LoRALoader.load_and_apply_lora(Qwen21LoRAMapping.get_mapping(), model, [str(adapter)], [0.5])
+
+    assert mx.allclose(model.transformer_blocks[0].attn.norm_q.weight, expected, atol=1e-6).item()

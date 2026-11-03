@@ -64,7 +64,7 @@ class PeftLoRAMetadata:
     @staticmethod
     def _config_for(weight_key: str, configs: dict[str, dict]) -> tuple[dict, str] | None:
         # The config of the key's component and the key's module name inside it, as PEFT names it
-        module = re.sub(r"\.lora_[AB](\.[^.]+)?\.weight$", "", weight_key)
+        module = re.sub(r"\.(lora_[AB]|lora_down|lora_up|lora\.down|lora\.up)(\.[^.]+)?(\.weight)?$", "", weight_key)
         if module == weight_key:
             return None
         for component, config in configs.items():
