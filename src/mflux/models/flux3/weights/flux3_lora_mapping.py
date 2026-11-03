@@ -67,6 +67,18 @@ class Flux3LoRAMapping(LoRAMapping):
             if part == "attn.to_out":
                 aliases.append(f"{mlx}.{{block}}.attn.to_out.0")
             targets.append(Flux3LoRAMapping._target(f"{mlx}.{{block}}.{part}", aliases=aliases))
+        # LoRAs extracted from the difference of two checkpoints (Base to distilled) also patch the q and k norm
+        # scales directly (.diff). BFL names them norm.query_norm and norm.key_norm; the scales are the same values.
+        for norm, bfl_norm in (("attn.norm_q", "norm.query_norm"), ("attn.norm_k", "norm.key_norm")):
+            paths = [f"{mlx}.{{block}}.{norm}", f"{bfl}.{{block}}.{bfl_norm}"]
+            targets.append(
+                LoRATarget(
+                    model_path=paths[0],
+                    possible_up_patterns=[],
+                    possible_down_patterns=[],
+                    possible_diff_patterns=[f"{prefix}{path}.diff" for path in paths for prefix in PREFIXES],
+                )
+            )
         return targets
 
     @staticmethod
