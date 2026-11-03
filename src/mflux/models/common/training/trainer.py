@@ -53,9 +53,13 @@ class TrainingTrainer:
         training_spec: TrainingSpec,
         base_config,
         batch: Batch,
+        *,
+        training: bool = True,
     ) -> mx.float16:
         losses = [
-            TrainingTrainer._single_example_loss(adapter, training_spec, base_config, item, batch.rng)
+            TrainingTrainer._single_example_loss(
+                adapter, training_spec, base_config, item, batch.rng, training=training
+            )
             for item in batch.data
         ]
         return mx.mean(mx.array(losses))
@@ -67,6 +71,8 @@ class TrainingTrainer:
         base_config,
         item: DataItem,
         rng: random.Random,
+        *,
+        training: bool = True,
     ) -> mx.float16:
         # Create a config matching this item's spatial dimensions.
         # Flux uses config.width/height for rotary embeddings, so this must match the latent layout.
@@ -130,7 +136,7 @@ class TrainingTrainer:
             t=t,
             latents_t=latents_t,
             sigmas=sigmas,
-            cond=item.cond,
+            cond=adapter.training_condition(cond=item.cond, rng=rng) if training else item.cond,
             config=config,
         )
 
@@ -168,7 +174,9 @@ class TrainingTrainer:
         if training_spec.monitoring is not None and training_state.iterator.num_iterations == 0:
             TrainingTrainer._generate_previews_with_optimizer_offload(adapter, training_spec, training_state)
             validation_batch = training_state.iterator.get_validation_batch()
-            validation_loss = TrainingTrainer.compute_loss(adapter, training_spec, base_config, validation_batch)
+            validation_loss = TrainingTrainer.compute_loss(
+                adapter, training_spec, base_config, validation_batch, training=False
+            )
             training_state.statistics.append_batch_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
             Plotter.update_loss_plot(training_spec=training_spec, training_state=training_state)
             del validation_loss
@@ -230,7 +238,7 @@ class TrainingTrainer:
                     # training set: smoother than the per-step series, not held-out signal.
                     validation_batch = training_state.iterator.get_validation_batch()
                     validation_loss = TrainingTrainer.compute_loss(
-                        adapter, training_spec, base_config, validation_batch
+                        adapter, training_spec, base_config, validation_batch, training=False
                     )
                     training_state.statistics.append_batch_values(step=training_state.iterator.num_iterations, loss=float(validation_loss))  # fmt: off
                     del validation_loss
