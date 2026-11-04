@@ -160,6 +160,17 @@ The same red-fox subject with the small and the full Qwen3-VL-8B text encoder:
 
 Pass `--image-path` and optionally `--image-strength`, like the other models.
 
+## Training
+`mflux-train` trains a LoRA on Qwen-Image-2.1 (the base model, not Turbo) for text to image, with the recipe of ai-toolkit's `qwen_image_2` model. For the folder of images and captions, see the common [training docs](../common/README.md#training-lora).
+
+```sh
+mflux-train --config src/mflux/models/common/training/_example/train_qwen_image_21.json
+```
+
+[`train_qwen_image_21.json`](../common/training/_example/train_qwen_image_21.json) puts rank 16 (alpha 16) on the attention (`to_q`, `to_k`, `to_v`, `to_out.0`) and the feed-forward (`gate_layer`, `proj`, `out`) of the 32 blocks, the layers ai-toolkit adapts, with its AdamW settings (lr 1e-4, eps 1e-6, weight decay 0.01, gradient clipping at 1.0). The noise level of each step is `sigmoid(N(0, 1))` with no resolution shift, ai-toolkit's default, so `timestep_low`, `timestep_high` and `timestep_type` do not apply. Captions are encoded as prompts are at inference, and 5% of the steps get the empty caption (ai-toolkit's `caption_dropout_rate`). Once the captions are encoded, mflux encodes the preview prompts and lets the text encoder go. Previews run without CFG, as `mflux-generate-qwen-2.1` does by default.
+
+The LoRA is saved with ai-toolkit's keys (`diffusion_model.transformer_blocks.N.attn.to_q.lora_A.weight`, ...), so it loads with `--lora` and in ComfyUI. mflux trains the feed-forward gate and up as two layers; the file stacks them into ComfyUI's single `img_mlp.gate_up` at twice the rank, which gives the same weights.
+
 ## Notes
 
 The notes below describe `uv run mflux-generate-qwen-2.1`. The reference-editing command has its own [capabilities and limitations](reference/README.md).

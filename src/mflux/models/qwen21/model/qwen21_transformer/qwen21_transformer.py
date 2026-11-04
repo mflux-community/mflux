@@ -119,6 +119,27 @@ class Qwen21Transformer(nn.Module):
             rope_sin[text_len:],
         )
 
+    def forward_training(
+        self,
+        hidden_states: mx.array,
+        encoder_hidden_states: mx.array,
+        sigma: mx.array,
+        height: int,
+        width: int,
+        encoder_hidden_states_mask: mx.array | None = None,
+    ) -> mx.array:
+        # The joint pass of _forward with sigma, a float32 array of one value, as the timestep. Not compiled and
+        # without the text K/V cache, so the LoRA on the text tokens trains too. Set use_fused_prologue to False on the
+        # attention layers first: the fused Q/K norm + RoPE kernel has no gradient.
+        rope_cos, rope_sin, attn_mask = self._geometry(
+            text_len=encoder_hidden_states.shape[1],
+            latent_height=height // 16,
+            latent_width=width // 16,
+            encoder_hidden_states_mask=encoder_hidden_states_mask,
+        )
+        timestep_rows = mx.concatenate([sigma.astype(mx.float32).reshape(1), mx.zeros((1,), dtype=mx.float32)])
+        return self._forward(hidden_states, encoder_hidden_states, timestep_rows, rope_cos, rope_sin, attn_mask)
+
     def clear_text_cache(self) -> None:
         """Release the cached text-prefix K/V and the prompt embeddings they reference."""
         self._text_caches.clear()
@@ -322,11 +343,18 @@ class Qwen21Transformer(nn.Module):
 
         hidden_states = mx.concatenate([self.txt_in(encoder_hidden_states), self.img_in(hidden_states)], axis=1)
 
+        segment = text_len if attn_mask is None else None
+        # Training can recompute each block's activations in the backward pass instead of keeping them
+        gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
         for block in self.transformer_blocks:
             # mask None means padding-free: the segmented attention path (faster, same math)
-            hidden_states = block(
-                hidden_states, mod1, mod2, rope_cos, rope_sin, attn_mask, text_len if attn_mask is None else None
-            )
+            if gradient_checkpointing:
+                run = nn.utils.checkpoint(
+                    block, lambda h, m1, m2, c, s, b=block: b(h, m1, m2, c, s, attn_mask, segment)
+                )
+                hidden_states = run(hidden_states, mod1, mod2, rope_cos, rope_sin)
+            else:
+                hidden_states = block(hidden_states, mod1, mod2, rope_cos, rope_sin, attn_mask, segment)
 
         scale = self.norm_out.linear(nn.silu(temb))
         scale = Qwen21Transformer._select_modulation_rows(scale, text_len, num_image_tokens)
