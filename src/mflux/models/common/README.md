@@ -338,7 +338,7 @@ image.save("portrait_hf_lora.png")
 ```
 </details>
 
-For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames.
+For multi-LoRA, pass multiple paths and scales. For library usage, set `LORA_LIBRARY_PATH` and pass basenames. When two files have the same name, `--lora <name>` takes the file in the first directory (in one directory, the first file in sorted order) and prints a warning; pass the full path to use the other one. `mflux-lora-library list` shows each file with its path in the library, and `--json` gives the same list for scripts.
 
 A LoRA's strength is `lora_alpha / rank`. mflux reads `lora_alpha` from per-layer `.alpha` tensors (kohya, ComfyUI) or, for files saved by diffusers or PEFT, from the `lora_adapter_metadata` the file carries, including per-layer `alpha_pattern` values and rsLoRA (`lora_alpha / sqrt(rank)`). A file with neither loads at `lora_alpha = rank`, a strength of 1.
 

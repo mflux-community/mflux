@@ -1,9 +1,9 @@
+import json
 import os
 import sys
-from collections import defaultdict
 from pathlib import Path
 
-from mflux.models.common.resolution.lora_resolution import LoraResolution
+from mflux.models.common.resolution.lora_resolution import LibraryLoRA, LoraResolution
 
 
 class LoraLibraryUtil:
@@ -23,10 +23,16 @@ Examples:
 
   # Override with specific paths
   mflux-lora-library list --paths /path/to/loras /another/path/to/loras
+
+  # One JSON object for each file, for scripts and other apps
+  mflux-lora-library list --json
+
+When two files have the same name, --lora <name> takes the file in the first directory, and in one directory
+the first file in sorted order. To use another one, pass its full path.
 """
 
     @staticmethod
-    def list_loras(paths: list[str] | None = None) -> int:
+    def list_loras(paths: list[str] | None = None, as_json: bool = False) -> int:
         if paths:
             # Use provided paths
             library_paths = [Path(p.strip()) for p in paths]
@@ -57,44 +63,43 @@ Examples:
             print("No valid directories found in LORA_LIBRARY_PATH.", file=sys.stderr)
             return 1
 
-        # Discover all LoRA files
-        lora_registry = LoraResolution.discover_files(valid_paths)
+        files = LoraResolution.library_files(valid_paths)
+        if as_json:
+            print(json.dumps([LoraLibraryUtil._as_dict(lora) for lora in files], indent=2))
+            return 0
 
-        if not lora_registry:
+        if not files:
             print("No .safetensors files found in the specified directories.")
             return 0
 
-        # Sort by basename for consistent output
-        sorted_items = sorted(lora_registry.items())
-
-        # Print all discovered LoRAs
+        selected = {lora.name: lora for lora in files if lora.selected}
         print("Discovered LoRA files:")
+        for root in valid_paths:
+            in_root = [lora for lora in files if lora.root == root]
+            print("-" * 80)
+            print(f"{root} ({len(in_root)} file{'' if len(in_root) == 1 else 's'})")
+            for lora in in_root:
+                line = f"  {lora.relative_path} -> {lora.name}"
+                if not lora.selected:
+                    winner = selected[lora.name]
+                    line += f"  (not used: --lora {lora.name} takes {winner.path})"
+                print(line)
         print("-" * 80)
-        for basename, full_path in sorted_items:
-            print(f"{basename} -> {full_path}")
-
-        # Calculate statistics per top-level directory
-        stats = defaultdict(int)
-        for full_path in lora_registry.values():
-            # Find which library path this file belongs to
-            for lib_path in valid_paths:
-                try:
-                    # Check if full_path is relative to lib_path
-                    full_path.relative_to(lib_path.resolve())
-                    stats[str(lib_path)] += 1
-                    break
-                except ValueError:
-                    # Not relative to this lib_path, continue
-                    continue
-
-        # Print summary
-        print("-" * 80)
-        print(f"\nTotal LoRA files found: {len(lora_registry)}")
-
-        if len(valid_paths) > 1:
-            print("\nBreakdown by library path:")
-            for lib_path in valid_paths:
-                count = stats.get(str(lib_path), 0)
-                print(f"  {lib_path}: {count} files")
-
+        print(f"\nTotal LoRA files found: {len(files)}")
+        if shadowed := sorted({lora.name for lora in files if not lora.selected}):
+            print(
+                f"\n⚠️  More than one file has the name {', '.join(shadowed)}. "
+                "Rename a file, or pass its full path to --lora."
+            )
         return 0
+
+    @staticmethod
+    def _as_dict(lora: LibraryLoRA) -> dict:
+        return {
+            "name": lora.name,
+            "path": str(lora.path),
+            "root": str(lora.root),
+            "relative_path": str(lora.relative_path),
+            "size_bytes": lora.path.stat().st_size if lora.path.exists() else None,
+            "selected": lora.selected,
+        }

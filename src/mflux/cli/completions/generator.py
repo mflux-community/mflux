@@ -76,6 +76,7 @@ class CompletionGenerator:
             list_parser.add_argument(
                 "--paths", nargs="+", type=Path, help="Override LORA_LIBRARY_PATH with these directories"
             )
+            list_parser.add_argument("--json", action="store_true", help="Print one JSON object for each file")
 
         elif command == "mflux-info":
             parser.add_info_arguments()
