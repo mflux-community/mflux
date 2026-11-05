@@ -90,7 +90,8 @@ the first file in sorted order. To use another one, pass its full path.
         if shadowed := sorted({lora.name for lora in files if not lora.selected}):
             print(
                 f"\n⚠️  More than one file has the name {', '.join(shadowed)}. "
-                "Rename a file, or pass its full path to --lora."
+                "Rename a file, or pass its full path to --lora.",
+                file=sys.stderr,
             )
         return 0
 

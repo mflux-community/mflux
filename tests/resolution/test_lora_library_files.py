@@ -99,10 +99,12 @@ class TestLibraryList:
 
         assert LoraLibraryUtil.list_loras(paths=[str(root)]) == 0
 
-        out = capsys.readouterr().out
-        assert "  flux2-klein-4b/style.safetensors -> style\n" in out
-        assert "  flux3-klein/style.safetensors -> style  (not used: --lora style takes " in out
-        assert "Total LoRA files found: 2" in out
+        captured = capsys.readouterr()
+        assert "  flux2-klein-4b/style.safetensors -> style\n" in captured.out
+        assert "  flux3-klein/style.safetensors -> style  (not used: --lora style takes " in captured.out
+        assert "Total LoRA files found: 2" in captured.out
+        assert "More than one file has the name style." in captured.err
+        assert "⚠️" not in captured.out
 
     @pytest.mark.fast
     def test_a_directory_named_twice_is_listed_once(self, tmp_path, capsys):
