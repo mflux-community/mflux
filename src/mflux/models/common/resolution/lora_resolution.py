@@ -2,6 +2,8 @@ import hashlib
 import logging
 import os
 import shutil
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
@@ -12,6 +14,16 @@ from mflux.cli.defaults.defaults import MFLUX_LORA_CACHE_DIR
 from mflux.models.common.resolution.actions import LoraAction, Rule
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LibraryLoRA:
+    name: str
+    path: Path
+    root: Path
+    relative_path: Path
+    # The file that --lora <name> takes. Another file with the same name is listed, but not taken.
+    selected: bool
 
 
 class LoraResolution:
@@ -28,6 +40,7 @@ class LoraResolution:
     )  # fmt: off
 
     _registry: dict[str, Path] = {}
+    _same_name: dict[str, list[Path]] = {}
 
     @staticmethod
     def resolve(path: str) -> str:
@@ -186,7 +199,14 @@ class LoraResolution:
         if action == LoraAction.LOCAL:
             return str(Path(path).expanduser())
         if action == LoraAction.REGISTRY:
-            return str(LoraResolution._registry[path])
+            selected = LoraResolution._registry[path]
+            if others := LoraResolution._same_name.get(path):
+                print(
+                    f"⚠️  LoRA '{path}' names {len(others) + 1} files in LORA_LIBRARY_PATH. Using {selected}. "
+                    f"To use another one, pass its full path: {', '.join(str(other) for other in others)}",
+                    file=sys.stderr,
+                )
+            return str(selected)
         if action == LoraAction.HUGGINGFACE_COLLECTION_CACHED:
             repo_id, filename = LoraResolution._split_collection_path(path)
             return LoraResolution._load_collection_from_cache(repo_id, filename)
@@ -296,23 +316,39 @@ class LoraResolution:
 
     @staticmethod
     def discover_files(library_paths: list[Path]) -> dict[str, Path]:
-        lora_files = {}
-        for library_path in reversed(library_paths):
-            if not library_path.exists() or not library_path.is_dir():
+        return {lora.name: lora.path for lora in LoraResolution.library_files(library_paths) if lora.selected}
+
+    @staticmethod
+    def library_files(library_paths: list[Path]) -> list[LibraryLoRA]:
+        # Every .safetensors file of the library, also when two have the same name. A name goes to the file in the
+        # first library path, and in one library path to the first file in sorted order.
+        files, seen, names = [], set(), set()
+        for root in library_paths:
+            if not root.is_dir():
                 continue
-            for safetensor_path in library_path.rglob("*.safetensors"):
-                basename = safetensor_path.stem
-                if basename.isdigit() and safetensor_path.parent.name == "transformer":
+            for file in sorted(root.rglob("*.safetensors")):
+                if file.stem.isdigit() and file.parent.name == "transformer":
                     continue
-                lora_files[basename] = safetensor_path.resolve()
-        return lora_files
+                if (key := (file.stem, file.resolve())) in seen:
+                    continue
+                seen.add(key)
+                # The relative path comes from the path in the library: a linked file can resolve outside of it.
+                relative_path = file.relative_to(root)
+                files.append(LibraryLoRA(file.stem, key[1], root, relative_path, selected=file.stem not in names))
+                names.add(file.stem)
+        return files
 
     @staticmethod
     def _initialize_registry() -> None:
         library_path_env = os.environ.get("LORA_LIBRARY_PATH")
         if library_path_env:
             library_paths = [Path(p.strip()) for p in library_path_env.split(":") if p.strip()]
-            LoraResolution._registry = LoraResolution.discover_files(library_paths)
+            files = LoraResolution.library_files(library_paths)
+            LoraResolution._registry = {lora.name: lora.path for lora in files if lora.selected}
+            LoraResolution._same_name = {}
+            for lora in files:
+                if not lora.selected:
+                    LoraResolution._same_name.setdefault(lora.name, []).append(lora.path)
 
 
 LoraResolution._initialize_registry()
