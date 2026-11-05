@@ -297,6 +297,7 @@ install or write one, see [Plugins - User Manual](docs/plugins.md).
 - [mlx-taef](https://github.com/IonDen/mlx-taef) — TAESD/TAEF tiny-autoencoder live previews and low-memory FLUX decode for mflux, by [@IonDen](https://github.com/IonDen)
 - [mlx-teacache](https://github.com/IonDen/mlx-teacache) — TeaCache step skipping for FLUX.1 dev and Krea, FLUX.2 Klein base, Z-Image base and Qwen-Image (original checkpoint) in mflux, by [@IonDen](https://github.com/IonDen)
 - [MLXBits Image Studio](https://github.com/MLXBits/image-studio) - A native macOS Swift app for FLUX, Krea 2, Z-Image and more!
+- [Graphis](https://github.com/Campfire7/graphis) - native macOS SwiftUI app for MOSS-Image with a bundled mflux engine, reference image, LoRA modules and a queue, by [@Campfire7](https://github.com/Campfire7)
 ---
 
 ### 🙏 Acknowledgements
