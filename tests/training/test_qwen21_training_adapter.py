@@ -193,3 +193,22 @@ def test_the_noise_level_is_logit_normal_around_sigma_mu():
     assert all(0.0 < s < 1.0 for s in sigmas)
     median = 1.0 / (1.0 + math.exp(-Qwen21TrainingAdapter.SIGMA_MU))
     assert sigmas[2000] == pytest.approx(median, abs=0.02)
+
+
+def test_gate_layer_without_proj_is_rejected_before_training():
+    from mflux.models.qwen21.training_adapter.qwen21_comfy_lora import Qwen21ComfyLoRA
+
+    Qwen21ComfyLoRA.check_targets(["transformer_blocks.0.img_mlp.gate_layer", "transformer_blocks.0.img_mlp.proj"])
+    with pytest.raises(ValueError, match="train together"):
+        Qwen21ComfyLoRA.check_targets(["transformer_blocks.0.img_mlp.gate_layer", "transformer_blocks.1.img_mlp.proj"])
+
+
+def test_modulation_is_saved_under_its_checkpoint_name_and_split_back():
+    from mflux.models.qwen21.training_adapter.qwen21_comfy_lora import Qwen21ComfyLoRA
+
+    down, up = mx.ones((4, 8)), mx.full((6, 4), 2.0)
+    saved = Qwen21ComfyLoRA.weights({"modulation.layers.1": (down, up, 0.5)})
+    assert set(saved) == {"diffusion_model.modulation.1.lora_A.weight", "diffusion_model.modulation.1.lora_B.weight"}
+    split = Qwen21ComfyLoRA.split(saved, {"modulation.layers.1": 4}, {"modulation.layers.1": 0.5})
+    assert mx.array_equal(split["transformer.modulation.1.lora_B.weight"], up)
+    assert split["transformer.modulation.1.alpha"].item() == 2.0

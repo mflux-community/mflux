@@ -12,6 +12,21 @@ class Qwen21ComfyLoRA:
     # Metadata keys with each trained module's rank and scale, so a resumed run gets its own layers back
     RANKS_KEY = "mflux_lora_ranks"
     SCALES_KEY = "mflux_lora_scales"
+    # MLX module paths whose checkpoint name differs (Qwen21LoRAMapping reads the checkpoint names)
+    CHECKPOINT_NAMES = {"modulation.layers.1": "modulation.1"}
+
+    @staticmethod
+    def check_targets(paths: list[str]) -> None:
+        # Runs before the model loads, so a target set the file cannot hold stops before training instead of at the
+        # first checkpoint
+        trained = set(paths)
+        for path in paths:
+            prefix = Qwen21ComfyLoRA._block_prefix(Qwen21ComfyLoRA._gate_of(path))
+            if prefix is None:
+                continue
+            gate, proj = (prefix + suffix for suffix in Qwen21ComfyLoRA.FUSED)
+            if gate not in trained or proj not in trained:
+                raise ValueError(f"{gate} and {proj} train together (ComfyUI's img_mlp.gate_up): add both or neither.")
 
     @staticmethod
     def weights(loras: dict[str, tuple[mx.array, mx.array, float]]) -> dict[str, mx.array]:
@@ -20,8 +35,9 @@ class Qwen21ComfyLoRA:
         for path, (down, up, scale) in loras.items():
             prefix = Qwen21ComfyLoRA._block_prefix(Qwen21ComfyLoRA._gate_of(path))
             if prefix is None:
-                out[f"diffusion_model.{path}.lora_A.weight"] = down
-                out[f"diffusion_model.{path}.lora_B.weight"] = up * scale
+                name = Qwen21ComfyLoRA.CHECKPOINT_NAMES.get(path, path)
+                out[f"diffusion_model.{name}.lora_A.weight"] = down
+                out[f"diffusion_model.{name}.lora_B.weight"] = up * scale
                 continue
             gate, proj = (prefix + suffix for suffix in Qwen21ComfyLoRA.FUSED)
             if gate not in loras or proj not in loras:
@@ -44,8 +60,9 @@ class Qwen21ComfyLoRA:
         for path, rank in ranks.items():
             prefix = Qwen21ComfyLoRA._block_prefix(Qwen21ComfyLoRA._gate_of(path))
             if prefix is None:
-                down = weights[f"diffusion_model.{path}.lora_A.weight"]
-                up = weights[f"diffusion_model.{path}.lora_B.weight"]
+                name = Qwen21ComfyLoRA.CHECKPOINT_NAMES.get(path, path)
+                down = weights[f"diffusion_model.{name}.lora_A.weight"]
+                up = weights[f"diffusion_model.{name}.lora_B.weight"]
             else:
                 gate = prefix + Qwen21ComfyLoRA.FUSED[0]
                 down = weights[f"diffusion_model.{prefix}{Qwen21ComfyLoRA.GATE_UP}.lora_A.weight"]
@@ -55,9 +72,10 @@ class Qwen21ComfyLoRA:
                     down, up = down[:gate_rank], up[:rows, :gate_rank]
                 else:
                     down, up = down[gate_rank:], up[rows:, gate_rank:]
-            out[f"transformer.{path}.lora_A.weight"] = down
-            out[f"transformer.{path}.lora_B.weight"] = up / scales[path]
-            out[f"transformer.{path}.alpha"] = mx.array(scales[path] * rank)
+            name = Qwen21ComfyLoRA.CHECKPOINT_NAMES.get(path, path)
+            out[f"transformer.{name}.lora_A.weight"] = down
+            out[f"transformer.{name}.lora_B.weight"] = up / scales[path]
+            out[f"transformer.{name}.alpha"] = mx.array(scales[path] * rank)
         return out
 
     @staticmethod
