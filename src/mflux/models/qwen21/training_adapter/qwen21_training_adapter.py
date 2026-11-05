@@ -29,7 +29,8 @@ from mflux.utils.version_util import VersionUtil
 class Qwen21TrainingAdapter(TrainingAdapter):
     """LoRA training for Qwen-Image-2.1 text to image, with ai-toolkit's recipe (qwen_image_2 in ostris/ai-toolkit).
 
-    The noise level is sigma = sigmoid(N(0, 1)), ai-toolkit's default "sigmoid" timesteps, with no resolution shift.
+    The noise level is sigma = sigmoid(N(SIGMA_MU, 1)): ai-toolkit's "sigmoid" timesteps shifted toward high noise, where
+    the sampler spends most of its steps, with no resolution shift.
     The latent is noised to (1 - sigma) * clean + sigma * noise and the transformer, given sigma, predicts the velocity
     noise - clean. Captions are encoded as at inference (the last Qwen3-VL layer before its final norm, without the
     system turn), and CAPTION_DROPOUT of the steps get the empty caption, as ai-toolkit's caption_dropout_rate. The LoRA
@@ -38,6 +39,10 @@ class Qwen21TrainingAdapter(TrainingAdapter):
 
     # ai-toolkit's caption_dropout_rate for this model
     CAPTION_DROPOUT = 0.05
+    # Mean of the logit-normal noise level: sigmoid(N(SIGMA_MU, 1)), median sigma 0.73. With ai-toolkit's 0 (median 0.5),
+    # a 300-step style LoRA learned the look but was too weak at scale 1 (blueprint-blue share 0.004 to 0.062 over
+    # 3 seeds); with 1.0 it gave 0.90 to 0.92, and a character LoRA kept its identity
+    SIGMA_MU = 1.0
 
     def __init__(self, *, model_config: ModelConfig, quantize: int | None, model_path: str | None = None):
         if Qwen21TurboScheduler.is_turbo(model_config):
@@ -77,7 +82,7 @@ class Qwen21TrainingAdapter(TrainingAdapter):
         self._qwen.transformer.gradient_checkpointing = enabled
 
     def sample_sigma(self, *, rng: random.Random, image_seq_len: int) -> float:  # noqa: ARG002
-        return 1.0 / (1.0 + math.exp(-rng.gauss(0.0, 1.0)))
+        return 1.0 / (1.0 + math.exp(-(rng.gauss(0.0, 1.0) + Qwen21TrainingAdapter.SIGMA_MU)))
 
     def encode_data(
         self,

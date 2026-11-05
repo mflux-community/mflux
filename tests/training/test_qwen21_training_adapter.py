@@ -1,3 +1,4 @@
+import math
 import random
 from types import SimpleNamespace
 
@@ -183,3 +184,12 @@ def test_gradient_checkpointing_gives_the_same_loss_and_lora_only_gradients(monk
     for name, grad in stock_grads.items():
         assert float(mx.abs(grad).max()) > 0, name
         assert mx.allclose(ckpt_grads[name], grad, rtol=1e-4, atol=1e-6).item(), name
+
+
+def test_the_noise_level_is_logit_normal_around_sigma_mu():
+    adapter = Qwen21TrainingAdapter.__new__(Qwen21TrainingAdapter)
+    rng = random.Random(0)
+    sigmas = sorted(adapter.sample_sigma(rng=rng, image_seq_len=1024) for _ in range(4001))
+    assert all(0.0 < s < 1.0 for s in sigmas)
+    median = 1.0 / (1.0 + math.exp(-Qwen21TrainingAdapter.SIGMA_MU))
+    assert sigmas[2000] == pytest.approx(median, abs=0.02)
