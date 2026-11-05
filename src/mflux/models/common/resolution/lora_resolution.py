@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -202,7 +203,8 @@ class LoraResolution:
             if others := LoraResolution._same_name.get(path):
                 print(
                     f"⚠️  LoRA '{path}' names {len(others) + 1} files in LORA_LIBRARY_PATH. Using {selected}. "
-                    f"To use another one, pass its full path: {', '.join(str(other) for other in others)}"
+                    f"To use another one, pass its full path: {', '.join(str(other) for other in others)}",
+                    file=sys.stderr,
                 )
             return str(selected)
         if action == LoraAction.HUGGINGFACE_COLLECTION_CACHED:

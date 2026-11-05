@@ -74,7 +74,8 @@ the first file in sorted order. To use another one, pass its full path.
 
         selected = {lora.name: lora for lora in files if lora.selected}
         print("Discovered LoRA files:")
-        for root in valid_paths:
+        # A directory named twice is one group: library_files() lists its files once.
+        for root in dict.fromkeys(valid_paths):
             in_root = [lora for lora in files if lora.root == root]
             print("-" * 80)
             print(f"{root} ({len(in_root)} file{'' if len(in_root) == 1 else 's'})")

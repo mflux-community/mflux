@@ -74,8 +74,9 @@ class TestLibraryResolution:
         result = LoraResolution.resolve("style")
 
         assert result == str((root / "a/style.safetensors").resolve())
-        out = capsys.readouterr().out
-        assert "names 2 files" in out and str((root / "b/style.safetensors").resolve()) in out
+        captured = capsys.readouterr()
+        assert "names 2 files" in captured.err and str((root / "b/style.safetensors").resolve()) in captured.err
+        assert captured.out == ""
 
     @pytest.mark.fast
     def test_a_name_of_one_file_does_not_warn(self, tmp_path, monkeypatch, capsys):
@@ -87,7 +88,8 @@ class TestLibraryResolution:
 
         LoraResolution.resolve("style")
 
-        assert "⚠️" not in capsys.readouterr().out
+        captured = capsys.readouterr()
+        assert "⚠️" not in captured.out + captured.err
 
 
 class TestLibraryList:
@@ -100,6 +102,18 @@ class TestLibraryList:
         out = capsys.readouterr().out
         assert "  flux2-klein-4b/style.safetensors -> style\n" in out
         assert "  flux3-klein/style.safetensors -> style  (not used: --lora style takes " in out
+        assert "Total LoRA files found: 2" in out
+
+    @pytest.mark.fast
+    def test_a_directory_named_twice_is_listed_once(self, tmp_path, capsys):
+        first = _Library.make(tmp_path / "a", "style.safetensors")
+        second = _Library.make(tmp_path / "b", "other.safetensors")
+
+        assert LoraLibraryUtil.list_loras(paths=[str(first), str(first), str(second)]) == 0
+
+        out = capsys.readouterr().out
+        assert out.count(f"{first} (1 file)") == 1
+        assert out.count("  style.safetensors -> style") == 1
         assert "Total LoRA files found: 2" in out
 
     @pytest.mark.fast
