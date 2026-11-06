@@ -10,7 +10,7 @@ import pytest
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.ideogram4.latent_creator import Ideogram4LatentCreator
-from mflux.models.ideogram4.model import Ideogram4Config, Ideogram4Transformer, Qwen3TextEncoder
+from mflux.models.ideogram4.model import Ideogram4Config, Ideogram4TextEncoder, Ideogram4Transformer
 from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
 from mflux.models.ideogram4.model.ideogram4_text_encoder import (
     Ideogram4Caption,
@@ -437,7 +437,7 @@ def test_ideogram4_scheduler_presets() -> None:
 
 @pytest.mark.fast
 def test_ideogram4_qwen_taps_toy_shape() -> None:
-    model = Qwen3TextEncoder(
+    model = Ideogram4TextEncoder.create(
         vocab_size=32,
         hidden_size=8,
         num_hidden_layers=2,
@@ -451,7 +451,7 @@ def test_ideogram4_qwen_taps_toy_shape() -> None:
     mask = mx.array([[1, 1, 1, 0]], dtype=mx.int32)
     pos = mx.array([[0, 1, 2, 0]], dtype=mx.int32)
 
-    embeds = model.get_prompt_embeds(ids, mask, pos, tap_layers=(0, 1))
+    embeds = model.get_prompt_embeds(ids, mask, hidden_state_layers=(1, 2), position_ids=pos, interleave_layers=True)
     mx.eval(embeds)
 
     assert embeds.shape == (1, 4, 16)

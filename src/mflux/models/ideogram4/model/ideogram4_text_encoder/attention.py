@@ -19,6 +19,7 @@ class Qwen3VLAttention(nn.Module):
         max_position_embeddings: int = 262144,
         rope_theta: float = 5_000_000.0,
         rms_norm_eps: float = 1e-6,
+        attention_bias: bool = False,
     ):
         super().__init__()
         del max_position_embeddings
@@ -28,10 +29,10 @@ class Qwen3VLAttention(nn.Module):
         self.head_dim = head_dim
         self.num_key_value_groups = num_attention_heads // num_key_value_heads
         self.scaling = 1.0 / math.sqrt(self.head_dim)
-        self.q_proj = Fp8Linear(hidden_size, num_attention_heads * head_dim, bias=False)
-        self.k_proj = Fp8Linear(hidden_size, num_key_value_heads * head_dim, bias=False)
-        self.v_proj = Fp8Linear(hidden_size, num_key_value_heads * head_dim, bias=False)
-        self.o_proj = Fp8Linear(num_attention_heads * head_dim, hidden_size, bias=False)
+        self.q_proj = Fp8Linear(hidden_size, num_attention_heads * head_dim, bias=attention_bias)
+        self.k_proj = Fp8Linear(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
+        self.v_proj = Fp8Linear(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
+        self.o_proj = Fp8Linear(num_attention_heads * head_dim, hidden_size, bias=attention_bias)
         self.q_norm = Qwen3VLRMSNorm(head_dim, eps=rms_norm_eps)
         self.k_norm = Qwen3VLRMSNorm(head_dim, eps=rms_norm_eps)
 
