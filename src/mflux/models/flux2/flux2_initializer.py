@@ -42,8 +42,14 @@ class Flux2Initializer:
         if small_text_encoder:
             Flux2Initializer.validate_small_text_encoder(model_config)
         precision = ComputePrecision(compute_precision)
+        definition = Flux2KleinNoTextEncoderWeightDefinition if small_text_encoder else Flux2KleinWeightDefinition
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(definition),
         )
         Flux2Initializer._init_config(model, model_config)
         model.small_text_encoder = small_text_encoder

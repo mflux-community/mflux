@@ -29,7 +29,12 @@ class ErnieImageInitializer:
         bake_lora: bool = True,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(ErnieWeightDefinition),
         )
         ErnieImageInitializer._init_config(model, model_config)
         weights = ErnieImageInitializer._load_weights(path)

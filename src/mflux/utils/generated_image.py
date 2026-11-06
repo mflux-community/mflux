@@ -22,6 +22,7 @@ class GeneratedImage:
     model_path: str | None = None
     # The mflux-community repo a registry entry loaded with -q N (#938), None when the weights came from the entry's
     # own repo or from model_path. Set by PrequantizedResolution.weights_root at model load, for the same reason.
+    # Process-wide like model_path: the last model loaded in the process sets it for every image saved after (#705).
     weights_repo: str | None = None
 
     def __init__(

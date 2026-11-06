@@ -31,7 +31,12 @@ class MOSSImageInitializer:
         bake_lora: bool = False,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(MOSSImageWeightDefinition),
         )
         MOSSImageInitializer._init_config(model, model_config)
         weights = MOSSImageInitializer._load_weights(path)

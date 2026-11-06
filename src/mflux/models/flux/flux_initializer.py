@@ -38,7 +38,12 @@ class FluxInitializer:
         custom_transformer=None,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(FluxWeightDefinition),
         )
         FluxInitializer._init_config(model, model_config)
         weights = FluxInitializer._load_weights(path)
@@ -156,7 +161,12 @@ class FluxInitializer:
         from mflux.models.flux.variants.concept_attention.transformer_concept import TransformerConcept
 
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(FluxWeightDefinition),
         )
         FluxInitializer._init_config(model, model_config)
         weights = FluxInitializer._load_weights(path)

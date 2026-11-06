@@ -29,7 +29,12 @@ class QwenImageInitializer:
         bake_lora: bool = True,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(QwenWeightDefinition),
         )
         QwenImageInitializer._init_config(model, model_config)
         weights = QwenImageInitializer._load_weights(path)
@@ -50,7 +55,12 @@ class QwenImageInitializer:
     ) -> None:
         # Use model_path if provided, otherwise fall back to model_config.model_name
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(QwenWeightDefinition),
         )
         QwenImageInitializer._init_config(model, model_config)
         weights = QwenImageInitializer._load_weights(path)

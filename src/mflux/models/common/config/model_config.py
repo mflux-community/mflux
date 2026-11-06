@@ -1154,6 +1154,7 @@ AVAILABLE_MODELS = {
         supports_guidance=True,
         requires_sigma_shift=False,
         mflux_repo_stem="anima-turbo",
+        # AnimaInitializer rejects -q 3 before the lookup; kept so the org listing test checks the level
         mflux_repo_missing=("q3",),
     ),
     "anima-aesthetic": ModelConfig(
@@ -1168,6 +1169,7 @@ AVAILABLE_MODELS = {
         supports_guidance=True,
         requires_sigma_shift=False,
         mflux_repo_stem="anima-aesthetic",
+        # AnimaInitializer rejects -q 3 before the lookup; kept so the org listing test checks the level
         mflux_repo_missing=("q3",),
     ),
     "anima-base": ModelConfig(
@@ -1182,6 +1184,7 @@ AVAILABLE_MODELS = {
         supports_guidance=True,
         requires_sigma_shift=False,
         mflux_repo_stem="anima-base",
+        # AnimaInitializer rejects -q 3 before the lookup; kept so the org listing test checks the level
         mflux_repo_missing=("q3",),
     ),
 }

@@ -46,7 +46,12 @@ class AnimaInitializer:
             raise ValueError("Anima does not work with -q 3, the 2B transformer turns to noise. Use -q 4, 5, 6 or 8.")
         precision = ComputePrecision(compute_precision)
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(AnimaWeightDefinition, AnimaInitializer.upstream_patterns(model_config)),
         )
         AnimaInitializer._init_config(model, model_config)
         weights = AnimaInitializer._load_weights_and_tokenizers(model, model_config, path)
@@ -74,6 +79,19 @@ class AnimaInitializer:
         return path == AnimaWeightDefinition.REPO or AnimaWeightDefinition.is_repository_copy(Path(path).expanduser())
 
     @staticmethod
+    def upstream_patterns(model_config: ModelConfig) -> list[str]:
+        # The files _load_upstream_weights reads for this variant; another variant's transformer is not this model
+        return [f"{c.hf_subdir}/{c.weight_files[0]}" for c in AnimaInitializer._upstream_components(model_config)]
+
+    @staticmethod
+    def _upstream_components(model_config: ModelConfig) -> list:
+        return [
+            AnimaWeightDefinition.source_vae(),
+            AnimaWeightDefinition.source_transformer(model_config.aliases[0]),
+            AnimaWeightDefinition.source_text_encoder(),
+        ]
+
+    @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:
         model.prompt_cache = {}
         model.model_config = model_config
@@ -97,11 +115,7 @@ class AnimaInitializer:
     def _load_upstream_weights(model_config: ModelConfig, path: str) -> LoadedWeights:
         # Every variant is a single file in the repository; only the files of this one are read or downloaded.
         components = {}
-        for component in (
-            AnimaWeightDefinition.source_vae(),
-            AnimaWeightDefinition.source_transformer(model_config.aliases[0]),
-            AnimaWeightDefinition.source_text_encoder(),
-        ):
+        for component in AnimaInitializer._upstream_components(model_config):
             if path == AnimaWeightDefinition.REPO:
                 pattern = f"{component.hf_subdir}/{component.weight_files[0]}"
                 loaded = WeightLoader.load_single(component=component, repo_id=path, file_pattern=pattern)

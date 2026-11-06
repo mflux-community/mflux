@@ -24,7 +24,9 @@ class BooguInitializer:
         quantize: int | None,
         model_path: str | None = None,
     ) -> None:
-        path = PrequantizedResolution.weights_root(model_config, model_path, quantize)
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, **PrequantizedResolution.layout(BooguWeightDefinition)
+        )
         BooguInitializer._init_config(model, model_config)
         weights = BooguInitializer._load_weights(path)
         BooguInitializer._init_tokenizers(model, path)

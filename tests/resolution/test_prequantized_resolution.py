@@ -3,40 +3,69 @@
 # LoRA, a missing level, and an upstream download already in the cache.
 
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
 from mflux.models.common.config.model_config import AVAILABLE_MODELS, ModelConfig
+from mflux.models.common.resolution.model_revisions import ModelRevisions
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.utils.generated_image import GeneratedImage
 
 REPO = "mflux-community/z-image-turbo-mflux-q4"
+PATTERNS = ["transformer/*.safetensors", "vae/*.safetensors"]
+SAVED = ["transformer", "vae"]
 
-# Part of the mflux-community listing on 2026-11-06: stems and the levels each one has.
-ORG_LISTING = {
-    "anima-turbo": {"bf16", "q4", "q5", "q6", "q8"},
-    "anima-base": {"bf16", "q4", "q5", "q6", "q8"},
-    "flux-1-dev": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "flux-1-dev-depth": {"bf16", "q3", "q6", "q8"},
-    "flux-2-klein-base-4b": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "flux2-klein-4b": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "krea-2-turbo": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "qwen-image-2512": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "qwen-image-edit-2509": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "z-image-turbo": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-    "fibo-2-0-dev": {"bf16", "q3", "q4", "q5", "q6", "q8"},
-}
+# The mflux-community model repos on 2026-11-06, one stem per line with the levels it has.
+LISTING = Path(__file__).parent / "fixtures" / "mflux_community_repos.txt"
+
+
+def _org_listing() -> dict[str, set[str]]:
+    stem_levels = (line.split() for line in LISTING.read_text().splitlines() if line.strip())
+    return {stem: set(levels) for stem, *levels in stem_levels}
 
 
 @pytest.fixture(autouse=True)
 def _nothing_cached(monkeypatch):
-    monkeypatch.setattr(PrequantizedResolution, "_cached", staticmethod(lambda repo_id: False))
+    monkeypatch.setattr(PrequantizedResolution, "_upstream_cached", staticmethod(lambda repo_id, patterns: False))
+    monkeypatch.setattr(PrequantizedResolution, "_repo_cached", staticmethod(lambda repo_id, subdirs: False))
     yield
     GeneratedImage.weights_repo = None
 
 
 def _cache(monkeypatch, *repo_ids):
-    monkeypatch.setattr(PrequantizedResolution, "_cached", staticmethod(lambda repo_id: repo_id in repo_ids))
+    monkeypatch.setattr(PrequantizedResolution, "_upstream_cached", staticmethod(lambda repo_id, patterns: repo_id in repo_ids))  # fmt: off
+    monkeypatch.setattr(PrequantizedResolution, "_repo_cached", staticmethod(lambda repo_id, subdirs: repo_id in repo_ids))  # fmt: off
+
+
+def _real_cache(monkeypatch, tmp_path):
+    # The real cache checks, against an HF cache under tmp_path
+    import mflux.models.common.resolution.path_resolution as path_resolution
+
+    monkeypatch.undo()
+    monkeypatch.setattr(path_resolution, "HF_HUB_CACHE", str(tmp_path))
+
+
+def _snapshot(tmp_path, repo_id: str):
+    # A pinned repo is read only at its pinned commit
+    revision = ModelRevisions.get(repo_id) or "abc"
+    snapshot = tmp_path / f"models--{repo_id.replace('/', '--')}" / "snapshots" / revision
+    snapshot.mkdir(parents=True)
+    return snapshot
+
+
+def _files(root, *names):
+    for name in names:
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).touch()
+
+
+def _saved_component(root, subdir, shards=2):
+    index = {"weight_map": {f"w{i}": f"{i}.safetensors" for i in range(shards)}}
+    (root / subdir).mkdir(parents=True, exist_ok=True)
+    (root / subdir / "model.safetensors.index.json").write_text(json.dumps(index))
+    _files(root, *(f"{subdir}/{i}.safetensors" for i in range(shards)))
 
 
 @pytest.mark.fast
@@ -93,14 +122,88 @@ def test_rule_5_a_missing_level_loads_upstream():
 def test_rule_6_a_cached_upstream_is_used_with_a_hint(monkeypatch, capsys):
     config = ModelConfig.z_image_turbo()
     _cache(monkeypatch, config.model_name)
-    assert PrequantizedResolution.resolve(config, None, 4)[0] == config.model_name
+    assert PrequantizedResolution.resolve(config, None, 4, upstream_patterns=PATTERNS)[0] == config.model_name
     assert REPO in capsys.readouterr().err
 
 
 @pytest.mark.fast
 def test_rule_6_does_not_apply_when_the_repo_is_cached_too(monkeypatch):
     _cache(monkeypatch, ModelConfig.z_image_turbo().model_name, REPO)
-    assert PrequantizedResolution.resolve(ModelConfig.z_image_turbo(), None, 4)[0] == REPO
+    assert (
+        PrequantizedResolution.resolve(
+            ModelConfig.z_image_turbo(), None, 4, upstream_patterns=PATTERNS, saved_subdirs=SAVED
+        )[0]
+        == REPO
+    )
+
+
+@pytest.mark.fast
+def test_rule_6_does_not_apply_without_the_loader_patterns(monkeypatch, tmp_path):
+    # Without the patterns the loader reads, a cached snapshot says nothing about this model
+    _real_cache(monkeypatch, tmp_path)
+    config = ModelConfig.z_image_turbo()
+    _files(_snapshot(tmp_path, config.model_name), "transformer/a.safetensors", "vae/a.safetensors")
+    assert PrequantizedResolution.resolve(config, None, 4)[0] == REPO
+    assert PrequantizedResolution.resolve(config, None, 4, upstream_patterns=PATTERNS)[0] == config.model_name
+
+
+@pytest.mark.fast
+def test_rule_6_an_upstream_snapshot_with_only_the_vae_is_not_cached(monkeypatch, tmp_path):
+    # An interrupted upstream download
+    from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
+
+    _real_cache(monkeypatch, tmp_path)
+    config = ModelConfig.z_image_turbo()
+    _files(_snapshot(tmp_path, config.model_name), "vae/diffusion_pytorch_model.safetensors")
+    layout = PrequantizedResolution.layout(ZImageWeightDefinition)
+    assert PrequantizedResolution.resolve(config, None, 4, **layout)[0] == REPO
+
+
+@pytest.mark.fast
+def test_rule_6_another_anima_variant_in_the_cache_is_not_this_one(monkeypatch, tmp_path):
+    from mflux.models.anima.anima_initializer import AnimaInitializer
+    from mflux.models.anima.weights.anima_weight_definition import AnimaWeightDefinition as Anima
+
+    _real_cache(monkeypatch, tmp_path)
+    turbo, base = AVAILABLE_MODELS["anima-turbo"], AVAILABLE_MODELS["anima-base"]
+    assert turbo.model_name == base.model_name == Anima.REPO
+    _files(
+        _snapshot(tmp_path, Anima.REPO),
+        f"{Anima.TRANSFORMER_DIR}/{Anima.TRANSFORMER_FILES['anima-base']}",
+        f"{Anima.TEXT_ENCODER_DIR}/{Anima.TEXT_ENCODER_FILE}",
+        f"{Anima.VAE_DIR}/{Anima.VAE_FILE}",
+    )
+    turbo_layout = PrequantizedResolution.layout(Anima, AnimaInitializer.upstream_patterns(turbo))
+    base_layout = PrequantizedResolution.layout(Anima, AnimaInitializer.upstream_patterns(base))
+    assert PrequantizedResolution.resolve(turbo, None, 4, **turbo_layout)[0] == "mflux-community/anima-turbo-mflux-q4"
+    assert PrequantizedResolution.resolve(base, None, 4, **base_layout)[0] == Anima.REPO
+
+
+@pytest.mark.fast
+def test_the_upstream_cache_check_needs_every_indexed_shard(monkeypatch, tmp_path):
+    _real_cache(monkeypatch, tmp_path)
+    snapshot = _snapshot(tmp_path, "org/model")
+    _files(snapshot, "vae/diffusion_pytorch_model.safetensors")
+    _saved_component(snapshot, "transformer")
+    (snapshot / "transformer" / "1.safetensors").unlink()
+    assert not PrequantizedResolution._upstream_cached("org/model", PATTERNS)
+    _files(snapshot, "transformer/1.safetensors")
+    assert PrequantizedResolution._upstream_cached("org/model", PATTERNS)
+    assert not PrequantizedResolution._upstream_cached("org/absent", PATTERNS)
+
+
+@pytest.mark.fast
+def test_the_repo_cache_check_needs_every_saved_component(monkeypatch, tmp_path):
+    _real_cache(monkeypatch, tmp_path)
+    snapshot = _snapshot(tmp_path, REPO)
+    _saved_component(snapshot, "vae")
+    assert not PrequantizedResolution._repo_cached(REPO, SAVED)  # transformer/ missing
+    _saved_component(snapshot, "transformer")
+    (snapshot / "transformer" / "1.safetensors").unlink()
+    assert not PrequantizedResolution._repo_cached(REPO, SAVED)  # one shard missing
+    _files(snapshot, "transformer/1.safetensors")
+    assert PrequantizedResolution._repo_cached(REPO, SAVED)
+    assert not PrequantizedResolution._repo_cached(REPO, None)
 
 
 @pytest.mark.fast
@@ -131,41 +234,57 @@ def test_weights_root_records_the_repo_for_the_sidecar_only_when_redirected():
 
 
 @pytest.mark.fast
-def test_every_listed_stem_and_level_resolves_to_a_repo_in_the_org():
+def test_every_stem_and_level_resolves_to_a_repo_in_the_org():
     from mflux.cli.defaults.defaults import QUANTIZE_CHOICES
 
-    checked = 0
-    for config in AVAILABLE_MODELS.values():
+    listing = _org_listing()
+    assert len(listing) == 50
+    for key, config in AVAILABLE_MODELS.items():
         stem = config.mflux_repo_stem
-        if stem not in ORG_LISTING:
+        if stem is None:
             continue
+        assert stem in listing, f"{key}: no {stem} repos in the org"
         for level in config.mflux_repo_missing:
-            assert level not in ORG_LISTING[stem], f"{stem} has {level}"
+            assert level not in listing[stem], f"{key}: {stem} has {level}"
         for quantize in QUANTIZE_CHOICES:
             root = PrequantizedResolution.resolve(config, None, quantize)[0]
             if f"q{quantize}" in config.mflux_repo_missing:
                 assert root == config.model_name
             else:
-                assert f"q{quantize}" in ORG_LISTING[stem], f"{stem} q{quantize}"
+                assert f"q{quantize}" in listing[stem], f"{key}: {stem} has no q{quantize}"
                 assert root == PrequantizedResolution.repo_id(stem, quantize)
-            checked += 1
-    assert checked >= 40
 
 
 @pytest.mark.fast
-def test_the_cache_check_finds_weights_in_component_folders(monkeypatch, tmp_path):
-    import mflux.models.common.resolution.path_resolution as path_resolution
+def test_mflux_save_runs_with_the_pre_quantized_repos_off(monkeypatch, tmp_path):
+    from mflux.models.common.cli import save
 
-    monkeypatch.undo()  # the real _cached
-    monkeypatch.setattr(path_resolution, "HF_HUB_CACHE", str(tmp_path))
-    snapshot = tmp_path / "models--org--model" / "snapshots" / "abc"
-    (snapshot / "transformer").mkdir(parents=True)
-    (snapshot / "vae").mkdir()
-    (snapshot / "vae" / "diffusion_pytorch_model.safetensors").touch()
-    index = {"weight_map": {"a": "0.safetensors", "b": "1.safetensors"}}
-    (snapshot / "transformer" / "model.safetensors.index.json").write_text(json.dumps(index))
-    (snapshot / "transformer" / "0.safetensors").touch()
-    assert not PrequantizedResolution._cached("org/model")  # one shard missing
-    (snapshot / "transformer" / "1.safetensors").touch()
-    assert PrequantizedResolution._cached("org/model")
-    assert not PrequantizedResolution._cached("org/absent")
+    seen = {}
+    model_class = save.MODEL_CLASSES["z-image-turbo"]
+
+    def fake_init(self, *args, **kwargs):
+        seen["enabled"] = PrequantizedResolution._enabled
+        seen["quantize"] = kwargs.get("quantize")
+
+    monkeypatch.setattr(model_class, "__init__", fake_init)
+    monkeypatch.setattr(model_class, "save_model", lambda self, base_path: None)
+    monkeypatch.setattr(save.SavedModelInfo, "write", lambda **kwargs: None)
+    argv = ["mflux-save", "--model", "z-image-turbo", "-q", "4", "--path", str(tmp_path / "saved")]
+    monkeypatch.setattr(sys, "argv", argv)
+    save.main()
+    assert seen == {"enabled": False, "quantize": 4}
+    assert PrequantizedResolution._enabled
+
+
+@pytest.mark.fast
+def test_mflux_train_runs_with_the_pre_quantized_repos_off(monkeypatch, tmp_path):
+    from mflux.models.common.cli import train
+
+    seen = {}
+    config = tmp_path / "train.json"
+    config.write_text("{}")
+    monkeypatch.setattr(train.TrainingRunner, "train", staticmethod(lambda **kwargs: seen.update(enabled=PrequantizedResolution._enabled)))  # fmt: off
+    monkeypatch.setattr(sys, "argv", ["mflux-train", "--config", str(config), "-q", "4"])
+    train.main()
+    assert seen == {"enabled": False}
+    assert PrequantizedResolution._enabled

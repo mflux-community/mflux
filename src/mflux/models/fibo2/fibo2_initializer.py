@@ -32,7 +32,12 @@ class Fibo2Initializer:
         bake_lora: bool = True,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(Fibo2WeightDefinition),
         )
         model.prompt_cache = {}
         model.model_config = model_config

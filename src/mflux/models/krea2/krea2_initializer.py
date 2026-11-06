@@ -30,7 +30,14 @@ class Krea2Initializer:
         bake_lora: bool = True,
     ) -> None:
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(
+                Krea2WeightDefinition, Krea2WeightDefinition.get_download_patterns(model_config.model_name)
+            ),
         )
         Krea2Initializer._init_config(model, model_config)
         weights = Krea2Initializer._load_weights(path, model_config)
@@ -65,7 +72,14 @@ class Krea2Initializer:
             # Checked before the base loads, which takes a while.
             raise ValueError("No depth ControlNet checkpoint: pass controlnet_path or a model config that names one.")
         path = PrequantizedResolution.weights_root(
-            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(
+                Krea2WeightDefinition, Krea2WeightDefinition.get_download_patterns(model_config.model_name)
+            ),
         )
         Krea2Initializer._init_config(model, model_config)
         weights = Krea2Initializer._load_weights(path, model_config)
