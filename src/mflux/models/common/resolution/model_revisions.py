@@ -62,6 +62,7 @@ class ModelRevisions:
         "Qwen/Qwen3-0.6B": "c1899de289a04d12100db370d81485cdf75e47ca",
         "Qwen/Qwen3-0.6B-Base": "da87bfb608c14b7cf20ba1ce41287e8de496c0cd",
         "Qwen/Qwen3-VL-4B-Instruct": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+        "SearchingMan/FLUX.2-klein-9B-Text-Encoder-Pruned-5.1B": "89ff813c44e7ea58564dc79f58c3d2128d007a50",
         "SearchingMan/Z-Image-Turbo-student-adapter": "b545401c153e04b85d3383f3a2ac789aec44b61a",
         "sensenova/SenseNova-U1.5-8B-MoT": "a2462cc1b549bace2c0896143bbbcbb3fa217c76",
         "speridlabs/iris-3b": "adc05b909fb05d4276d26aae5a52b36406b2ef26",

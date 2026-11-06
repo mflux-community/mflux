@@ -11,7 +11,7 @@ from mlx import nn
 from torch import nn as tnn
 
 from mflux.models.common.compute_precision import ComputePrecision
-from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common.config.model_config import AVAILABLE_MODELS, ModelConfig
 from mflux.models.common.resolution.model_revisions import ModelRevisions
 from mflux.models.flux2.cli import flux2_edit_generate, flux2_generate
 from mflux.models.flux2.flux2_initializer import Flux2Initializer
@@ -291,13 +291,13 @@ class TestPromptEncoding:
 
 @pytest.mark.fast
 class TestInitializer:
-    def test_9b_is_rejected_before_any_weight_loads(self, monkeypatch):
+    def test_an_unsupported_model_is_rejected_before_any_weight_loads(self, monkeypatch):
         def fail(*args, **kwargs):
             raise AssertionError("weights must not load")
 
         monkeypatch.setattr(Flux2Initializer, "_load_weights", fail)
         monkeypatch.setattr(Flux2Initializer, "_load_weights_without_text_encoder", fail)
-        for config in (ModelConfig.flux2_klein_9b(), ModelConfig.flux2_klein_9b_kv()):
+        for config in (AVAILABLE_MODELS["iris-3b"], AVAILABLE_MODELS["z-image-turbo"]):
             with pytest.raises(ValueError, match="only works with FLUX.2-klein-4B"):
                 Flux2Klein(model_config=config, small_text_encoder=True, small_decoder=False)
             with pytest.raises(ValueError, match="only works with FLUX.2-klein-4B"):
@@ -306,7 +306,7 @@ class TestInitializer:
     def test_4b_configs_are_supported(self):
         assert Flux2Initializer.supports_small_text_encoder(ModelConfig.flux2_klein_4b())
         assert Flux2Initializer.supports_small_text_encoder(ModelConfig.flux2_klein_base_4b())
-        assert not Flux2Initializer.supports_small_text_encoder(ModelConfig.flux2_klein_9b())
+        assert not Flux2Initializer.supports_small_text_encoder(AVAILABLE_MODELS["iris-3b"])
 
     def test_the_filtered_definition_skips_the_klein_text_encoder(self):
         names = [c.name for c in Flux2KleinNoTextEncoderWeightDefinition.get_components()]
@@ -380,10 +380,11 @@ class TestCommandLine:
         assert fake.instances[0].init_kwargs["small_text_encoder"] is expected
 
     @pytest.mark.parametrize(("command", "module", "attribute", "fake", "extra"), COMMANDS)
-    def test_a_9b_model_is_rejected_by_the_parser(self, monkeypatch, capsys, command, module, attribute, fake, extra):
+    def test_an_unsupported_model_config_is_rejected_by_the_parser(self, monkeypatch, capsys, command, module, attribute, fake, extra):  # fmt: skip
         fake.instances.clear()
         monkeypatch.setattr(module, attribute, fake)
         reset_cli_globals(monkeypatch)
+        monkeypatch.setattr(Flux2Initializer, "supports_small_text_encoder", staticmethod(lambda config: False))
         argv = [command, "--model", "flux2-klein-9b", "--prompt", "x", *extra, "--small-text-encoder"]
         monkeypatch.setattr(sys, "argv", argv)
         with pytest.raises(SystemExit):

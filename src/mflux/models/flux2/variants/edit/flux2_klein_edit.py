@@ -7,6 +7,7 @@ from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.flux2.flux2_initializer import Flux2Initializer
+from mflux.models.flux2.model.flux2_text_encoder.pruned_text_encoder import Flux2PrunedTextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.small_text_encoder import Flux2SmallTextEncoder
 from mflux.models.flux2.model.flux2_transformer.flux2_kv_cache import CacheMode, Flux2KVCache
@@ -22,7 +23,7 @@ from mflux.utils.image_util import ImageUtil
 class Flux2KleinEdit(nn.Module):
     vae: Flux2VAE
     transformer: Flux2Transformer
-    text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder | None
+    text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder | Flux2PrunedTextEncoder | None
     small_text_encoder: bool = False
     small_decoder: bool = False
 
