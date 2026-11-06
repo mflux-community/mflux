@@ -30,6 +30,8 @@ class ModelConfig:
         lora_training_steps: int | None = None,
         lora_training_guidance: float | None = None,
         supports_kv_cache: bool = False,
+        mflux_repo_stem: str | None = None,
+        mflux_repo_missing: tuple[str, ...] = (),
     ):
         self.aliases = aliases
         self.model_name = model_name
@@ -51,6 +53,9 @@ class ModelConfig:
         self.lora_training_steps = lora_training_steps
         self.lora_training_guidance = lora_training_guidance
         self.supports_kv_cache = supports_kv_cache
+        # mflux-community/<stem>-mflux-q<N>, loaded with -q N (#938); levels the org has no repo for
+        self.mflux_repo_stem = mflux_repo_stem
+        self.mflux_repo_missing = mflux_repo_missing
 
     @staticmethod
     @lru_cache
