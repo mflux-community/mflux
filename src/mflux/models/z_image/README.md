@@ -184,6 +184,34 @@ image.save("statue.png")
 ```
 </details>
 
+## Small text encoder
+`--small-text-encoder` replaces Z-Image-Turbo's Qwen3-4B text encoder with a distilled Qwen3-1.7B student plus a 39M-parameter adapter from [SearchingMan/Z-Image-Turbo-student-adapter](https://huggingface.co/SearchingMan/Z-Image-Turbo-student-adapter). The adapter outputs 2560-wide vectors that imitate the 4B encoder's second-to-last hidden state. The transformer, VAE and tokenizer stay Z-Image-Turbo's, so the `text_encoder` weights of `Tongyi-MAI/Z-Image-Turbo` are never downloaded.
+
+```sh
+mflux-generate-z-image-turbo \
+  --small-text-encoder \
+  --prompt "A red fox walks through a snowy forest at dusk." \
+  --steps 9 \
+  -q 8
+```
+
+- Works with `mflux-generate-z-image-turbo` only (not `mflux-generate-z-image` or the ControlNet command). The flag is recorded in the image metadata, so `--config-from-metadata` replays it.
+- Plain scene prompts come out close to the native encoder. Three kinds of prompt come out worse: text drawn in the image ("OPEN 24 HOURS" became "OPEN 20 HOUTS"), attribute binding ("long hair, blue eyes" gave blue hair) and non-English prompts (a German prompt lost the river and the fog). Per token, the adapter's output is 0.78–0.95 cosine to the 4B encoder's.
+- `-q` quantizes the 1.7B student like the rest of the model; the adapter always stays float32.
+- `mflux-save` and `save_model()` refuse a model built with the flag.
+- The first run downloads about 3.3 GB instead of the 7.5 GB Qwen3-4B `text_encoder`.
+
+The encoder is smaller, but a single CLI image does not need less memory: the CLI frees the text encoder before the denoising, and the denoising sets the peak. The saving shows when the encoder stays loaded, as with several `--seed` values, the Python API or a server. Test setup: Apple Silicon Mac, 64 GB, MLX 0.32.0, Z-Image-Turbo `-q 8` saved with `mflux-save`, 1024×1024, 9 steps.
+
+| | Qwen3-4B | `--small-text-encoder` |
+|---|---|---|
+| Peak, one image | 7.5 GB | 7.5 GB |
+| Peak, two seeds | 11.8 GB | 9.6 GB |
+| Weights loaded, bf16 / `-q 8` | 19.1 / 10.2 GB | 15.0 / 8.1 GB |
+| Download of the text encoder | 7.5 GB | 3.3 GB |
+
+Loaded from the Hub instead of a saved model, the peak is about 26 GB either way, because the transformer weights there are float32.
+
 ## VAE decode
 The VAE decodes the image in bf16 row strips of 128 rows. Each GroupNorm uses statistics from the full image, so the strips do not change the colours, and the image has no seams. The decoder releases the temporary data of each block before the next block starts, and the attention runs in chunks of 4096 queries.
 

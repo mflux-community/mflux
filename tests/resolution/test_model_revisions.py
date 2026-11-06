@@ -15,6 +15,7 @@ from mflux.models.lens.model.text_encoder import lens_gpt_oss_encoder
 from mflux.models.lens.variants.txt2img import lens_image
 from mflux.models.openpose import openpose
 from mflux.models.qwen21.model.qwen21_small_text_encoder.zen_image_edit_weights import ZenImageEditWeights
+from mflux.models.z_image.model.z_image_text_encoder import small_text_encoder as zimage_small_text_encoder
 
 REPO = "org/model"
 PINNED = "a" * 40
@@ -51,6 +52,7 @@ def test_every_built_in_repo_is_pinned():
         small_text_encoder.ADAPTER_REPO,
         small_text_encoder.SMALL_ENCODER_REPO,
         small_decoder.SMALL_DECODER_REPO,
+        zimage_small_text_encoder.SMALL_ENCODER_REPO,
         ZenImageEditWeights.REPO,
         "briaai/FIBO-vlm",
     }

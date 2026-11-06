@@ -12,6 +12,7 @@ from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.z_image.latent_creator import ZImageLatentCreator
 from mflux.models.z_image.model.z_image_text_encoder.prompt_encoder import PromptEncoder
+from mflux.models.z_image.model.z_image_text_encoder.small_text_encoder import ZImageSmallTextEncoder
 from mflux.models.z_image.model.z_image_text_encoder.text_encoder import TextEncoder
 from mflux.models.z_image.model.z_image_transformer.transformer import ZImageTransformer
 from mflux.models.z_image.model.z_image_vae.vae import VAE
@@ -25,7 +26,8 @@ from mflux.utils.image_util import ImageUtil
 
 class ZImage(nn.Module):
     vae: VAE
-    text_encoder: TextEncoder
+    text_encoder: TextEncoder | ZImageSmallTextEncoder
+    small_text_encoder: bool = False
     transformer: ZImageTransformer
 
     def __init__(
@@ -38,6 +40,7 @@ class ZImage(nn.Module):
         model_config: ModelConfig = ModelConfig.z_image_turbo(),
         float32: bool = False,
         compute_precision: mx.Dtype | None = None,
+        small_text_encoder: bool = False,
     ):
         super().__init__()
         ZImageInitializer.init(
@@ -50,6 +53,7 @@ class ZImage(nn.Module):
             model_config=model_config,
             float32=float32,
             compute_precision=compute_precision,
+            small_text_encoder=small_text_encoder,
         )
 
     def generate_image(
@@ -167,12 +171,16 @@ class ZImage(nn.Module):
             negative_prompt=negative_prompt,
             pid_decode=pid_decode,
             pid_degrade_sigma=pid_degrade_sigma,
-            generation_parameters={
-                **({"float32": True} if self.float32 else {}),
-                **self.compute_precision.generation_parameters(),
-                **VAEDecodeOptions.generation_parameters(self),
-            },
+            generation_parameters=self._generation_parameters(),
         )
+
+    def _generation_parameters(self) -> dict:
+        return {
+            **({"float32": True} if self.float32 else {}),
+            **self.compute_precision.generation_parameters(),
+            **VAEDecodeOptions.generation_parameters(self),
+            **({"small_text_encoder": True} if self.small_text_encoder else {}),
+        }
 
     def _encode_prompts(
         self,
@@ -214,6 +222,11 @@ class ZImage(nn.Module):
         return VAEUtil.decode(vae=self.vae, latent=unpacked, tiling_config=self.tiling_config)
 
     def save_model(self, base_path: str) -> None:
+        if self.small_text_encoder:
+            raise ValueError(
+                "save_model() is not supported with small_text_encoder: it would write the Qwen3-1.7B student "
+                "where Z-Image's Qwen3-4B text encoder belongs. Build the model without it to save it."
+            )
         ModelSaver.save_model(
             model=self,
             bits=self.bits,

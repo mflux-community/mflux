@@ -64,3 +64,13 @@ class ZImageWeightDefinition:
     @staticmethod
     def quantization_predicate(path: str, module) -> bool:
         return hasattr(module, "to_quantized")
+
+
+class ZImageNoTextEncoderWeightDefinition(ZImageWeightDefinition):
+    @staticmethod
+    def get_components() -> List[ComponentDefinition]:
+        return [c for c in ZImageWeightDefinition.get_components() if c.name != "text_encoder"]
+
+    @staticmethod
+    def get_download_patterns() -> List[str]:
+        return [p for p in ZImageWeightDefinition.get_download_patterns() if not p.startswith("text_encoder/")]
