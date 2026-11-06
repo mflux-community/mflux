@@ -39,7 +39,7 @@ def build_parser() -> CommandLineParser:
     parser.add_pid_decode_arguments()
     parser.add_float32_arguments()
     parser.add_small_text_encoder_arguments(
-        help_text="Replace Z-Image-Turbo's Qwen3-4B text encoder with the distilled Qwen3-1.7B student and adapter from SearchingMan/Z-Image-Turbo-student-adapter. Downloads ~3.3 GB instead of ~7.5 GB. Text drawn in the image, attribute binding and non-English prompts come out worse than with the native encoder. See the Z-Image README."
+        help_text="Replace Z-Image-Turbo's Qwen3-4B text encoder with the distilled Qwen3-1.7B student and adapter from SearchingMan/Z-Image-Turbo-student-adapter. Downloads ~3.6 GB instead of ~8.0 GB. Text drawn in the image, attribute binding and non-English prompts come out worse than with the native encoder. See the Z-Image README."
     )
     parser.add_output_arguments()
     parser.add_vae_full_precision_arguments()

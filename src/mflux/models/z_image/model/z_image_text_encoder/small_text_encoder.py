@@ -160,10 +160,10 @@ class ZImageSmallTextEncoder(nn.Module):
         except (GatedRepoError, RepositoryNotFoundError) as e:
             raise RuntimeError(
                 f"--small-text-encoder: Hugging Face repo '{SMALL_ENCODER_REPO}' was not found or is not "
-                "accessible (~3.3 GB needed)."
+                "accessible (~3.6 GB needed)."
             ) from e
         except (HfHubHTTPError, OSError) as e:
             raise RuntimeError(
                 f"--small-text-encoder: downloading '{SMALL_ENCODER_REPO}' failed ({e}). "
-                "It needs ~3.3 GB; check your network connection or HF_HUB_OFFLINE setting and retry."
+                "It needs ~3.6 GB; check your network connection or HF_HUB_OFFLINE setting and retry."
             ) from e
