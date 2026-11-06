@@ -14,6 +14,7 @@ from mflux.models.common.training.dataset.data_cache import TrainingDataCache
 from mflux.models.common.training.dataset.dataset import Dataset
 from mflux.models.common.training.dataset.disk_backed_data import DiskBackedData
 from mflux.models.common.training.dataset.iterator import Iterator
+from mflux.models.common.training.lora.path_util import expand_module_paths_from_targets
 from mflux.models.common.training.lora.target_injector import inject_lora_targets
 from mflux.models.common.training.optimization.optimizer import Optimizer
 from mflux.models.common.training.state.training_spec import TrainingSpec
@@ -29,6 +30,8 @@ from mflux.models.flux2.training_adapter.flux2_edit_training_adapter import Flux
 from mflux.models.flux2.training_adapter.flux2_training_adapter import Flux2TrainingAdapter
 from mflux.models.iris.training_adapter.iris_training_adapter import IrisTrainingAdapter
 from mflux.models.krea2.training_adapter.krea2_training_adapter import Krea2TrainingAdapter
+from mflux.models.qwen21.training_adapter.qwen21_comfy_lora import Qwen21ComfyLoRA
+from mflux.models.qwen21.training_adapter.qwen21_training_adapter import Qwen21TrainingAdapter
 from mflux.models.z_image.training_adapter.z_image_training_adapter import ZImageTrainingAdapter
 from mflux.utils.exceptions import StopTrainingException
 from mflux.utils.exif_orientation import oriented_size
@@ -106,6 +109,11 @@ class TrainingRunner:
         is_fibo2 = model_config.model_name == ModelConfig.fibo2().model_name
         is_iris = model_config.model_name == ModelConfig.iris_3b().model_name
         is_anima = model_config.model_name == ModelConfig.anima_base().model_name
+        # Turbo too, so the adapter can say to train on the base model
+        is_qwen21 = model_config.model_name in {
+            ModelConfig.qwen_image_21().model_name,
+            ModelConfig.qwen_image_21_turbo().model_name,
+        }
         if training_spec.is_edit and not is_flux2_base:
             raise ValueError("Edit training currently supports only FLUX.2-klein-base models.")
         if is_ernie:
@@ -124,6 +132,11 @@ class TrainingRunner:
             adapter_class = IrisTrainingAdapter
         elif is_anima:
             adapter_class = AnimaTrainingAdapter
+        elif is_qwen21:
+            adapter_class = Qwen21TrainingAdapter
+            Qwen21ComfyLoRA.check_targets(
+                [path for path, _, _ in expand_module_paths_from_targets(training_spec.lora_layers.targets)]
+            )
         else:
             raise ValueError("Flux1 training is no longer supported.")
 
