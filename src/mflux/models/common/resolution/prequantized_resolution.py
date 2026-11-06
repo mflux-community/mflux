@@ -3,6 +3,7 @@ import logging
 import sys
 from collections.abc import Iterator
 
+from mflux.cli.defaults.defaults import QUANTIZE_CHOICES
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition
 
@@ -80,7 +81,8 @@ class PrequantizedResolution:
             # A baked LoRA is folded into the bf16 weights before quantizing; a stored quantization has none to fold into
             return upstream, PrequantizedResolution._BAKED
         level = f"q{quantize}"
-        if level in model_config.mflux_repo_missing:
+        # The org publishes the CLI levels only; the Python API also takes other bit widths, quantized on the fly
+        if quantize not in QUANTIZE_CHOICES or level in model_config.mflux_repo_missing:
             return upstream, PrequantizedResolution._MISSING.format(stem=stem, level=level)
         repo = PrequantizedResolution.repo_id(stem, quantize)
         upstream_cached = PrequantizedResolution._upstream_cached(upstream, upstream_patterns)

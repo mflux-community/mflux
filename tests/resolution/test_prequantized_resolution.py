@@ -288,3 +288,11 @@ def test_mflux_train_runs_with_the_pre_quantized_repos_off(monkeypatch, tmp_path
     train.main()
     assert seen == {"enabled": False}
     assert PrequantizedResolution._enabled
+
+
+def test_a_level_the_org_does_not_publish_stays_upstream(monkeypatch):
+    # The Python API accepts bit widths the CLI does not offer, e.g. 2: no repo exists for them
+    monkeypatch.setattr(PrequantizedResolution, "_upstream_cached", staticmethod(lambda *a, **k: False))
+    config = ModelConfig.from_name("dev")
+    root, _ = PrequantizedResolution.resolve(config, None, 2)
+    assert root == config.model_name
