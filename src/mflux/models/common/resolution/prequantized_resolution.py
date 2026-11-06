@@ -1,7 +1,9 @@
 import contextlib
 import logging
+import os
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 from mflux.models.common.resolution.path_resolution import PathResolution
 
@@ -23,7 +25,15 @@ class PrequantizedResolution:
         bake_lora: bool = True,
     ) -> str:
         root, reason = PrequantizedResolution.resolve(model_config, model_path, quantize, has_loras, bake_lora)
-        logger.info(f"Weights: {root} ({reason})")
+        redirected = model_path is None and root != model_config.model_name
+        if redirected or (quantize is not None and getattr(model_config, "mflux_repo_stem", None) and not model_path):
+            logger.info(f"Weights: {root} ({reason})")
+        else:
+            logger.debug(f"Weights: {root} ({reason})")
+        # The sidecar records the repo the weights came from; model_path stays the command line (#705)
+        from mflux.utils.generated_image import GeneratedImage
+
+        GeneratedImage.weights_repo = root if redirected else None
         return root
 
     @staticmethod
@@ -56,7 +66,9 @@ class PrequantizedResolution:
         repo = PrequantizedResolution.repo_id(stem, quantize)
         if PrequantizedResolution._cached(upstream) and not PrequantizedResolution._cached(repo):
             # Someone who already has the upstream weights does not download a second copy (anthonywu, d#794)
-            print(f"ℹ️  {repo} is a smaller download of this model; the cached upstream weights are used.", file=sys.stderr)
+            print(
+                f"ℹ️  {repo} is a smaller download of this model; the cached upstream weights are used.", file=sys.stderr
+            )
             return upstream, "upstream already cached"
         return repo, f"-q {quantize}"
 
@@ -77,4 +89,13 @@ class PrequantizedResolution:
 
     @staticmethod
     def _cached(repo_id: str) -> bool:
-        return PathResolution._find_complete_cached_snapshot(repo_id, ["*.safetensors"]) is not None
+        # Cache only, no network. Weights sit in component folders (transformer/, vae/, ...), so the pattern recurses;
+        # every index in the snapshot must have its shards on disk.
+        snapshot = PathResolution._find_complete_cached_snapshot(repo_id, ["**/*.safetensors"])
+        if snapshot is None:
+            return False
+        return all(
+            PathResolution._indexed_shards_present(Path(directory))
+            for directory, _, files in os.walk(snapshot, followlinks=True)
+            if any(name.endswith(".safetensors.index.json") for name in files)
+        )

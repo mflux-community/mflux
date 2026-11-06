@@ -10,6 +10,7 @@ from mflux.models.anima.weights.anima_weight_definition import AnimaWeightDefini
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights, MetaData
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -44,7 +45,9 @@ class AnimaInitializer:
         if quantize == 3:
             raise ValueError("Anima does not work with -q 3, the 2B transformer turns to noise. Use -q 4, 5, 6 or 8.")
         precision = ComputePrecision(compute_precision)
-        path = model_path or model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+        )
         AnimaInitializer._init_config(model, model_config)
         weights = AnimaInitializer._load_weights_and_tokenizers(model, model_config, path)
         AnimaInitializer._init_models(model)

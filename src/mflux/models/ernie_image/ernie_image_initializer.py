@@ -3,6 +3,7 @@ import mlx.core as mx
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.vae.tiling_config import TilingConfig
@@ -27,7 +28,9 @@ class ErnieImageInitializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+        )
         ErnieImageInitializer._init_config(model, model_config)
         weights = ErnieImageInitializer._load_weights(path)
         ErnieImageInitializer._init_tokenizers(model, path)

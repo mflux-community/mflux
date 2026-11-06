@@ -4,6 +4,7 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -32,7 +33,9 @@ class Flux3Initializer:
         compute_precision: mx.Dtype | None = None,
     ) -> None:
         precision = ComputePrecision(compute_precision)
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+        )
         Flux3Initializer._init_config(model, model_config)
         definition = Flux3Initializer.weight_definition(model_config)
         weights = Flux3Initializer._load_weights(path, definition)

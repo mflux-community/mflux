@@ -1,5 +1,6 @@
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -21,7 +22,7 @@ class FIBOInitializer:
         quantize: int | None = None,
         model_path: str | None = None,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(model_config, model_path, quantize)
         FIBOInitializer._init_config(model, model_config)
         weights = FIBOInitializer._load_weights(path)
         FIBOInitializer._init_tokenizers(model, path)
