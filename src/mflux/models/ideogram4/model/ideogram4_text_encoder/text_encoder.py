@@ -1,9 +1,9 @@
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
-from mflux.models.ideogram4.model.ideogram4_text_encoder.decoder_layer import Qwen3VLDecoderLayer
+from mflux.models.ideogram4.model.ideogram4_transformer.fp8_linear import Fp8Linear
 
 
 class Ideogram4TextEncoder:
-    # Ideogram 4 runs the shared Qwen3TextEncoder (the Qwen3-VL-8B text tower) with fp8 decoder layers.
+    # Ideogram 4 runs the shared Qwen3TextEncoder (the Qwen3-VL-8B text tower) with fp8 projections.
     # The prompt features are the outputs of layers 0, 3, ..., 33 and 35, in hidden-state indices
     # (0 is the embedding output), with the layers interleaved per hidden unit.
     HIDDEN_STATE_LAYERS = (1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 36)
@@ -32,5 +32,5 @@ class Ideogram4TextEncoder:
             rope_theta=rope_theta,
             rms_norm_eps=rms_norm_eps,
             head_dim=head_dim,
-            decoder_layer_class=Qwen3VLDecoderLayer,
+            linear_class=Fp8Linear,
         )
