@@ -18,7 +18,11 @@ mflux-generate-iris \
   --seed 42
 ```
 
-The default size is 1024×1024. Width and height must be multiples of 16.
+The default size is 1024×1024. Width and height must be multiples of 16. Stay near one megapixel: Turbo was distilled
+on 1024×1024, 752×1344, 896×1344, 896×1200 and their transposes ([model card](https://huggingface.co/speridlabs/iris-3b)),
+and Iris works on pixels with no VAE to absorb a size it hasn't seen. At 512×512 both Turbo and the base model come out
+broken up (blocks, stray text, smeared shapes); at 768×768 the same prompt is clean. For a smaller image, generate at
+1024 and resize.
 
 <details>
 <summary>Python API</summary>
