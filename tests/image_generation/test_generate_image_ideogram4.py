@@ -40,7 +40,7 @@ class FakeVAE:
 
 
 class FakeTextEncoder:
-    def get_prompt_embeds(self, input_ids, attention_mask, position_ids):  # noqa: ARG002
+    def get_prompt_embeds(self, input_ids, attention_mask, hidden_state_layers, position_ids, interleave_layers):  # noqa: ARG002
         return mx.zeros((1, input_ids.shape[1], 53248), dtype=mx.float32)
 
 
