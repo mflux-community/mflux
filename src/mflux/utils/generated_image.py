@@ -20,6 +20,10 @@ class GeneratedImage:
     # the only place that knows it, and threading it through every variant's to_image call
     # would touch thirty call sites to move one provenance string (#705).
     model_path: str | None = None
+    # The mflux-community repo a registry entry loaded with -q N (#938), None when the weights came from the entry's
+    # own repo or from model_path. Set by PrequantizedResolution.weights_root at model load, for the same reason.
+    # Process-wide like model_path: the last model loaded in the process sets it for every image saved after (#705).
+    weights_repo: str | None = None
 
     def __init__(
         self,
@@ -238,6 +242,8 @@ class GeneratedImage:
             # Without the source, a local-checkpoint run reads back as the registry entry
             # it resolved to, and -C silently replays it against the registry weights (#705).
             "model_path": self.model_path,
+            # Only a run redirected to a pre-quantized repo carries it; "model" stays the registry entry (#938)
+            **({"weights_repo": self.weights_repo} if self.weights_repo else {}),
             # The value itself, not str() of it: a builtin run has no base and must store null,
             # because --config-from-metadata hands this back to the --base-model validator and
             # the string "None" is not a name (#695).

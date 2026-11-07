@@ -72,4 +72,5 @@ def reset_cli_globals(monkeypatch):
     # parse_args sets GeneratedImage.model_path and can switch off ImageUtil.embed_metadata_enabled
     # for the whole process; reset both so tests cannot leak into each other or the suite.
     monkeypatch.setattr(GeneratedImage, "model_path", None)
+    monkeypatch.setattr(GeneratedImage, "weights_repo", None)
     monkeypatch.setattr(ImageUtil, "embed_metadata_enabled", True)

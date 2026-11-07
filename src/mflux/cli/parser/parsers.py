@@ -485,8 +485,10 @@ class CommandLineParser(argparse.ArgumentParser):
                 # a path or third-party repo records that source in model_path, and the
                 # source is what the command line actually said, so it wins over the
                 # resolved registry entry in "model" (#705); older sidecars carry only the
-                # entry and restore as before.
-                restored_weights_source = prior_gen_metadata.get("model_path")
+                # entry and restore as before. A run redirected to a pre-quantized repo
+                # records that repo in weights_repo and no model_path; restoring only the
+                # entry would replay it as an upstream repo id and load the bf16 weights (#938).
+                restored_weights_source = prior_gen_metadata.get("model_path") or prior_gen_metadata.get("weights_repo")
                 namespace.model = restored_weights_source or prior_gen_metadata.get("model", namespace.model)
 
             if namespace.base_model is None:
