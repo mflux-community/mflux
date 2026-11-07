@@ -14,12 +14,12 @@ from transformers import Qwen3_5Config, Qwen3_5ForConditionalGeneration
 
 from mflux.models.common.resolution.model_revisions import ModelRevisions
 from mflux.models.common.resolution.path_resolution import PathResolution
+from mflux.models.common_models.qwen3_5 import Qwen35GatedDeltaNet
 from mflux.models.qwen21 import qwen21_initializer, qwen_image21_initializer
 from mflux.models.qwen21.cli import qwen21_edit_generate, qwen21_generate
 from mflux.models.qwen21.model.qwen21_small_text_encoder import zen_image_edit_weights
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_small_text_encoder import Qwen21SmallTextEncoder
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_text_fusion import Qwen21TextFusion
-from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen35_gated_delta_net import Qwen35GatedDeltaNet
 from mflux.models.qwen21.model.qwen21_small_text_encoder.zen_image_edit_weights import ZenImageEditWeights
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
 from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
@@ -243,9 +243,9 @@ def test_chunked_delta_rule_matches_the_token_by_token_recurrence():
     v = mx.array(rng.standard_normal((1, 70, 2, 4)).astype(np.float32))
     decay = mx.array(-rng.uniform(0, 1, (1, 70, 2)).astype(np.float32))
     beta = mx.array(rng.uniform(0, 1, (1, 70, 2)).astype(np.float32))
-    chunked = np.array(Qwen35GatedDeltaNet.chunk_gated_delta_rule(q, k, v, decay, beta, chunk_size=16))
-    qn = np.array(Qwen35GatedDeltaNet._l2norm(q)) * 8**-0.5
-    kn = np.array(Qwen35GatedDeltaNet._l2norm(k))
+    chunked = np.array(Qwen35GatedDeltaNet._gated_delta_rule(q, k, v, decay, beta, chunk=16))
+    qn = np.array(Qwen35GatedDeltaNet._l2_normalize(q)) * 8**-0.5
+    kn = np.array(Qwen35GatedDeltaNet._l2_normalize(k))
     state = np.zeros((2, 8, 4), dtype=np.float32)
     expected = np.zeros((1, 70, 2, 4), dtype=np.float32)
     for t in range(70):
