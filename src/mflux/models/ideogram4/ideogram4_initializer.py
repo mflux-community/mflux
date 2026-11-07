@@ -15,7 +15,7 @@ from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
-from mflux.models.ideogram4.model.ideogram4_text_encoder import Qwen3TextEncoder
+from mflux.models.ideogram4.model.ideogram4_text_encoder import Ideogram4TextEncoder
 from mflux.models.ideogram4.model.ideogram4_transformer import Ideogram4Config, Ideogram4Transformer
 from mflux.models.ideogram4.weights import Ideogram4LoRAMapping, Ideogram4WeightDefinition
 
@@ -87,7 +87,9 @@ class Ideogram4Initializer:
         model.unconditional_transformer = Ideogram4Transformer(
             Ideogram4Initializer._transformer_config(model_path / "unconditional_transformer")
         )
-        model.text_encoder = Qwen3TextEncoder(**Ideogram4Initializer._text_encoder_kwargs(model_path / "text_encoder"))
+        model.text_encoder = Ideogram4TextEncoder.create(
+            **Ideogram4Initializer._text_encoder_kwargs(model_path / "text_encoder")
+        )
 
     @staticmethod
     def _rebuild_q8_folded_layers(module, tree) -> None:
