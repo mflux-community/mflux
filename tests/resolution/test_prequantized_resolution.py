@@ -207,6 +207,27 @@ def test_the_repo_cache_check_needs_every_saved_component(monkeypatch, tmp_path)
 
 
 @pytest.mark.fast
+def test_a_dangling_snapshot_entry_does_not_break_the_cache_checks(monkeypatch, tmp_path):
+    # A broken symlink in snapshots/ has no mtime; it is skipped instead of raising before -q can redirect
+    _real_cache(monkeypatch, tmp_path)
+    assert ModelRevisions.get(REPO) is None  # unpinned: every snapshot is sorted by mtime
+    snapshot = _snapshot(tmp_path, REPO)
+    _saved_component(snapshot, "transformer")
+    _saved_component(snapshot, "vae")
+    (snapshot.parent / "dangling").symlink_to(tmp_path / "gone")
+    assert PrequantizedResolution._repo_cached(REPO, SAVED)
+
+    config = ModelConfig.z_image_turbo()
+    assert ModelRevisions.get(config.model_name) is not None  # pinned: only the pinned snapshot is read
+    upstream = _snapshot(tmp_path, config.model_name)
+    (upstream.parent / "dangling").symlink_to(tmp_path / "gone")
+    assert not PrequantizedResolution._upstream_cached(config.model_name, PATTERNS)
+    assert PrequantizedResolution.resolve(config, None, 4, upstream_patterns=PATTERNS)[0] == REPO
+    _files(upstream, "transformer/a.safetensors", "vae/a.safetensors")
+    assert PrequantizedResolution._upstream_cached(config.model_name, PATTERNS)
+
+
+@pytest.mark.fast
 def test_rule_7_q_loads_the_pre_quantized_repo():
     assert PrequantizedResolution.resolve(ModelConfig.z_image_turbo(), None, 4)[0] == REPO
     assert PrequantizedResolution.resolve(AVAILABLE_MODELS["qwen-image"], None, 6)[0] == (

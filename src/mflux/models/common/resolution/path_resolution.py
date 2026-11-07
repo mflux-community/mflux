@@ -194,13 +194,21 @@ class PathResolution:
         if not repo_cache_dir.exists():
             return []
 
-        # Prefer more recent snapshots
-        snapshots = sorted(repo_cache_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
         pinned = ModelRevisions.get(repo_id)
         if pinned is not None:
             # Only the pinned commit counts: another snapshot of the repo can hold other weights.
-            snapshots = [repo_cache_dir / pinned]
-        return [snapshot for snapshot in snapshots if snapshot.is_dir()]
+            snapshot = repo_cache_dir / pinned
+            return [snapshot] if snapshot.is_dir() else []
+
+        # Prefer more recent snapshots. A dangling entry has no mtime and is skipped, not raised.
+        dated: list[tuple[float, Path]] = []
+        for snapshot in repo_cache_dir.iterdir():
+            try:
+                dated.append((snapshot.stat().st_mtime, snapshot))
+            except OSError:
+                continue
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return [snapshot for _, snapshot in dated if snapshot.is_dir()]
 
     @staticmethod
     def _get_required_subdirs_with_safetensors(patterns: list[str]) -> set[str]:
