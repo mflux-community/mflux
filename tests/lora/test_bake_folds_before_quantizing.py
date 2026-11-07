@@ -449,7 +449,8 @@ def test_every_init_passes_the_loaded_weights_to_apply_lora(monkeypatch, initial
         import mflux.models.flux.variants.concept_attention.transformer_concept as concept
 
         monkeypatch.setattr(concept, "TransformerConcept", lambda **kwargs: None)
-    model, config = SimpleNamespace(), SimpleNamespace(model_name="unused")
+    config = SimpleNamespace(model_name="unused", base_model=None, mflux_repo_stem=None, mflux_repo_missing=())
+    model = SimpleNamespace()
 
     with pytest.raises(_Stop):
         getattr(initializer, method)(model=model, model_config=config, quantize=8, lora_paths=["adapter"])

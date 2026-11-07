@@ -9,6 +9,7 @@ from mlx.utils import tree_flatten
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.resolution.path_resolution import PathResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.safetensors_reader import SafetensorsReader
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -48,7 +49,9 @@ class QwenImage21Initializer:
         precision = ComputePrecision(compute_precision)
         definition = QwenImage21NoTextEncoderWeightDefinition if small_text_encoder else QwenImage21WeightDefinition
         root = PathResolution.resolve(
-            model_path or model_config.model_name,
+            PrequantizedResolution.weights_root(
+                model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+            ),
             download_patterns or definition.get_download_patterns(),
         )
         if root is None:

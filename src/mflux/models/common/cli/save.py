@@ -8,6 +8,7 @@ from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.resolution.lora_resolution import LoraResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.resolution.quantization_resolution import QuantizationResolution
 from mflux.models.common.weights.saving.hf_cache_alias import HfCacheAlias
 from mflux.models.common.weights.saving.saved_model_info import SavedModelInfo, SaveTarget
@@ -149,6 +150,12 @@ class SaveDispatch:
 
 
 def main():
+    # Saving keeps the upstream weights in this release (#938)
+    with PrequantizedResolution.disabled():
+        _main()
+
+
+def _main():
     # 0. Parse command line arguments
     parser = CommandLineParser(description="Save a quantized version of a model to disk.")  # fmt: off
     parser.add_model_arguments(path_type="save", require_model_arg=True)
