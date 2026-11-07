@@ -176,7 +176,7 @@ class _FakeIdeogram4Tokenizer:
 
 
 class _FakeIdeogram4TextEncoder:
-    def get_prompt_embeds(self, input_ids, attention_mask, position_ids):
+    def get_prompt_embeds(self, input_ids, attention_mask, hidden_state_layers, position_ids, interleave_layers):  # noqa: ARG002
         return mx.zeros((1, input_ids.shape[1], 53248), dtype=mx.float32)
 
 

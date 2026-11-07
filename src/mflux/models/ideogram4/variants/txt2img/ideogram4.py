@@ -8,11 +8,12 @@ from mflux.models.common.pid_decoder.pid_decoder import pid_decode_latents
 from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
+from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.ideogram4.ideogram4_initializer import Ideogram4Initializer
 from mflux.models.ideogram4.latent_creator import Ideogram4LatentCreator
 from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
-from mflux.models.ideogram4.model.ideogram4_text_encoder import Ideogram4PromptEncoder, Qwen3TextEncoder
+from mflux.models.ideogram4.model.ideogram4_text_encoder import Ideogram4PromptEncoder
 from mflux.models.ideogram4.model.ideogram4_transformer import Ideogram4Transformer
 from mflux.models.ideogram4.weights import Ideogram4WeightDefinition
 from mflux.utils.apple_silicon import AppleSiliconUtil

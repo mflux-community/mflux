@@ -1,3 +1,5 @@
+from typing import Callable
+
 import mlx.core as mx
 from mlx import nn
 
@@ -7,6 +9,7 @@ from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_rotary_embedding imp
 
 
 class Qwen3TextEncoder(nn.Module):
+    # linear_class builds every projection in the decoder layers. Ideogram 4 passes Fp8Linear.
     def __init__(
         self,
         vocab_size: int = 151936,
@@ -22,6 +25,7 @@ class Qwen3TextEncoder(nn.Module):
         attention_bias: bool = False,
         mrope_section: list[int] | None = None,
         attention_scaling: float = 1.0,
+        linear_class: Callable[..., nn.Module] = nn.Linear,
     ):
         super().__init__()
         self.vocab_size = vocab_size
@@ -40,6 +44,7 @@ class Qwen3TextEncoder(nn.Module):
                 attention_bias=attention_bias,
                 rms_norm_eps=rms_norm_eps,
                 intermediate_size=intermediate_size,
+                linear_class=linear_class,
             )
             for _ in range(num_hidden_layers)
         ]
@@ -117,6 +122,7 @@ class Qwen3TextEncoder(nn.Module):
         attention_mask: mx.array | None = None,
         hidden_state_layers: tuple[int, ...] = (9, 18, 27),
         position_ids: mx.array | None = None,
+        interleave_layers: bool = False,
     ) -> mx.array:
         _, hidden_states_list = self(
             input_ids=input_ids,
@@ -128,5 +134,8 @@ class Qwen3TextEncoder(nn.Module):
             raise RuntimeError("Hidden states not available for prompt embedding.")
         stacked = mx.stack([hidden_states_list[i] for i in hidden_state_layers], axis=1)
         batch_size, num_layers, seq_len, hidden_dim = stacked.shape
+        if interleave_layers:
+            # Ideogram 4 layout: the layers are the innermost axis, feature index = h * num_layers + layer.
+            return mx.transpose(stacked, (0, 2, 3, 1)).reshape(batch_size, seq_len, hidden_dim * num_layers)
         prompt_embeds = mx.transpose(stacked, (0, 2, 1, 3)).reshape(batch_size, seq_len, num_layers * hidden_dim)
         return prompt_embeds
