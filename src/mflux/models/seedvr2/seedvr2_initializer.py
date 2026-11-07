@@ -1,5 +1,6 @@
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -17,7 +18,7 @@ class SeedVR2Initializer:
         quantize: int | None = None,
         model_path: str | None = None,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(model_config, model_path, quantize)
         weight_definition = SeedVR2WeightDefinition.resolve(model_config)
         SeedVR2Initializer._init_config(model, model_config)
         weights = SeedVR2Initializer._load_weights(path, weight_definition)

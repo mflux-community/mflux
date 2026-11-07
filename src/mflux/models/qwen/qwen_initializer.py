@@ -1,6 +1,7 @@
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -27,7 +28,14 @@ class QwenImageInitializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(QwenWeightDefinition),
+        )
         QwenImageInitializer._init_config(model, model_config)
         weights = QwenImageInitializer._load_weights(path)
         QwenImageInitializer._init_tokenizers(model, path)
@@ -46,7 +54,14 @@ class QwenImageInitializer:
         bake_lora: bool = True,
     ) -> None:
         # Use model_path if provided, otherwise fall back to model_config.model_name
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(QwenWeightDefinition),
+        )
         QwenImageInitializer._init_config(model, model_config)
         weights = QwenImageInitializer._load_weights(path)
         QwenImageInitializer._init_tokenizers(model, path)

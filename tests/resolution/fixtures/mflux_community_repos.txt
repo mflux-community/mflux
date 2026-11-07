@@ -1,0 +1,50 @@
+anima-aesthetic bf16 q4 q5 q6 q8
+anima-base bf16 q4 q5 q6 q8
+anima-turbo bf16 q4 q5 q6 q8
+boogu-image-turbo bf16 q3 q4 q5 q6 q8
+ernie-image-base bf16 q3 q4 q5 q6 q8
+ernie-image-turbo bf16 q3 q4 q5 q6 q8
+fibo bf16 q3 q4 q5 q6 q8
+fibo-1-5 bf16 q3 q4 q5 q6 q8
+fibo-2-0-dev bf16 q3 q4 q5 q6 q8
+fibo-2-0-edit-turbo bf16 q3 q4 q5 q6 q8
+fibo-edit bf16 q3 q4 q5 q6 q8
+fibo-edit-1-5-base bf16 q3 q4 q5 q6 q8
+fibo-edit-1-5-turbo bf16 q3 q4 q5 q6 q8
+fibo-edit-rmbg bf16 q3 q4 q5 q6 q8
+fibo-lite bf16 q3 q4 q5 q6 q8
+flux-1-dev bf16 q3 q4 q5 q6 q8
+flux-1-dev-controlnet-canny bf16 q3 q4 q5 q6 q8
+flux-1-dev-controlnet-upscaler bf16 q3 q4 q5 q6 q8
+flux-1-dev-depth bf16 q3 q6 q8
+flux-1-dev-fill bf16 q3 q4 q5 q6 q8
+flux-1-dev-fill-catvton bf16 q3 q4 q5 q6 q8
+flux-1-dev-kontext bf16 q3 q4 q5 q6 q8
+flux-1-krea-dev bf16 q3 q4 q5 q6 q8
+flux-1-schnell bf16 q3 q4 q5 q6 q8
+flux-1-schnell-controlnet-canny bf16 q3 q4 q5 q6 q8
+flux-2-klein-base-4b bf16 q3 q4 q5 q6 q8
+flux-2-klein-base-9b bf16 q3 q4 q5 q6 q8
+flux-3-image-klein bf16 q3 q4 q5 q6 q8
+flux-3-image-klein-base bf16 q3 q4 q5 q6 q8
+flux2-klein-4b bf16 q3 q4 q5 q6 q8
+flux2-klein-9b bf16 q3 q4 q5 q6 q8
+flux2-klein-9b-kv bf16 q3 q4 q5 q6 q8
+ideogram-4 bf16 q3 q4 q5 q6 q8
+iris-3b bf16 q3 q4 q5 q6 q8
+iris-3b-turbo bf16 q3 q4 q5 q6 q8
+krea-2-raw bf16 q3 q4 q5 q6 q8
+krea-2-turbo bf16 q3 q4 q5 q6 q8
+ming-image-0-1 bf16 q3 q4 q5 q6 q8
+moss-image-sft bf16 q3 q4 q5 q6 q8
+qwen-image bf16 q3 q4 q5 q6 q8
+qwen-image-2-1 bf16 q3 q4 q5 q6 q8
+qwen-image-2-1-controlnet-union bf16 q4 q6 q8
+qwen-image-2-1-turbo bf16 q3 q4 q5 q6 q8
+qwen-image-2512 bf16 q3 q4 q5 q6 q8
+qwen-image-edit bf16 q3 q4 q5 q6 q8
+qwen-image-edit-2509 bf16 q3 q4 q5 q6 q8
+qwen-image-edit-2511 bf16 q3 q4 q5 q6 q8
+z-image-base bf16 q3 q4 q5 q6 q8
+z-image-turbo bf16 q3 q4 q5 q6 q8
+z-image-turbo-controlnet-union-2-1 bf16 q3 q4 q5 q6 q8

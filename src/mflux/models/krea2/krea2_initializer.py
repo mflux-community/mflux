@@ -6,6 +6,7 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -28,7 +29,16 @@ class Krea2Initializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(
+                Krea2WeightDefinition, Krea2WeightDefinition.get_download_patterns(model_config.model_name)
+            ),
+        )
         Krea2Initializer._init_config(model, model_config)
         weights = Krea2Initializer._load_weights(path, model_config)
         Krea2Initializer._init_tokenizers(model, path)
@@ -61,7 +71,16 @@ class Krea2Initializer:
         if control_source is None:
             # Checked before the base loads, which takes a while.
             raise ValueError("No depth ControlNet checkpoint: pass controlnet_path or a model config that names one.")
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(
+                Krea2WeightDefinition, Krea2WeightDefinition.get_download_patterns(model_config.model_name)
+            ),
+        )
         Krea2Initializer._init_config(model, model_config)
         weights = Krea2Initializer._load_weights(path, model_config)
         Krea2Initializer._init_tokenizers(model, path)

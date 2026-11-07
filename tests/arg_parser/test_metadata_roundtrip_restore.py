@@ -268,6 +268,49 @@ def test_a_sidecar_without_a_weights_source_restores_the_entry(parse, sidecar):
     assert args.model_path is None
 
 
+# A run redirected to a pre-quantized repo (#938) records the repo in weights_repo and no
+# model_path. Restoring only "model" replays the upstream repo id as a path, which the
+# resolver keeps as given, so the replay loaded the bf16 upstream weights instead.
+KLEIN_Q8 = "mflux-community/flux2-klein-4b-mflux-q8"
+KLEIN_EXTRA = ("flux2-klein-9b", "flux2-klein-base-4b", "flux2-klein-base-9b", "flux2-klein-9b-kv")
+
+
+def _klein_weights(args) -> str:
+    from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
+
+    config = ConfigResolution.resolve_restricted(
+        args.model, "flux2-klein-4b", model_path=args.model_path, base_model=args.base_model, extra_keys=KLEIN_EXTRA
+    )
+    return PrequantizedResolution.resolve(config, args.model_path, args.quantize)[0]
+
+
+@pytest.mark.fast
+def test_a_redirected_run_replays_the_repo_it_loaded(parse, sidecar):
+    prior = sidecar(model="black-forest-labs/FLUX.2-klein-4B", weights_repo=KLEIN_Q8, quantize=8, image_paths=None)
+    args = parse(flux2_generate, "--config-from-metadata", str(prior))
+    assert args.model == args.model_path == KLEIN_Q8
+    assert args.base_model == "black-forest-labs/FLUX.2-klein-4B"
+    assert args.quantize == 8
+    assert _klein_weights(args) == KLEIN_Q8
+
+
+@pytest.mark.fast
+def test_an_explicit_model_beats_the_recorded_weights_repo(parse, sidecar):
+    prior = sidecar(model="black-forest-labs/FLUX.2-klein-4B", weights_repo=KLEIN_Q8, quantize=8, image_paths=None)
+    args = parse(flux2_generate, "--model", "/models/klein-4b-q4", "--config-from-metadata", str(prior))
+    assert args.model == args.model_path == "/models/klein-4b-q4"
+    assert args.base_model is None
+
+
+@pytest.mark.fast
+def test_a_sidecar_without_a_weights_repo_replays_as_before(parse, sidecar):
+    prior = sidecar(model="black-forest-labs/FLUX.2-klein-4B", quantize=8, image_paths=None)
+    args = parse(flux2_generate, "--config-from-metadata", str(prior))
+    assert args.model == args.model_path == "black-forest-labs/FLUX.2-klein-4B"
+    assert args.base_model is None
+    assert _klein_weights(args) == "black-forest-labs/FLUX.2-klein-4B"
+
+
 @pytest.mark.fast
 def test_the_recorded_entry_rides_along_as_the_base(parse, sidecar):
     # The weights source alone erases the run's family. The entry it resolved to comes
