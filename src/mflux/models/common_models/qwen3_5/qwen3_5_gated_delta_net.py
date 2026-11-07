@@ -34,8 +34,13 @@ class Qwen35GatedDeltaNet(nn.Module):
         value_head_dim: int,
         conv_kernel_size: int,
         rms_norm_eps: float,
+        fused_norm: bool = False,
+        beta_in_float32: bool = True,
     ):
         super().__init__()
+        # beta_in_float32=False takes the sigmoid of the beta projection in the model dtype, as the
+        # Qwen-Image 2.1 small text encoder was written; MOSS-Image takes it in float32.
+        self.beta_in_float32 = beta_in_float32
         self.num_key_heads = num_key_heads
         self.num_value_heads = num_value_heads
         self.key_head_dim = key_head_dim
@@ -47,7 +52,7 @@ class Qwen35GatedDeltaNet(nn.Module):
         self.conv1d = Qwen35CausalConv1d(conv_dim, conv_kernel_size)
         self.dt_bias = mx.ones((num_value_heads,))
         self.A_log = mx.zeros((num_value_heads,))
-        self.norm = Qwen35GatedRMSNorm(value_head_dim, eps=rms_norm_eps)
+        self.norm = Qwen35GatedRMSNorm(value_head_dim, eps=rms_norm_eps, fused=fused_norm)
         self.out_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
         self.in_proj_qkv = nn.Linear(hidden_size, conv_dim, bias=False)
         self.in_proj_z = nn.Linear(hidden_size, self.value_dim, bias=False)
@@ -64,7 +69,8 @@ class Qwen35GatedDeltaNet(nn.Module):
         value = value.reshape(batch, seq_len, self.num_value_heads, self.value_head_dim)
 
         z = self.in_proj_z(hidden_states).reshape(batch, seq_len, self.num_value_heads, self.value_head_dim)
-        beta = mx.sigmoid(self.in_proj_b(hidden_states).astype(mx.float32))
+        beta = self.in_proj_b(hidden_states)
+        beta = mx.sigmoid(beta.astype(mx.float32) if self.beta_in_float32 else beta)
         a = self.in_proj_a(hidden_states).astype(mx.float32)
         g = -mx.exp(self.A_log.astype(mx.float32)) * nn.softplus(a + self.dt_bias.astype(mx.float32))
 
@@ -78,11 +84,13 @@ class Qwen35GatedDeltaNet(nn.Module):
         return self.out_proj(core)
 
     @staticmethod
-    def _gated_delta_rule(query: mx.array, key: mx.array, value: mx.array, g: mx.array, beta: mx.array) -> mx.array:
+    def _gated_delta_rule(
+        query: mx.array, key: mx.array, value: mx.array, g: mx.array, beta: mx.array, chunk: int | None = None
+    ) -> mx.array:
         # Chunked form of the gated delta rule, in float32, as in the reference. Inside a chunk the
         # update is a few matrix products. Only the state between chunks is serial, so a 4096-token
         # prompt takes 64 serial steps for each layer, not 4096.
-        chunk = Qwen35GatedDeltaNet.CHUNK_SIZE
+        chunk = chunk or Qwen35GatedDeltaNet.CHUNK_SIZE
         query = Qwen35GatedDeltaNet._l2_normalize(query.astype(mx.float32))
         key = Qwen35GatedDeltaNet._l2_normalize(key.astype(mx.float32))
         # (B, L, H, D) -> (B, H, L, D) and (B, L, H) -> (B, H, L)

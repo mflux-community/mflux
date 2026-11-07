@@ -9,11 +9,11 @@ from PIL import Image
 from transformers import AutoTokenizer
 
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common_models.qwen3_5.qwen3_5_text_model import Qwen35TextModel
 from mflux.models.common_models.qwen3_vl.qwen3_vl_multimodal import Qwen3VLMultimodal
 from mflux.models.common_models.qwen3_vl.qwen3_vl_processor import Qwen3VLProcessor
 from mflux.models.common_models.qwen3_vl.qwen3_vl_vision_model import Qwen3VLVisionModel
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_text_fusion import Qwen21TextFusion
-from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen35_language_model import Qwen35LanguageModel
 from mflux.models.qwen21.model.qwen21_small_text_encoder.zen_image_edit_weights import ZenImageEditWeights
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import QwenImage21WeightDefinition
 
@@ -32,7 +32,7 @@ class Qwen21SmallTextEncoder(nn.Module):
     def __init__(self, encoder_config: dict, fusion_config: dict):
         super().__init__()
         text = encoder_config["text_config"]
-        self.language_model = Qwen35LanguageModel(text)
+        self.language_model = Qwen21SmallTextEncoder._language_model(text)
         vision_config = encoder_config["vision_config"]
         if vision_config.get("deepstack_visual_indexes"):
             raise ValueError("The Qwen3.5 small text encoder does not support deepstack vision features.")
@@ -96,6 +96,38 @@ class Qwen21SmallTextEncoder(nn.Module):
         positions = Qwen3VLMultimodal.mrope_positions(input_ids, image_grid_thw, self.image_token_id, self.merge_size)
         # (1, L, K * d): the student layers side by side, the layout the adapter was trained on.
         return mx.concatenate(self.language_model.hidden_states(hidden, positions, self.student_layers), axis=-1)
+
+    @staticmethod
+    def _language_model(text: dict) -> Qwen35TextModel:
+        # The shared Qwen3.5 tower, built from the checkpoint's text_config. fused_norm and
+        # beta_in_float32=False keep the operations this encoder was validated with.
+        rope = text["rope_parameters"]
+        if not rope.get("mrope_interleaved", False):
+            raise ValueError("Only the interleaved M-RoPE layout of Qwen3.5 is supported.")
+        sizes = (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "linear_num_key_heads",
+            "linear_num_value_heads",
+            "linear_key_head_dim",
+            "linear_value_head_dim",
+            "linear_conv_kernel_dim",
+            "rms_norm_eps",
+        )
+        return Qwen35TextModel(
+            layer_types=list(text["layer_types"]),
+            mrope_section=list(rope["mrope_section"]),
+            fused_norm=True,
+            beta_in_float32=False,
+            partial_rotary_factor=rope.get("partial_rotary_factor", 1.0),
+            rope_theta=rope["rope_theta"],
+            **{key: text[key] for key in sizes},
+        )
 
     @staticmethod
     def load() -> tuple["Qwen21SmallTextEncoder", Qwen3VLProcessor]:
