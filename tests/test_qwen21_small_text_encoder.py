@@ -14,7 +14,7 @@ from transformers import Qwen3_5Config, Qwen3_5ForConditionalGeneration
 
 from mflux.models.common.resolution.model_revisions import ModelRevisions
 from mflux.models.common.resolution.path_resolution import PathResolution
-from mflux.models.common_models.qwen3_5 import Qwen35GatedDeltaNet
+from mflux.models.common_models.qwen3_5 import Qwen35GatedDeltaNet, Qwen35TextModel
 from mflux.models.qwen21 import qwen21_initializer, qwen_image21_initializer
 from mflux.models.qwen21.cli import qwen21_edit_generate, qwen21_generate
 from mflux.models.qwen21.model.qwen21_small_text_encoder import zen_image_edit_weights
@@ -656,3 +656,12 @@ def test_a_valid_206_range_response_is_yielded_with_the_requested_range(monkeypa
     assert seen["url"] == "https://example.com/transformer/shard.safetensors"
     assert seen["headers"]["range"] == "bytes=16-31"
     assert seen["headers"]["authorization"] == "token fake"
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("layers", [(3,), (-1,), (0, 9)])
+def test_hidden_states_rejects_layer_indices_out_of_range_before_running(layers):
+    # Two layers: valid indices are 0 (embedding) to 2 (last layer, final norm). A bad one fails up front
+    model = SimpleNamespace(mrope=object(), layers=[object(), object()])
+    with pytest.raises(ValueError, match="outside 0..2"):
+        Qwen35TextModel.hidden_states(model, mx.zeros((1, 2, 4)), mx.zeros((3, 1, 2)), layers)

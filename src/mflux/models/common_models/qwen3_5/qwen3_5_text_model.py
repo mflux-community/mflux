@@ -73,6 +73,10 @@ class Qwen35TextModel(nn.Module):
         # and the last index is the final-norm output.
         if self.mrope is None:
             raise ValueError("hidden_states needs a Qwen35TextModel built with an mrope_section.")
+        # A layer list from a checkpoint config is checked before the layers run, not at the final lookup
+        invalid = [index for index in layers if not 0 <= index <= len(self.layers)]
+        if invalid:
+            raise ValueError(f"Layer indices {invalid} are outside 0..{len(self.layers)}.")
         rotary = self.mrope(positions, hidden.dtype)
         collected = {0: hidden} if 0 in layers else {}
         for index, layer in enumerate(self.layers, start=1):
