@@ -1,5 +1,6 @@
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -25,7 +26,7 @@ class MingImageInitializer:
         model.callbacks = CallbackRegistry()
         model.tiling_config = None
         model.lora_paths, model.lora_scales = None, None
-        model.weights_path = model_path if model_path else model_config.model_name
+        model.weights_path = PrequantizedResolution.weights_root(model_config, model_path, quantize)
         model.quantize_args = (quantize, text_encoder_quantize)
         weights = MingImageInitializer._load(model.weights_path)
         model.tokenizers = TokenizerLoader.load_all(

@@ -3,6 +3,7 @@ from mflux.models.boogu.model.boogu_text_encoder import BooguTextEncoder
 from mflux.models.boogu.model.boogu_transformer.boogu_transformer import BooguImageTransformer
 from mflux.models.boogu.weights.boogu_weight_definition import BooguWeightDefinition
 from mflux.models.common.config import ModelConfig
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -23,7 +24,9 @@ class BooguInitializer:
         quantize: int | None,
         model_path: str | None = None,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, **PrequantizedResolution.layout(BooguWeightDefinition)
+        )
         BooguInitializer._init_config(model, model_config)
         weights = BooguInitializer._load_weights(path)
         BooguInitializer._init_tokenizers(model, path)

@@ -5,6 +5,7 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -30,7 +31,14 @@ class Fibo2Initializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = True,
     ) -> None:
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(Fibo2WeightDefinition),
+        )
         model.prompt_cache = {}
         model.model_config = model_config
         model.callbacks = CallbackRegistry()
