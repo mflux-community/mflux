@@ -156,31 +156,11 @@ class PathResolution:
     def _find_complete_cached_snapshot(
         repo_id: str | None, patterns: list[str], saved_subdirs: list[str] | None = None
     ) -> Path | None:
-        if repo_id is None:
-            return None
-
-        # Build the cache directory path for this repo
-        # HuggingFace cache structure: {cache_dir}/models--{org}--{model}/snapshots/{revision}/
-        repo_cache_name = f"models--{repo_id.replace('/', '--')}"
-        repo_cache_dir = Path(HF_HUB_CACHE) / repo_cache_name / "snapshots"
-
-        if not repo_cache_dir.exists():
-            return None
-
         # Extract subdirectories that need safetensors files (e.g., "vae/*.safetensors" → "vae")
         required_subdirs = PathResolution._get_required_subdirs_with_safetensors(patterns)
         saved_layout_differs = bool(PathResolution._uncovered_saved_subdirs(patterns, saved_subdirs))
 
-        # Check each snapshot for completeness, prefer more recent ones
-        snapshots = sorted(repo_cache_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
-        pinned = ModelRevisions.get(repo_id)
-        if pinned is not None:
-            # Only the pinned commit counts: another snapshot of the repo can hold other weights.
-            snapshots = [repo_cache_dir / pinned]
-
-        for snapshot_path in snapshots:
-            if not snapshot_path.is_dir():
-                continue
+        for snapshot_path in PathResolution._cached_snapshots(repo_id):
             if PathResolution._is_snapshot_complete(snapshot_path, required_subdirs, patterns):
                 logger.debug(f"Found complete cached snapshot: {snapshot_path}")
                 return snapshot_path
@@ -190,6 +170,45 @@ class PathResolution:
                 return snapshot_path
 
         return None
+
+    @staticmethod
+    def _find_complete_saved_snapshot(repo_id: str | None, saved_subdirs: list[str]) -> Path | None:
+        # A cached mflux-save upload (the mflux-community pre-quantized repos): shards and index in every save subdir.
+        if not saved_subdirs:
+            return None
+        for snapshot_path in PathResolution._cached_snapshots(repo_id):
+            if PathResolution._is_saved_snapshot_complete(snapshot_path, saved_subdirs):
+                return snapshot_path
+        return None
+
+    @staticmethod
+    def _cached_snapshots(repo_id: str | None) -> list[Path]:
+        if repo_id is None:
+            return []
+
+        # Build the cache directory path for this repo
+        # HuggingFace cache structure: {cache_dir}/models--{org}--{model}/snapshots/{revision}/
+        repo_cache_name = f"models--{repo_id.replace('/', '--')}"
+        repo_cache_dir = Path(HF_HUB_CACHE) / repo_cache_name / "snapshots"
+
+        if not repo_cache_dir.exists():
+            return []
+
+        pinned = ModelRevisions.get(repo_id)
+        if pinned is not None:
+            # Only the pinned commit counts: another snapshot of the repo can hold other weights.
+            snapshot = repo_cache_dir / pinned
+            return [snapshot] if snapshot.is_dir() else []
+
+        # Prefer more recent snapshots. A dangling entry has no mtime and is skipped, not raised.
+        dated: list[tuple[float, Path]] = []
+        for snapshot in repo_cache_dir.iterdir():
+            try:
+                dated.append((snapshot.stat().st_mtime, snapshot))
+            except OSError:
+                continue
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return [snapshot for _, snapshot in dated if snapshot.is_dir()]
 
     @staticmethod
     def _get_required_subdirs_with_safetensors(patterns: list[str]) -> set[str]:

@@ -4,6 +4,7 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
@@ -41,7 +42,15 @@ class Flux2Initializer:
         if small_text_encoder:
             Flux2Initializer.validate_small_text_encoder(model_config)
         precision = ComputePrecision(compute_precision)
-        path = model_path if model_path else model_config.model_name
+        definition = Flux2KleinNoTextEncoderWeightDefinition if small_text_encoder else Flux2KleinWeightDefinition
+        path = PrequantizedResolution.weights_root(
+            model_config,
+            model_path,
+            quantize,
+            has_loras=bool(lora_paths),
+            bake_lora=bake_lora,
+            **PrequantizedResolution.layout(definition),
+        )
         Flux2Initializer._init_config(model, model_config)
         model.small_text_encoder = small_text_encoder
         if small_text_encoder:

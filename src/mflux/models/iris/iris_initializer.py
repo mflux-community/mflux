@@ -2,6 +2,7 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.lora_resolution import LoraResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights, MetaData
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -25,7 +26,7 @@ class IrisInitializer:
         bake_lora: bool = False,
     ) -> None:
         definition = IrisInitializer.weight_definition(model_config)
-        saved_path = IrisInitializer.saved_path(model_config, model_path)
+        saved_path = IrisInitializer.saved_path(model_config, model_path, quantize, bool(lora_paths), bake_lora)
         IrisInitializer._init_config(model, model_config)
         weights = IrisInitializer._load_weights(definition, model_config, saved_path)
         IrisInitializer._init_tokenizers(model, definition, saved_path)
@@ -34,12 +35,18 @@ class IrisInitializer:
         IrisInitializer._apply_loras(model, weights, lora_paths, lora_scales, bake_lora)
 
     @staticmethod
-    def saved_path(model_config: ModelConfig, model_path: str | None) -> str | None:
+    def saved_path(
+        model_config: ModelConfig,
+        model_path: str | None,
+        quantize: int | None = None,
+        has_loras: bool = False,
+        bake_lora: bool = False,
+    ) -> str | None:
         # The Iris repo id (what a metadata sidecar records as the model) means the upstream checkpoints. Any other
         # path is a saved model, even when it is the model_name of a config that mflux-save built for that path, or
         # when it only arrives as that model_name (Iris(model_config=...) without model_path).
         upstream_repo = model_config.base_model or model_config.model_name
-        candidate = model_path or model_config.model_name
+        candidate = PrequantizedResolution.weights_root(model_config, model_path, quantize, has_loras, bake_lora)
         return None if candidate == upstream_repo else candidate
 
     @staticmethod
