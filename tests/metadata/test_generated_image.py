@@ -69,8 +69,10 @@ def _reset_run_model_path():
     # arg-parser tests in the same session parse custom checkpoints and would leak
     # their path into the writers built directly here.
     GeneratedImage.model_path = None
+    GeneratedImage.weights_repo = None
     yield
     GeneratedImage.model_path = None
+    GeneratedImage.weights_repo = None
 
 
 def test_builtin_run_stores_null_base_model(tmp_path):
@@ -371,3 +373,34 @@ def test_scales_and_strengths_keep_full_precision(tmp_path):
     assert metadata["lora_scales"] == [0.125]
     assert metadata["controlnet_strength"] == 0.375
     assert metadata["redux_image_strengths"] == [0.005]
+
+
+@pytest.mark.fast
+def test_the_sidecar_records_a_pre_quantized_repo_only_when_one_was_loaded(tmp_path):
+    # -q 4 on a registry entry can load mflux-community/<stem>-mflux-q4 (#938). "model" and
+    # model_path stay what they were, so -C replays the same command; weights_repo says which
+    # repo the weights came from, and a run that loaded the entry's own repo has no such key.
+    def stored_metadata(name):
+        output_path = tmp_path / name
+        GeneratedImage(
+            image=Image.new("RGB", (16, 16), "white"),
+            model_config=ModelConfig.z_image_turbo(),
+            seed=42,
+            prompt="test prompt",
+            steps=9,
+            guidance=None,
+            precision=mx.bfloat16,
+            quantization=4,
+            generation_time=1.23,
+            height=16,
+            width=16,
+        ).save(path=output_path, overwrite=True, export_json_metadata=True)
+        return json.loads(output_path.with_suffix(".metadata.json").read_text())
+
+    assert "weights_repo" not in stored_metadata("upstream.png")
+
+    GeneratedImage.weights_repo = "mflux-community/z-image-turbo-mflux-q4"
+    stored = stored_metadata("repo.png")
+    assert stored["weights_repo"] == "mflux-community/z-image-turbo-mflux-q4"
+    assert stored["model"] == ModelConfig.z_image_turbo().model_name
+    assert stored["model_path"] is None

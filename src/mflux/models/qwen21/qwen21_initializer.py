@@ -9,6 +9,7 @@ from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
+from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
@@ -37,7 +38,9 @@ class Qwen21Initializer:
         small_text_encoder: bool = False,
     ) -> None:
         precision = ComputePrecision(compute_precision)
-        path = model_path if model_path else model_config.model_name
+        path = PrequantizedResolution.weights_root(
+            model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
+        )
         Qwen21Initializer.init_config(model, model_config)
         model.small_text_encoder = small_text_encoder
         definition = Qwen21NoTextEncoderWeightDefinition if small_text_encoder else Qwen21WeightDefinition

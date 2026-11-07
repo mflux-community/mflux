@@ -31,7 +31,9 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 
 ## Quantization
 
-Quantization reduces memory use and speeds up inference. Most models support `--quantize` (3, 4, 5, 6, 8). This is the on-the-fly option, and quantization is performed as weights are loaded.
+Quantization reduces memory use and speeds up inference. Most models support `--quantize` (3, 4, 5, 6, 8).
+
+For most built-in models, `--quantize N` loads the pre-quantized `mflux-community/<model>-mflux-q<N>` repo, a much smaller download than the upstream bf16 weights. The upstream weights are still used, and quantized as they load, when they are already fully in your Hugging Face cache, when a LoRA is baked in (the bake needs the bf16 weights), when the org has no repo at that level, for `mflux-train` and `mflux-save`, and for a local path or a third-party `--model`. The log line `Weights: ...` says which one was loaded and why.
 
 ```sh
 mflux-generate-z-image-turbo \

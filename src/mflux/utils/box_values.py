@@ -39,9 +39,18 @@ class BoxValues:
                 part = int(part_value.strip())
                 parts.append(part)
             except ValueError:  # noqa: PERF203
-                # not an int - is it a %?
-                if (part_value := part_value.strip()).endswith("%"):
-                    parts.append(part_value)
+                # not a plain int - is it an "<int>%" percentage?
+                part_value = part_value.strip()
+                if part_value.endswith("%"):
+                    percent = part_value[:-1].strip()
+                    try:
+                        int(percent)
+                    except ValueError:
+                        raise BoxValueError(f"Invalid padding value: {part_value}") from None
+                    # store a canonical "<int>%" so normalize_to_dimensions() never sees
+                    # a malformed percentage (e.g. "a%", "%%", "%10%") that would otherwise
+                    # crash later with a raw ValueError during image generation.
+                    parts.append(f"{percent}%")
                 else:
                     raise BoxValueError(f"Invalid padding value: {part_value}")
 
@@ -59,7 +68,7 @@ class BoxValues:
             return BoxValues(top=parts[0], right=parts[1], bottom=parts[2], left=parts[3])
         else:
             raise BoxValueError(
-                "Invalid outpaint padding box value format: {value} "
+                f"Invalid outpaint padding box value format: {value} "
                 "Expected: 1 (all-sides), 2 (top/bottom, left/right) "
                 "or 4 (top, right, bottom, left)values of int or percentages. e.g. 10px, 20%"
             )
