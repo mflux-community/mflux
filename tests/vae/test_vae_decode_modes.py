@@ -147,7 +147,7 @@ def test_each_model_uses_the_low_memory_decode(monkeypatch, tmp_path, module, pa
     if module is ideogram4_initializer:
         monkeypatch.setattr(module.Ideogram4Initializer, "_transformer_config", staticmethod(lambda path: None))
         monkeypatch.setattr(module.Ideogram4Initializer, "_text_encoder_kwargs", staticmethod(lambda path: {}))
-        monkeypatch.setattr(module.Ideogram4TextEncoder, "create", staticmethod(lambda *args, **kwargs: None))
+        monkeypatch.setattr(module, "Ideogram4TextEncoder", lambda *args, **kwargs: None)
         module.Ideogram4Initializer._init_models(model, tmp_path)
     else:
         call(module, model)

@@ -90,7 +90,7 @@ class Ideogram4Initializer:
         model.unconditional_transformer = Ideogram4Transformer(
             Ideogram4Initializer._transformer_config(model_path / "unconditional_transformer")
         )
-        model.text_encoder = Ideogram4TextEncoder.create(
+        model.text_encoder = Ideogram4TextEncoder(
             **Ideogram4Initializer._text_encoder_kwargs(model_path / "text_encoder")
         )
 
