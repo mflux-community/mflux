@@ -329,7 +329,7 @@ class TestLoad:
             raise OSError("offline")
 
         monkeypatch.setattr(small_module, "hf_hub_download", fail)
-        with pytest.raises(RuntimeError, match="3.3 GB"):
+        with pytest.raises(RuntimeError, match="3.6 GB"):
             ZImageSmallTextEncoder.load()
 
 

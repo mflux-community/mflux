@@ -199,7 +199,7 @@ mflux-generate-z-image-turbo \
 - Plain scene prompts come out close to the native encoder. Three kinds of prompt come out worse: text drawn in the image ("OPEN 24 HOURS" became "OPEN 20 HOUTS"), attribute binding ("long hair, blue eyes" gave blue hair) and non-English prompts (a German prompt lost the river and the fog). Per token, the adapter's output is 0.78–0.95 cosine to the 4B encoder's.
 - `-q` quantizes the 1.7B student like the rest of the model; the adapter always stays float32.
 - `mflux-save` and `save_model()` refuse a model built with the flag.
-- The first run downloads about 3.3 GB instead of the 7.5 GB Qwen3-4B `text_encoder`.
+- The first run downloads about 3.6 GB instead of the 8.0 GB Qwen3-4B `text_encoder`.
 
 The encoder is smaller, but a single CLI image does not need less memory: the CLI frees the text encoder before the denoising, and the denoising sets the peak. The saving shows when the encoder stays loaded, as with several `--seed` values, the Python API or a server. Test setup: Apple Silicon Mac, 64 GB, MLX 0.32.0, Z-Image-Turbo `-q 8` saved with `mflux-save`, 1024×1024, 9 steps.
 
@@ -207,8 +207,8 @@ The encoder is smaller, but a single CLI image does not need less memory: the CL
 |---|---|---|
 | Peak, one image | 7.5 GB | 7.5 GB |
 | Peak, two seeds | 11.8 GB | 9.6 GB |
-| Weights loaded, bf16 / `-q 8` | 19.1 / 10.2 GB | 15.0 / 8.1 GB |
-| Download of the text encoder | 7.5 GB | 3.3 GB |
+| Weights loaded, bf16 / `-q 8` | 20.5 / 11.0 GB | 16.1 / 8.7 GB |
+| Download of the text encoder | 8.0 GB | 3.6 GB |
 
 Loaded from the Hub instead of a saved model, the peak is about 26 GB either way, because the transformer weights there are float32.
 
