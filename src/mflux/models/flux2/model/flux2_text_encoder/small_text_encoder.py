@@ -170,11 +170,11 @@ class Flux2SmallTextEncoder(nn.Module):
         except (GatedRepoError, RepositoryNotFoundError) as e:
             raise RuntimeError(
                 f"--small-text-encoder: Hugging Face repo '{repo_id}' was not found or is not accessible. "
-                f"It needs '{SMALL_ENCODER_REPO}' and '{ADAPTER_REPO}' (~2.3 GB combined)."
+                f"It needs '{SMALL_ENCODER_REPO}' and '{ADAPTER_REPO}' (~2.4 GB combined)."
             ) from e
         except (HfHubHTTPError, OSError) as e:
             raise RuntimeError(
                 f"--small-text-encoder: downloading '{repo_id}' failed ({e}). "
-                f"It needs '{SMALL_ENCODER_REPO}' and '{ADAPTER_REPO}' (~2.3 GB combined); "
+                f"It needs '{SMALL_ENCODER_REPO}' and '{ADAPTER_REPO}' (~2.4 GB combined); "
                 "check your network connection or HF_HUB_OFFLINE setting and retry."
             ) from e
