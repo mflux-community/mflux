@@ -6,6 +6,7 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 import pytest
+from mlx.utils import tree_map
 
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
@@ -447,14 +448,42 @@ def test_ideogram4_qwen_taps_toy_shape() -> None:
         max_position_embeddings=16,
         head_dim=4,
     )
+    # Random weights, so every layer's output differs and a wrong index or layout shows up
+    mx.random.seed(0)
+    model.update(
+        tree_map(
+            lambda p: (
+                mx.random.randint(0, 255, p.shape).astype(p.dtype)
+                if mx.issubdtype(p.dtype, mx.integer)
+                else (0.5 * mx.random.normal(p.shape)).astype(p.dtype)
+            ),
+            model.parameters(),
+        )
+    )
     ids = mx.array([[1, 2, 3, 0]], dtype=mx.int32)
     mask = mx.array([[1, 1, 1, 0]], dtype=mx.int32)
     pos = mx.array([[0, 1, 2, 0]], dtype=mx.int32)
 
     embeds = model.get_prompt_embeds(ids, mask, hidden_state_layers=(1, 2), position_ids=pos, interleave_layers=True)
-    mx.eval(embeds)
+    _, hidden = model(input_ids=ids, attention_mask=mask, output_hidden_states=True, position_ids=pos)
+    # Built by hand: feature h * num_layers + layer holds hidden unit h of that tapped layer
+    taps = [hidden[1], hidden[2]]
+    expected = mx.stack([taps[layer][..., h] for h in range(8) for layer in range(2)], axis=-1)
+    layer_major = mx.concatenate(taps, axis=-1)
+    wrong_index = mx.stack([[hidden[0], hidden[2]][layer][..., h] for h in range(8) for layer in range(2)], axis=-1)
+    mx.eval(embeds, expected, layer_major, wrong_index)
 
     assert embeds.shape == (1, 4, 16)
+    assert mx.array_equal(embeds, expected)
+    assert not mx.array_equal(embeds, layer_major)
+    assert not mx.array_equal(embeds, wrong_index)
+
+
+@pytest.mark.fast
+def test_ideogram4_tap_layers_are_the_old_taps_in_hidden_state_indices() -> None:
+    # The old encoder tapped layer outputs 0, 3, ..., 33 and 35; hidden-state index i is the output of layer i - 1
+    old_layer_outputs = (*range(0, 34, 3), 35)
+    assert Ideogram4TextEncoder.HIDDEN_STATE_LAYERS == tuple(index + 1 for index in old_layer_outputs)
 
 
 @pytest.mark.fast
