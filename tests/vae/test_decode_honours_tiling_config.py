@@ -15,6 +15,7 @@ from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.flux2.variants import Flux2Klein, Flux2KleinEdit
 from mflux.models.flux3.variants import Flux3Klein, Flux3KleinEdit
+from mflux.models.ideogram4.model import Ideogram4TextEncoder
 from mflux.models.ideogram4.variants import Ideogram4
 from mflux.models.krea2.variants import Krea2
 from mflux.models.lens.variants.txt2img.lens_image import LensImage
@@ -177,6 +178,8 @@ class _FakeIdeogram4Tokenizer:
 
 class _FakeIdeogram4TextEncoder:
     def get_prompt_embeds(self, input_ids, attention_mask, hidden_state_layers, position_ids, interleave_layers):  # noqa: ARG002
+        assert hidden_state_layers == Ideogram4TextEncoder.HIDDEN_STATE_LAYERS
+        assert interleave_layers is True
         return mx.zeros((1, input_ids.shape[1], 53248), dtype=mx.float32)
 
 

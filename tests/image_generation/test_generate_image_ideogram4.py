@@ -42,6 +42,8 @@ class FakeVAE:
 
 class FakeTextEncoder:
     def get_prompt_embeds(self, input_ids, attention_mask, hidden_state_layers, position_ids, interleave_layers):  # noqa: ARG002
+        assert hidden_state_layers == Ideogram4TextEncoder.HIDDEN_STATE_LAYERS
+        assert interleave_layers is True
         return mx.zeros((1, input_ids.shape[1], 53248), dtype=mx.float32)
 
 
@@ -438,7 +440,7 @@ def test_ideogram4_scheduler_presets() -> None:
 
 @pytest.mark.fast
 def test_ideogram4_qwen_taps_toy_shape() -> None:
-    model = Ideogram4TextEncoder.create(
+    model = Ideogram4TextEncoder(
         vocab_size=32,
         hidden_size=8,
         num_hidden_layers=2,

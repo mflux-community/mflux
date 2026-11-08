@@ -40,7 +40,7 @@ class TestTinyIdeogram4ModelSaving:
             "vae": TinyVAEStandIn(),
             "conditional_transformer": Ideogram4Transformer(TINY_TRANSFORMER_CONFIG),
             "unconditional_transformer": Ideogram4Transformer(TINY_TRANSFORMER_CONFIG),
-            "text_encoder": Ideogram4TextEncoder.create(
+            "text_encoder": Ideogram4TextEncoder(
                 vocab_size=128,
                 hidden_size=128,
                 num_hidden_layers=2,
