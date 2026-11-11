@@ -159,6 +159,11 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def sensenova_u15() -> "ModelConfig":
+        return AVAILABLE_MODELS["sensenova-u1.5"]
+
+    @staticmethod
+    @lru_cache
     def krea2() -> "ModelConfig":
         return AVAILABLE_MODELS["krea-2"]
 
@@ -625,6 +630,18 @@ AVAILABLE_MODELS = {
             "num_hidden_layers": 36,
             "rope_theta": 5000000.0,
         },
+    ),
+    "sensenova-u1.5": ModelConfig(
+        priority=42,
+        aliases=["sensenova-u1.5", "sensenova-u1.5-8b-mot", "sensenova"],
+        model_name="sensenova/SenseNova-U1.5-8B-MoT",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=None,
+        supports_guidance=True,
+        requires_sigma_shift=False,
     ),
     "flux2-klein-9b": ModelConfig(
         priority=12,

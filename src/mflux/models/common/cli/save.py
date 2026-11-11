@@ -33,6 +33,7 @@ from mflux.models.qwen.variants.txt2img.qwen_image import QwenImage
 from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
 from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2
+from mflux.models.sensenova.variants.txt2img.sensenova import SenseNova
 from mflux.models.z_image import ZImage, ZImageTurbo, ZImageTurboControlnet
 from mflux.utils.exceptions import ModelConfigError
 
@@ -92,6 +93,7 @@ MODEL_CLASSES: dict[str, type] = {
     "qwen-image-edit-2511": QwenImageEdit,
     "schnell": Flux1,
     "schnell-controlnet-canny": Flux1Controlnet,
+    "sensenova-u1.5": SenseNova,
     "seedvr2-3b": SeedVR2,
     "seedvr2-7b": SeedVR2,
     "z-image": ZImage,

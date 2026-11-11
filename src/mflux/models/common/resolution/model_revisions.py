@@ -61,6 +61,7 @@ class ModelRevisions:
         "Qwen/Qwen3-0.6B-Base": "da87bfb608c14b7cf20ba1ce41287e8de496c0cd",
         "Qwen/Qwen3-VL-4B-Instruct": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
         "SearchingMan/Z-Image-Turbo-student-adapter": "b545401c153e04b85d3383f3a2ac789aec44b61a",
+        "sensenova/SenseNova-U1.5-8B-MoT": "a2462cc1b549bace2c0896143bbbcbb3fa217c76",
         "speridlabs/iris-3b": "adc05b909fb05d4276d26aae5a52b36406b2ef26",
         "Tongyi-MAI/Z-Image": "04cc4abb7c5069926f75c9bfde9ef43d49423021",
         "Tongyi-MAI/Z-Image-Turbo": "f332072aa78be7aecdf3ee76d5c247082da564a6",

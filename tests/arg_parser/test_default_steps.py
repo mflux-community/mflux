@@ -25,6 +25,7 @@ from mflux.models.krea2.cli import krea2_controlnet_generate, krea2_generate
 from mflux.models.lens.cli import lens_generate
 from mflux.models.moss_image.cli import moss_image_generate
 from mflux.models.qwen.cli import qwen_image_edit_generate, qwen_image_generate
+from mflux.models.sensenova.cli import sensenova_generate
 from mflux.models.z_image.cli import (
     z_image_generate,
     z_image_turbo_generate,
@@ -48,6 +49,7 @@ CLI_DEFAULTS = [
     (krea2_controlnet_generate, "krea-2-controlnet-depth", 8),
     (lens_generate, "lens-turbo", 4),
     (moss_image_generate, "moss-image-sft", 50),
+    (sensenova_generate, "sensenova-u1.5", 50),
     (z_image_generate, "z-image", 50),
     (z_image_turbo_generate, "z-image-turbo", 9),
     (z_image_turbo_generate_controlnet, "z-image-turbo-controlnet-union-2.1", 8),

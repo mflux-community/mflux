@@ -34,7 +34,7 @@ Because README examples can drift, prefer verifying support against the current 
 
 ### Core generation
 
-- Text-to-image across Flux, Flux2, FLUX 3 Image Klein, Iris-3B, Qwen, Z-Image Turbo, FIBO.
+- Text-to-image across Flux, Flux2, FLUX 3 Image Klein, Iris-3B, SenseNova-U1.5, Qwen, Z-Image Turbo, FIBO.
 - Image-to-image where supported (Flux, Qwen, Z-Image Turbo, FIBO).
 
 ### Editing and conditioning
@@ -73,7 +73,7 @@ Because README examples can drift, prefer verifying support against the current 
 ### Prompt tooling
 
 - Prompt files.
-- Negative prompts where supported (not supported for Flux2 or FLUX 3 Image Klein; Iris-3B uses them only on the base model).
+- Negative prompts where supported (not supported for Flux2, FLUX 3 Image Klein or SenseNova-U1.5; Iris-3B uses them only on the base model).
 
 ### Training
 

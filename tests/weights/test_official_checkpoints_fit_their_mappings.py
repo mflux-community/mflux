@@ -36,6 +36,9 @@ from mflux.models.seedvr2.weights.seedvr2_weight_definition import (
     SeedVR2WeightDefinition3B,
     SeedVR2WeightDefinition7B,
 )
+from mflux.models.sensenova.model.sensenova_text_encoder.sensenova_text_encoder import SenseNovaTextEncoder
+from mflux.models.sensenova.model.sensenova_transformer.sensenova_transformer import SenseNovaTransformer
+from mflux.models.sensenova.weights.sensenova_weight_definition import SenseNovaWeightDefinition
 from mflux.models.z_image.weights.z_image_controlnet_weight_definition import ZImageControlnetWeightDefinition
 from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
 
@@ -70,6 +73,12 @@ from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightD
 #                             prefix filter (vision tower dropped)  (captured 2026-10-21)
 #   fibo2_transformer         briaai/Fibo-2.0-dev @ fb2b781f9e9e  transformer/  (captured 2026-10-23)
 #   fibo2_vae                 briaai/Fibo-2.0-dev @ fb2b781f9e9e  vae/  (captured 2026-10-23)
+#   sensenova_u15_transformer sensenova/SenseNova-U1.5-8B-MoT @ a2462cc1b549  model-*.safetensors, after the
+#                             transformer's key_transform (the *_mot_gen stream and the fm_modules; 563 tensors)
+#                             (captured 2026-11-11)
+#   sensenova_u15_text_encoder  sensenova/SenseNova-U1.5-8B-MoT @ a2462cc1b549  model-*.safetensors, after the
+#                             text encoder's key_transform (embed_tokens and the und stream; 547 tensors)
+#                             (captured 2026-11-11)
 # To regenerate one, take the keys of mx.load(<file>) (lazy, reads no weights) or of the shard index's weight_map;
 # only fibo_vlm_decoder is then filtered, to the "model.language_model" and "lm_head" prefixes.
 # A required mapping entry these names cannot satisfy would reject the official checkpoint at load time.
@@ -121,6 +130,8 @@ class _Component:
         ("moss_image_text_encoder", _Component.of(MOSSImageWeightDefinition, "text_encoder")),
         ("fibo2_transformer", _Component.of(Fibo2WeightDefinition, "transformer")),
         ("fibo2_vae", _Component.of(Fibo2WeightDefinition, "vae")),
+        ("sensenova_u15_transformer", SenseNovaWeightDefinition.source_transformer()),
+        ("sensenova_u15_text_encoder", SenseNovaWeightDefinition.source_text_encoder()),
     ],
 )
 def test_an_official_checkpoint_carries_every_required_weight(fixture, component):
@@ -165,6 +176,8 @@ class _Placement:
         ("moss_image_transformer", _Component.of(MOSSImageWeightDefinition, "transformer"), MOSSImageTransformer),
         ("moss_image_text_encoder", _Component.of(MOSSImageWeightDefinition, "text_encoder"), Qwen35TextModel),
         ("fibo2_transformer", _Component.of(Fibo2WeightDefinition, "transformer"), Fibo2Transformer),
+        ("sensenova_u15_transformer", SenseNovaWeightDefinition.source_transformer(), SenseNovaTransformer),
+        ("sensenova_u15_text_encoder", SenseNovaWeightDefinition.source_text_encoder(), SenseNovaTextEncoder),
     ],
 )  # fmt: skip
 def test_a_transformer_has_a_place_for_every_weight_of_its_official_checkpoint(fixture, component, build):

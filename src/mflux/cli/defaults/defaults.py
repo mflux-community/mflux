@@ -67,6 +67,7 @@ MODEL_INFERENCE_STEPS = {
     "qwen-image-2.1-controlnet-union": 40,
     "qwen-image-2.1-turbo": 8,
     "qwen-image-2.1-turbo-controlnet-union": 8,
+    "sensenova-u1.5": 50,
     "schnell": 4,
     "schnell-controlnet-canny": 4,
     "z-image": 50,

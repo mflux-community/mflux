@@ -27,6 +27,7 @@ from mflux.models.lens.cli import lens_generate
 from mflux.models.moss_image.cli import moss_image_generate
 from mflux.models.qwen.cli import qwen_image_edit_generate, qwen_image_generate
 from mflux.models.qwen21.cli import qwen21_controlnet_generate, qwen21_edit_generate, qwen21_generate
+from mflux.models.sensenova.cli import sensenova_generate
 from mflux.models.z_image.cli import z_image_generate, z_image_turbo_generate
 from mflux.utils.exceptions import ModelConfigError
 
@@ -47,6 +48,7 @@ CLI_MODELS = [
     (lens_generate, "lens-turbo", "dev", (), ()),
     (boogu_image_generate, "boogu-image-turbo", "dev", (), ()),
     (moss_image_generate, "moss-image-sft", "dev", moss_image_generate.FAMILY_MODELS, ()),
+    (sensenova_generate, "sensenova-u1.5", "dev", (), ()),
     (ideogram4_generate, "ideogram-4-fp8", "dev", (), ()),
     (z_image_generate, "z-image", "dev", z_image_generate.FAMILY_MODELS, ()),
     (flux2_generate, "flux2-klein-4b", "dev", flux2_generate.FAMILY_MODELS, ()),

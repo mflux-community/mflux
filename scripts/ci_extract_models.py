@@ -57,6 +57,8 @@ STANDARD_QUANTS = ["q3", "q4", "q5", "q6", "q8", "bf16"]
 FLUX3_QUANTS = ["q4", "q6", "q8", "bf16"]
 # q4 and q8 are the levels checked on Iris-3B (load-time, mflux-save round trip, images inspected).
 IRIS_QUANTS = ["q4", "q8", "bf16"]
+# q4 and q8 are the levels checked on SenseNova-U1.5 (load-time, mflux-save round trip, images inspected).
+SENSENOVA_QUANTS = ["q4", "q8", "bf16"]
 # The levels checked on Anima (renders inspected, mflux-save round trip). -q 3 breaks its 2B transformer.
 ANIMA_QUANTS = ["q4", "q5", "q6", "q8", "bf16"]
 # q4, q6 and q8 are the levels checked on FIBO 2 (mflux-save round trip, images inspected).
@@ -374,6 +376,15 @@ OVERLAY: dict[str, tuple[str, str, str, list[str], list[str], str, list[str] | N
         [],
         "active",
         STANDARD_QUANTS,
+    ),
+    "sensenova-u1.5": (
+        "image",
+        "sensenova",
+        "sensenova-u1.5",
+        ["mflux-generate-sensenova"],
+        [],
+        "active",
+        SENSENOVA_QUANTS,
     ),
     "anima-turbo": ("image", "anima", "anima-turbo", ["mflux-generate-anima"], [], "active", ANIMA_QUANTS),
     "anima-aesthetic": ("image", "anima", "anima-aesthetic", ["mflux-generate-anima"], [], "active", ANIMA_QUANTS),

@@ -230,6 +230,8 @@ def test_lora_kwargs_match_the_constructor():
     # MOSS-Image takes LoRAs too. mflux-save bakes them at load like every model, which folds them into the
     # weights before -q quantizes them.
     assert run_save("moss")["kwargs"]["bake_lora"] is True
+    # SenseNova-U1.5 saves a LoRA like MOSS-Image: no refusal, folded in before -q quantizes.
+    assert {"lora_paths", "lora_scales", "bake_lora"} <= run_save("sensenova")["kwargs"].keys()
 
 
 @pytest.mark.fast
@@ -265,3 +267,12 @@ def test_flux3_saves_with_the_config_of_the_entry_that_was_asked_for(name):
     built = run_save(name)
     assert built["kwargs"]["model_config"] is ConfigResolution.resolve(model_name=name)
     assert built["kwargs"]["model_config"].supports_guidance is (name == "flux3-klein-base")
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("name", ["sensenova", "sensenova-u1.5", "sensenova-u1.5-8b-mot"])
+def test_sensenova_saves_with_its_own_class_and_config(name):
+    built = run_save(name)
+
+    assert built["class"] is save.MODEL_CLASSES["sensenova-u1.5"]
+    assert built["kwargs"]["model_config"] is AVAILABLE_MODELS["sensenova-u1.5"]

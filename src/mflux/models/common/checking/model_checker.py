@@ -337,6 +337,10 @@ class ModelChecker:
             )
 
             return IrisTurboWeightDefinition if key == "iris-3b" else IrisWeightDefinition
+        if key == "sensenova-u1.5":
+            from mflux.models.sensenova.weights.sensenova_weight_definition import SenseNovaWeightDefinition
+
+            return SenseNovaWeightDefinition
         return None
 
     @staticmethod
