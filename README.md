@@ -217,7 +217,7 @@ Where the models and the main features came from, read from the merge history (`
 | Fused-qkv LoRA loading | [@deadmansahil](https://github.com/deadmansahil) | [#459](https://github.com/mflux-community/mflux/pull/459) |
 | Boogu-Image | [@plz12345](https://github.com/plz12345) | [#446](https://github.com/mflux-community/mflux/pull/446) |
 | MOSS-Image | [@vanch007](https://github.com/vanch007) | [#895](https://github.com/mflux-community/mflux/pull/895) |
-| SenseNova-U1.5 | [@cguldogan](https://github.com/cguldogan) | [#986](https://github.com/mflux-community/mflux/issues/986) |
+| SenseNova-U1.5 | [@cguldogan](https://github.com/cguldogan) | [#989](https://github.com/mflux-community/mflux/pull/989) |
 | Anima | [@fxd0h](https://github.com/fxd0h) | [#931](https://github.com/mflux-community/mflux/pull/931) |
 | PiD pixel-diffusion decoder | [@azrahello](https://github.com/azrahello) | [#490](https://github.com/mflux-community/mflux/pull/490) |
 | Z-Image Union ControlNet | [@fxd0h](https://github.com/fxd0h) | [#482](https://github.com/mflux-community/mflux/pull/482) |
