@@ -12,6 +12,7 @@ from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCr
 from mflux.models.flux3.latent_creator.flux3_latent_creator import Flux3LatentCreator
 from mflux.models.ideogram4.latent_creator.ideogram4_latent_creator import Ideogram4LatentCreator
 from mflux.models.iris.latent_creator.iris_latent_creator import IrisLatentCreator
+from mflux.models.sensenova.latent_creator.sensenova_latent_creator import SenseNovaLatentCreator
 
 SIZE = 256
 
@@ -160,6 +161,19 @@ def test_stepwise_saves_pixel_space_samples_without_a_vae(tmp_path) -> None:
 
     handler.call_before_loop(
         seed=1, prompt="a", latents=mx.zeros((1, 3, SIZE, SIZE)), config=_config(ModelConfig.iris_3b())
+    )
+
+    assert (tmp_path / "seed_1_step0of1.png").exists()
+
+
+@pytest.mark.fast
+def test_stepwise_saves_sensenova_samples_without_a_vae(tmp_path) -> None:
+    # SenseNova-U1.5 is pixel-space too: no VAE, and the sample already is the RGB image.
+    model = SimpleNamespace(bits=None, lora_paths=None, lora_scales=None)
+    handler = StepwiseHandler(model=model, output_dir=str(tmp_path), latent_creator=SenseNovaLatentCreator)
+
+    handler.call_before_loop(
+        seed=1, prompt="a", latents=mx.zeros((1, 3, SIZE, SIZE)), config=_config(ModelConfig.sensenova_u15())
     )
 
     assert (tmp_path / "seed_1_step0of1.png").exists()

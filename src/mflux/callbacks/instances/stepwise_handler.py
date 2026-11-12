@@ -89,7 +89,7 @@ class StepwiseHandler(BeforeLoopCallback, InLoopCallback, InterruptCallback):
         vae = getattr(self.model, "vae", None)
         vae_latent_channels = getattr(vae, "latent_channels", 32)
         if vae is None:
-            # Pixel-space models (Iris) have no VAE: the sample already is the RGB image.
+            # Pixel-space models (Iris, SenseNova) have no VAE: the sample already is the RGB image.
             stepwise_decoded = unpack_latents
         elif hasattr(vae, "decode_packed_latents") and unpack_latents.shape[1] > vae_latent_channels:
             stepwise_decoded = vae.decode_packed_latents(unpack_latents)

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import pathlib as P
 import struct
 
 import pytest
@@ -388,6 +389,54 @@ def test_pinned_repository_fails_when_the_pinned_snapshot_is_absent(tmp_path, mo
 
     assert root is None
     assert "pinned revision pinned" in problem
+
+
+SENSENOVA_KEYS = P.Path(__file__).parents[1] / "resources" / "checkpoint_keys"
+
+
+@pytest.fixture
+def sensenova_key(monkeypatch):
+    monkeypatch.setattr(
+        ModelChecker, "_resolve_model_key", staticmethod(lambda reference, base_model=None: "sensenova-u1.5")
+    )
+    transformer = (SENSENOVA_KEYS / "sensenova_u15_transformer.txt").read_text().split()
+    text_encoder = (SENSENOVA_KEYS / "sensenova_u15_text_encoder.txt").read_text().split()
+    return transformer, text_encoder
+
+
+@pytest.mark.fast
+def test_sensenova_upstream_shards_at_the_repository_root_pass(tmp_path, sensenova_key):
+    # Both streams share the upstream shards; the checker reads each component through its key filter.
+    transformer, text_encoder = sensenova_key
+    names = sorted(transformer + text_encoder + ["lm_head.weight", "vision_model.embeddings.patch_embedding.weight"])
+    write_safetensors(tmp_path / "model-00001-of-00002.safetensors", names=names[: len(names) // 2])
+    write_safetensors(tmp_path / "model-00002-of-00002.safetensors", names=names[len(names) // 2 :])
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert (result.check, result.format, result.problems) == ("pass", "safetensors", ())
+
+
+@pytest.mark.fast
+def test_sensenova_upstream_shards_without_a_stream_fail(tmp_path, sensenova_key):
+    transformer, _ = sensenova_key
+    write_safetensors(tmp_path / "model-00001-of-00001.safetensors", names=transformer)
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert result.check == "fail"
+    assert any(problem.startswith("Component text_encoder misses required weights") for problem in result.problems)
+
+
+@pytest.mark.fast
+def test_sensenova_saved_package_passes_in_its_component_directories(tmp_path, sensenova_key):
+    metadata = {"mflux_version": "0.21.0", "quantization_level": "4"}
+    write_safetensors(tmp_path / "transformer" / "0.safetensors", metadata, names=["weight_0"])
+    write_safetensors(tmp_path / "text_encoder" / "0.safetensors", metadata, names=["weight_1"])
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert (result.check, result.format, result.problems) == ("pass", "mflux", ())
 
 
 # Set these variables to run the known-model cases on a host that has the packages:

@@ -131,6 +131,7 @@ MFLUX supports the following model families. They have different strengths and w
 |[Lens](src/mflux/models/lens/README.md) | May 2026 | 3.8B (+20B TE) | Turbo (distilled) | No | Dual-stream MMDiT from Microsoft with a GPT-OSS text encoder. Strong prompt adherence in 4 steps. |
 |[Ming-Image](src/mflux/models/ming_image/README.md) | Sep 2026 | 6.15B (+16B MoE TE) | Base | No | Design-focused (posters, cards, UI) with strong typography; outputs RGBA. |
 |[MOSS-Image](src/mflux/models/moss_image/README.md) | Oct 2026 | 4.9B (+9B TE) | SFT & Base | No | Single-stream DiT from OpenMOSS with a Qwen3.5 text encoder. Takes natural-language, tag and JSON-layout prompts. Renders English and Chinese text. 50 steps with CFG, or 8 or 4 steps with a community step-distilled LoRA. |
+|[SenseNova-U1.5](src/mflux/models/sensenova/README.md) | Nov 2026 | 8B MoT (16.9B loaded) | Base | No | Pixel-space Mixture-of-Transformers on Qwen3-8B from SenseTime: no VAE, direct RGB generation. Text-to-image only. 50 steps with CFG, or 8 steps with the official step-distilled LoRA. |
 |[Anima](src/mflux/models/anima/README.md) | Jan 2026 | 2B (+0.6B TE) | Turbo (distilled), Aesthetic & Base | Yes | Anime and illustration model from CircleStone Labs and Comfy Org on Cosmos-Predict2, with a Qwen3 text encoder. Danbooru tags and natural language. 10 steps Turbo, 30 steps with CFG for Aesthetic and Base. |
 |[Boogu Image](src/mflux/models/boogu/README.md) | Jun 2026 | 10B | Turbo (distilled) | No | DMD-distilled 4-step model with a photographic look and bilingual (EN/ZH) text rendering. |
 |[FIBO 2](src/mflux/models/fibo2/README.md) | Oct 2026 | 8.1B (+4B TE) | Base & Edit Turbo (distilled) | Yes | Trained on long structured JSON captions for precise control; renders text. Text-to-image and editing of 1 to 5 images, with masks. 50 steps with CFG; Edit Turbo runs 4 without. |
@@ -216,6 +217,7 @@ Where the models and the main features came from, read from the merge history (`
 | Fused-qkv LoRA loading | [@deadmansahil](https://github.com/deadmansahil) | [#459](https://github.com/mflux-community/mflux/pull/459) |
 | Boogu-Image | [@plz12345](https://github.com/plz12345) | [#446](https://github.com/mflux-community/mflux/pull/446) |
 | MOSS-Image | [@vanch007](https://github.com/vanch007) | [#895](https://github.com/mflux-community/mflux/pull/895) |
+| SenseNova-U1.5 | [@cguldogan](https://github.com/cguldogan) | [#989](https://github.com/mflux-community/mflux/pull/989) |
 | Anima | [@fxd0h](https://github.com/fxd0h) | [#931](https://github.com/mflux-community/mflux/pull/931) |
 | PiD pixel-diffusion decoder | [@azrahello](https://github.com/azrahello) | [#490](https://github.com/mflux-community/mflux/pull/490) |
 | Z-Image Union ControlNet | [@fxd0h](https://github.com/fxd0h) | [#482](https://github.com/mflux-community/mflux/pull/482) |
@@ -316,6 +318,7 @@ MFLUX would not be possible without the great work of:
 - Microsoft for the Lens (Turbo) model, and Comfy-Org for the [weights repackage](https://huggingface.co/Comfy-Org/Lens)
 - inclusionAI for the [Ming-Image project](https://github.com/inclusionAI/Ming-Image)
 - OpenMOSS for the [MOSS-Image project](https://github.com/OpenMOSS/MOSS-Image)
+- SenseTime for the [SenseNova-U1 project](https://github.com/OpenSenseNova/SenseNova-U1)
 - CircleStone Labs and Comfy Org for the [Anima project](https://huggingface.co/circlestone-labs/Anima)
 - The Boogu team for the [Boogu Image project](https://huggingface.co/Boogu/Boogu-Image-0.1-Turbo)
 - ByteDance, @numz and @adrientoupet for the [SeedVR2 project](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
