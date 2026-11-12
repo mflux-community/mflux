@@ -77,3 +77,20 @@ class TestSenseNovaLatentCreator:
     def test_other_sizes_are_an_error(self, height, width):
         with pytest.raises(ValueError, match="multiples of 32"):
             SenseNovaLatentCreator.check_size(height, width)
+
+    @pytest.mark.parametrize(("height", "width"), [(0, 1024), (1024, 0), (-32, 1024), (1024, -64)])
+    def test_sizes_of_zero_or_below_are_an_error(self, height, width):
+        with pytest.raises(ValueError, match="must be positive"):
+            SenseNovaLatentCreator.check_size(height, width)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("steps", [0, -1])
+def test_a_step_count_below_one_is_an_error(steps):
+    with pytest.raises(ValueError, match="at least 1"):
+        SenseNovaScheduler.check_steps(steps)
+
+
+@pytest.mark.fast
+def test_one_step_is_allowed():
+    SenseNovaScheduler.check_steps(1)

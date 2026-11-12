@@ -114,3 +114,11 @@ class SenseNovaWeightDefinition:
             return key
         match = SenseNovaWeightDefinition._LAYER_KEY.match(key)
         return key if match and int(match.group(1)) < num_layers and "_mot_gen" not in key else None
+
+
+class SenseNovaUpstreamWeightDefinition:
+    # What mflux-check validates: the upstream shards at the repository root, read through the stream key filters.
+    # An mflux-saved copy still passes, because the checker looks in the save subdirs (transformer/, text_encoder/) first.
+    @staticmethod
+    def get_components() -> List[ComponentDefinition]:
+        return [SenseNovaWeightDefinition.source_transformer(), SenseNovaWeightDefinition.source_text_encoder()]

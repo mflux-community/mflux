@@ -5,6 +5,7 @@ from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_ar
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.sensenova.latent_creator.sensenova_latent_creator import SenseNovaLatentCreator
+from mflux.models.sensenova.model.sensenova_scheduler.sensenova_scheduler import SenseNovaScheduler
 from mflux.models.sensenova.variants import SenseNova
 from mflux.utils.exceptions import PromptFileReadError, StopImageGenerationException
 from mflux.utils.generated_image import GeneratedImage
@@ -53,8 +54,14 @@ class SenseNovaCommand:
             model_path=args.model_path,
             base_model=args.base_model,
         )
-        SenseNovaLatentCreator.check_size(height=args.height, width=args.width)
+        SenseNovaCommand.check_size_and_steps(args)
         return model_config
+
+    @staticmethod
+    def check_size_and_steps(args: Namespace) -> None:
+        SenseNovaLatentCreator.check_size(height=args.height, width=args.width)
+        if args.steps is not None:
+            SenseNovaScheduler.check_steps(args.steps)
 
     @staticmethod
     def load(args: Namespace) -> SenseNova:
@@ -85,9 +92,9 @@ def main():
     if CommandLineParser._option_was_provided("--negative-prompt"):
         parser.error("--negative-prompt is not supported for SenseNova-U1.5: its unconditional branch is a fixed empty query.")  # fmt: skip
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
-    # A bad size is a usage error before the checkpoint loads, not a traceback
+    # A bad size or step count is a usage error before the checkpoint loads, not a traceback
     try:
-        SenseNovaLatentCreator.check_size(height=args.height, width=args.width)
+        SenseNovaCommand.check_size_and_steps(args)
     except ValueError as exc:
         parser.error(str(exc))
 

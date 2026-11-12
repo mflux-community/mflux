@@ -13,13 +13,15 @@ RANK = 4
 LM = "language_model.model.layers"
 
 
-def _resolve(key: str) -> set[tuple[str, str]]:
-    targets = set()
-    for mapping in LoRALoader._build_pattern_mappings(SenseNovaLoRAMapping.get_mapping()):
-        block = LoRALoader._match_pattern(key, mapping.source_pattern)
-        if block is not None:
-            targets.add((mapping.target_path.format(block=block), mapping.matrix_name))
-    return targets
+class MappingResolver:
+    @staticmethod
+    def resolve(key: str) -> set[tuple[str, str]]:
+        targets = set()
+        for mapping in LoRALoader._build_pattern_mappings(SenseNovaLoRAMapping.get_mapping()):
+            block = LoRALoader._match_pattern(key, mapping.source_pattern)
+            if block is not None:
+                targets.add((mapping.target_path.format(block=block), mapping.matrix_name))
+        return targets
 
 
 @pytest.mark.parametrize(
@@ -42,13 +44,13 @@ def _resolve(key: str) -> set[tuple[str, str]]:
     ],
 )
 def test_published_key_formats_reach_their_module(key, target):
-    assert _resolve(key) == {target}
+    assert MappingResolver.resolve(key) == {target}
 
 
 def test_only_the_gen_stream_linears_are_targets():
-    assert _resolve(f"{LM}.0.self_attn.q_proj.lora_down.weight") == set()
-    assert _resolve(f"{LM}.0.mlp.gate_proj.lora_down.weight") == set()
-    assert _resolve(f"{LM}.0.self_attn.q_norm_mot_gen.lora_down.weight") == set()
+    assert MappingResolver.resolve(f"{LM}.0.self_attn.q_proj.lora_down.weight") == set()
+    assert MappingResolver.resolve(f"{LM}.0.mlp.gate_proj.lora_down.weight") == set()
+    assert MappingResolver.resolve(f"{LM}.0.self_attn.q_norm_mot_gen.lora_down.weight") == set()
     assert len(SenseNovaLoRAMapping.get_mapping()) == 7
 
 

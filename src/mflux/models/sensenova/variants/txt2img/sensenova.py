@@ -51,6 +51,9 @@ class SenseNova(nn.Module):
         )
 
     def save_model(self, base_path: str) -> None:
+        # The weights load lazily. Read them all first: a save over the checkpoint they come from
+        # would otherwise truncate a shard before reading it.
+        mx.eval(self.parameters())
         ModelSaver.save_model(
             model=self,
             bits=self.bits,
@@ -71,9 +74,11 @@ class SenseNova(nn.Module):
         if negative_prompt:
             raise ValueError("SenseNova-U1.5 has no negative prompt: its unconditional branch is a fixed empty query.")
         SenseNovaLatentCreator.check_size(height, width)
+        steps = SenseNova.DEFAULT_STEPS if num_inference_steps is None else num_inference_steps
+        SenseNovaScheduler.check_steps(steps)
         config = Config(
             model_config=self.model_config,
-            num_inference_steps=num_inference_steps or SenseNova.DEFAULT_STEPS,
+            num_inference_steps=steps,
             height=height,
             width=width,
             guidance=SenseNova.DEFAULT_GUIDANCE if guidance is None else float(guidance),

@@ -26,5 +26,7 @@ class SenseNovaLatentCreator:
     @staticmethod
     def check_size(height: int, width: int) -> None:
         size = SenseNovaLatentCreator.TOKEN_SIZE
+        if height <= 0 or width <= 0:
+            raise ValueError(f"width and height must be positive, got {width}x{height}")
         if height % size or width % size:
             raise ValueError(f"width and height must be multiples of {size}")

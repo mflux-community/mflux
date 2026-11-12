@@ -81,8 +81,10 @@ generation stream in each of the 42 layers: `q`, `k`, `v`, `o`, `gate`, `up` and
 On this model, a LoRA stays a separate layer on top of the weights by default (`--bake-lora` is off), so all of the
 update applies. `--bake-lora` merges it into the weights instead, which saves about 1 GB and 10% of the time per step:
 
-- With `-q`, the merge happens in float32 before the weights are quantized. This gives the quantized image closest to
-  the unmerged bfloat16 one (PSNR 34 dB, against 29 dB for `-q 8` with the LoRA left separate).
+- With `-q` on the upstream checkpoint, the merge happens in float32 before the weights are quantized. This gives the
+  quantized image closest to the unmerged bfloat16 one (PSNR 34 dB, against 29 dB for `-q 8` with the LoRA left
+  separate). On a checkpoint that is already quantized (`--model` set to a quantized `mflux-save` copy), the merge goes
+  into the dequantized weights and each layer below 8 bits is quantized again at q8, so this result does not apply.
 - Without `-q`, the merge rounds into the bfloat16 weights and keeps about 82% of the update. That is what the upstream
   PyTorch pipeline does (36 dB to its images), so use it to reproduce upstream bfloat16 images.
 
