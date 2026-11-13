@@ -11,6 +11,20 @@ class MetadataBuilder:
     _IPTC_PROMPT_MAX_BYTES = 2000  # IPTC Caption/Abstract (2:120) is commonly limited to 2000 bytes
 
     @staticmethod
+    def _xml_escape(text: str) -> str:
+        # Escape the XML special characters that are illegal in element text
+        # content (&, <, >) so any user-controlled value (prompt, LoRA filename,
+        # model identifier) stays well-formed XMP. The ampersand must be replaced
+        # first, otherwise it would double-escape the entities introduced by the
+        # other replacements.
+        return (
+            str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    @staticmethod
     def _looks_like_json(text: str) -> bool:
         stripped = (text or "").lstrip()
         if not stripped or stripped[0] not in ("{", "["):
@@ -71,16 +85,17 @@ class MetadataBuilder:
     @staticmethod
     def build_xmp_packet(metadata: dict) -> str:
         # Escape prompt for XML
-        prompt_escaped = metadata.get("prompt", "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        prompt_escaped = MetadataBuilder._xml_escape(metadata.get("prompt", ""))
 
-        # Build LoRA info for XMP
-        lora_info = MetadataBuilder._build_lora_string(metadata)
+        # Build LoRA info for XMP (filenames are user-controlled and may contain &, <, >)
+        lora_info = MetadataBuilder._xml_escape(MetadataBuilder._build_lora_string(metadata))
 
         # Model identifier (keep backward-compat if older code stored 'model_config')
         model_name = metadata.get("model_config") or metadata.get("model")
+        model_name = MetadataBuilder._xml_escape(model_name) if model_name else model_name
 
         # Get version from metadata
-        version = metadata.get("mflux_version", "unknown")
+        version = MetadataBuilder._xml_escape(metadata.get("mflux_version", "unknown"))
 
         xmp_packet = f"""<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
