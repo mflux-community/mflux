@@ -1,6 +1,6 @@
 import pytest
 
-from mflux.models.ideogram4.model import Ideogram4Config, Ideogram4Transformer, Qwen3TextEncoder
+from mflux.models.ideogram4.model import Ideogram4Config, Ideogram4TextEncoder, Ideogram4Transformer
 from mflux.models.ideogram4.weights.ideogram4_weight_definition import Ideogram4WeightDefinition
 from tests.model_saving.tiny_checkpoint_helper import TinyCheckpointRoundtrip, TinyVAEStandIn
 
@@ -40,7 +40,7 @@ class TestTinyIdeogram4ModelSaving:
             "vae": TinyVAEStandIn(),
             "conditional_transformer": Ideogram4Transformer(TINY_TRANSFORMER_CONFIG),
             "unconditional_transformer": Ideogram4Transformer(TINY_TRANSFORMER_CONFIG),
-            "text_encoder": Qwen3TextEncoder(
+            "text_encoder": Ideogram4TextEncoder(
                 vocab_size=128,
                 hidden_size=128,
                 num_hidden_layers=2,
