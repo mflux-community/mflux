@@ -17,12 +17,7 @@ class MetadataBuilder:
         # model identifier) stays well-formed XMP. The ampersand must be replaced
         # first, otherwise it would double-escape the entities introduced by the
         # other replacements.
-        return (
-            str(text)
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     @staticmethod
     def _looks_like_json(text: str) -> bool:
