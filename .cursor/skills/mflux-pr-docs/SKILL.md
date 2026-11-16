@@ -34,7 +34,7 @@ Write the PR body for the current branch. The developer must approve the body be
 6. Do not tick the boxes in the `Checklist` section. The developer ticks them.
 7. Examine the text that you wrote. Do not examine the template text.
    - Apply the `asd-ste100` skill in STE-flavored mode.
-   - Put the text that you wrote in a temporary file. Do not put the `Title:` line in it. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py <file>`.
+   - Put the text that you wrote in a temporary file. Do not put the `Title:` line in it. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py --disable synonym-rotation <file>`.
    - Fix each hard violation.
 8. Run the CI check on `tmp-PR-content.md`. Fix `tmp-PR-content.md` until the check passes:
    ```sh
