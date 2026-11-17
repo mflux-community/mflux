@@ -52,7 +52,13 @@ class Qwen21Initializer:
         else:
             Qwen21Initializer._init_tokenizers(model, path)
         Qwen21Initializer._init_models(model)
+        # MFLUX_QWEN21_W8A8: the DiT comes from an int8_convrot file, the rest from the checkpoint.
+        from mflux.models.qwen21.weights import qwen21_w8a8
+
+        definition, w8a8 = qwen21_w8a8.prepare(model, definition, quantize, lora_paths)
         Qwen21Initializer.load_components(model, root, definition, quantize, validate=True)
+        if w8a8 is not None:
+            qwen21_w8a8.load(model.transformer, w8a8)
         Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
         model.compute_precision = precision
         if compute_precision is not None:
