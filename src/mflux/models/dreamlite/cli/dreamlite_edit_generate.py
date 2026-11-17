@@ -63,6 +63,10 @@ class DreamLiteEditCommand:
     def validate(args: Namespace) -> ModelConfig:
         if len(args.image_paths) != 1:
             raise ValueError(f"--image-paths takes one image for DreamLite, got {len(args.image_paths)}.")
+        # A scale factor ("auto", "2x") is read against the source image later; a plain size is checked here
+        for option, value in (("--width", args.width), ("--height", args.height)):
+            if isinstance(value, int) and value <= 0:
+                raise ValueError(f"{option} must be positive, got {value}.")
         return ConfigResolution.resolve_restricted(
             args.model,
             DEFAULT_MODEL,

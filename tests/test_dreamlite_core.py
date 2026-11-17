@@ -9,6 +9,7 @@ from PIL import Image
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.dreamlite.latent_creator.dreamlite_latent_creator import DreamLiteLatentCreator
 from mflux.models.dreamlite.model.dreamlite_text_encoder.prompt_encoder import DreamLitePromptEncoder
 from mflux.models.dreamlite.model.dreamlite_unet.unet import DreamLiteUNet
@@ -187,6 +188,35 @@ def test_image_guidance_adds_a_pass_without_the_source_image(tmp_path):
 
     assert [(call["embeds"], call["context"]) for call in core.calls] == [(1.0, 3.0), (2.0, 3.0), (2.0, 0.0)]
     assert image.generation_parameters == {"image_guidance": 1.5}
+
+
+def test_a_tiling_config_never_reaches_the_tiny_autoencoder(tmp_path):
+    # --vae-tiling sets a tiling config on the model; TAESDXL takes whole images only, and the flag is reported as ignored
+    source = tmp_path / "source.png"
+    Image.new("RGB", (64, 64), "white").save(source)
+    core = _Core.of(DreamLiteEdit, ModelConfig.dreamlite_mobile())
+    core.tiling_config = TilingConfig()
+    whole, seen = core.vae, []
+    core.vae = SimpleNamespace(
+        encode=lambda image: seen.append(("encode", image.shape)) or whole.encode(image),
+        decode=lambda latents: seen.append(("decode", latents.shape)) or whole.decode(latents),
+    )
+
+    core.generate_image(seed=1, prompt="make it snowy", image_path=source)
+
+    assert seen == [("encode", (1, 3, 1024, 1024)), ("decode", (1, 4, 128, 128))]
+
+
+@pytest.mark.parametrize("size", [{"width": 0}, {"height": -64}])
+def test_an_edit_refuses_an_output_size_that_is_not_positive_before_it_generates(tmp_path, size):
+    source = tmp_path / "source.png"
+    Image.new("RGB", (64, 64), "white").save(source)
+    core = _Core.of(DreamLiteEdit, ModelConfig.dreamlite_mobile())
+
+    with pytest.raises(ValueError, match="must be positive"):
+        core.generate_image(seed=1, prompt="make it snowy", image_path=source, **size)
+
+    assert core.calls == [] and core.encoded == []
 
 
 def test_guidance_combines_the_passes_as_the_reference_does():

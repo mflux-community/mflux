@@ -300,6 +300,32 @@ def test_an_edit_takes_exactly_one_image(monkeypatch, capsys, source_image):
 
 
 @pytest.mark.fast
+@pytest.mark.parametrize("argv", [["--width", "-512"], ["--height", "0"]])
+def test_an_edit_rejects_a_size_that_is_not_positive_before_building_the_model(monkeypatch, capsys, source_image, argv):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-dreamlite-edit", "--prompt", "x", "--image-paths", str(source_image), *argv])  # fmt: skip
+
+    with pytest.raises(SystemExit) as exit_info:
+        edit_cli.main()
+
+    assert exit_info.value.code == 2
+    assert "must be positive" in capsys.readouterr().err
+    assert FakeDreamLiteEdit.instances == []
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("value", ["nan", "inf"])
+def test_an_image_guidance_that_is_not_finite_is_a_usage_error(monkeypatch, capsys, source_image, value):
+    monkeypatch.setattr(sys, "argv", ["mflux-generate-dreamlite-edit", "--prompt", "x", "--image-paths", str(source_image), "--image-guidance", value])  # fmt: skip
+
+    with pytest.raises(SystemExit) as exit_info:
+        edit_cli.main()
+
+    assert exit_info.value.code == 2
+    assert "must be a finite number > 0" in capsys.readouterr().err
+    assert FakeDreamLiteEdit.instances == []
+
+
+@pytest.mark.fast
 def test_image_guidance_on_mobile_is_reported_as_unused(monkeypatch, source_image):
     monkeypatch.setattr(sys, "argv", ["mflux-generate-dreamlite-edit", "--prompt", "x", "--image-paths", str(source_image), "--model", "dreamlite-mobile", "--image-guidance", "1.5"])  # fmt: skip
 
@@ -322,9 +348,10 @@ def test_a_sidecar_replays_the_image_guidance_unless_the_flag_is_given(monkeypat
 
 
 @pytest.mark.fast
-def test_a_sidecar_with_a_bad_image_guidance_is_a_usage_error(monkeypatch, tmp_path, source_image, capsys):
+@pytest.mark.parametrize("value", [-1, "nan", "inf", float("nan"), float("inf")])
+def test_a_sidecar_with_a_bad_image_guidance_is_a_usage_error(monkeypatch, tmp_path, source_image, capsys, value):
     sidecar = tmp_path / "run.metadata.json"
-    sidecar.write_text(json.dumps({"prompt": "x", "seed": 7, "image_paths": [str(source_image)], "image_guidance": -1}))
+    sidecar.write_text(json.dumps({"prompt": "x", "seed": 7, "image_paths": [str(source_image)], "image_guidance": value}))  # fmt: skip
     monkeypatch.setattr(sys, "argv", ["mflux-generate-dreamlite-edit", "--config-from-metadata", str(sidecar)])
 
     with pytest.raises(SystemExit) as exit_info:

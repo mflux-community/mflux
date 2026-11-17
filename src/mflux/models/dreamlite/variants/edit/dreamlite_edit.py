@@ -24,6 +24,10 @@ class DreamLiteEdit(_DreamLiteCore):
         negative_prompt: str | None = None,
     ) -> GeneratedImage:
         image = ImageUtil.load_image(image_path)
+        # The result goes back to the source image's size, or to the size asked for
+        output_size = (image.width if width is None else width, image.height if height is None else height)
+        if min(output_size) <= 0:
+            raise ValueError(f"width and height must be positive, got {output_size[0]}x{output_size[1]}")
         generated = self._generate(
             seed=seed,
             prompt=prompt,
@@ -36,8 +40,6 @@ class DreamLiteEdit(_DreamLiteCore):
             image=image,
             image_path=image_path,
         )
-        # The result goes back to the source image's size, or to the size asked for
-        output_size = (width or image.width, height or image.height)
         if generated.image.size != output_size:
             generated.image = generated.image.resize(output_size, Image.Resampling.LANCZOS)
             generated.width, generated.height = output_size

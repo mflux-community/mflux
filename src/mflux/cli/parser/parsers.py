@@ -62,8 +62,8 @@ def positive_float(value: str) -> float:
         parsed = float(value)
     except ValueError:
         raise argparse.ArgumentTypeError(f"'{value}' is not a valid number")
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError(f"'{value}' must be > 0")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError(f"'{value}' must be a finite number > 0")
     return parsed
 
 

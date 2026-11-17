@@ -1,7 +1,6 @@
 import mlx.core as mx
 from PIL import Image
 
-from mflux.models.common.vae.tiling_config import TilingConfig
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.dreamlite.model.dreamlite_vae.vae import DreamLiteVAE
 from mflux.utils.image_util import ImageUtil
@@ -30,16 +29,10 @@ class DreamLiteLatentCreator:
         return latents
 
     @staticmethod
-    def encode_image(
-        vae: DreamLiteVAE,
-        image: Image.Image,
-        height: int,
-        width: int,
-        tiling_config: TilingConfig | None = None,
-    ) -> mx.array:
-        # TAESDXL latents are used as they come: no scaling and no shift
+    def encode_image(vae: DreamLiteVAE, image: Image.Image, height: int, width: int) -> mx.array:
+        # TAESDXL latents are used as they come: no scaling and no shift. It encodes the whole image, never tiles
         resized = image.resize((width, height), Image.Resampling.LANCZOS)
-        encoded = VAEUtil.encode(vae, ImageUtil.to_array(resized), tiling_config=tiling_config)
+        encoded = VAEUtil.encode(vae, ImageUtil.to_array(resized))
         return DreamLiteLatentCreator.pack_latents(encoded).astype(mx.float32)
 
     @staticmethod

@@ -99,7 +99,7 @@ class _DreamLiteCore(nn.Module):
         empty_context = mx.zeros_like(latents)
         context = empty_context
         if image is not None:
-            context = DreamLiteLatentCreator.encode_image(self.vae, image, config.height, config.width, self.tiling_config)  # fmt: off
+            context = DreamLiteLatentCreator.encode_image(self.vae, image, config.height, config.width)
 
         # 3. Denoising loop
         predict = _DreamLiteCore._predict(
@@ -127,8 +127,8 @@ class _DreamLiteCore(nn.Module):
                 )
         ctx.after_loop(latents)
 
-        # 4. Decode
-        decoded = VAEUtil.decode(self.vae, latents, tiling_config=self.tiling_config)
+        # 4. Decode. TAESDXL takes whole images: --vae-tiling sets a tiling config on the model, and it is not used
+        decoded = VAEUtil.decode(self.vae, latents)
         return ImageUtil.to_image(
             decoded_latents=decoded,
             config=config,
