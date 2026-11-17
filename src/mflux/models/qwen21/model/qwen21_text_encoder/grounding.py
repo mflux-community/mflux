@@ -28,6 +28,28 @@ REWRITE_PROMPT = (
     'Answer ONLY with JSON: {{"rewritten_prompt": "..."}}\n\nInstruction: {instruction}'
 )
 
+# Condensation of the official text-to-image rewrite recipe (QwenLM/Qwen-Image-2.1
+# prompt_rewrite/prompts/system_prompt_t2i.txt): one long English paragraph that describes the finished
+# image as seen, keeping everything the request fixed and deciding everything it left open, plus the
+# aspect ratio, answered as JSON with rewritten_prompt and wh_ratio fields.
+REWRITE_T2I_PROMPT = (
+    "You turn a short image request into ONE long English paragraph of 120-200 words that describes the "
+    "finished image as if you were looking at it, and choose the aspect ratio it should be rendered at.\n"
+    "- Keep everything the request fixes unchanged: every text to be shown goes in double quotes, verbatim "
+    "and in its own script; every named object, count, colour and position; the ratio if one is given.\n"
+    "- Decide everything it leaves open. Open with one sentence naming the medium, style, subject and "
+    'background, e.g. "The image is a wide realistic photograph of ...".\n'
+    "- Then walk the frame: give every element a place (upper-left, centre, lower third, in front of, "
+    "behind), its material and the lighting; enumerate instead of summarising and write small counts as "
+    "words; people get posture, expression, hair and clothing; objects by class unless a brand is named; "
+    "shadows, reflections and scale stay physically consistent.\n"
+    "- Never write the ratio, a resolution or instructions into the description; follow requests about the "
+    "job (sharp text, no noise) silently.\n"
+    "- Ratio: the request's if given, otherwise 3:2 for horizontal subjects, 2:3 for vertical ones, 1:1 for a "
+    "single centred emblem or icon, 16:9 for a wide cinematic frame, 9:16 for a phone screen.\n"
+    'Answer ONLY with JSON on one line: {{"rewritten_prompt": "...", "wh_ratio": "3:2"}}\n\nRequest: {request}'
+)
+
 # Post-edit verification: the original and the edited output are shown together; the
 # model answers whether the instruction was applied and everything else was preserved.
 VERIFY_PROMPT = (
@@ -47,6 +69,7 @@ _BBOX_PATTERN = re.compile(
 class QwenImage21Grounding:
     GROUNDING_PROMPT = GROUNDING_PROMPT
     REWRITE_PROMPT = REWRITE_PROMPT
+    REWRITE_T2I_PROMPT = REWRITE_T2I_PROMPT
     VERIFY_PROMPT = VERIFY_PROMPT
 
     @staticmethod
@@ -94,6 +117,25 @@ class QwenImage21Grounding:
             rewritten = obj.get("rewritten_prompt") or obj.get("rewrited_prompt")
             if isinstance(rewritten, str) and rewritten.strip():
                 return rewritten.strip()
+        return None
+
+    @staticmethod
+    def parse_t2i_rewrite(text: str) -> tuple[str, str | None] | None:
+        # (rewritten_prompt, wh_ratio or None); the ratio is kept only when it looks like "W:H".
+        for candidate in reversed(QwenImage21Grounding.balanced_json_spans(text)):
+            try:
+                obj = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            rewritten = obj.get("rewritten_prompt") or obj.get("rewrited_prompt")
+            if isinstance(rewritten, str) and rewritten.strip():
+                ratio = obj.get("wh_ratio")
+                ok = (
+                    isinstance(ratio, str)
+                    and len(ratio.split(":")) == 2
+                    and all(p.strip().isdigit() for p in ratio.split(":"))
+                )
+                return rewritten.strip(), ratio.strip() if ok else None
         return None
 
     @staticmethod

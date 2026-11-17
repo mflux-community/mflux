@@ -787,3 +787,119 @@ def test_generate_matches_torch_greedy_decoding(ids, grids):
         )[0, len(ids) :].tolist()
     actual = model.generate(mx.array([ids]), max_new_tokens=6, stop_token_ids=(), **mlx_kwargs)
     assert actual == expected
+
+
+class _Encoded(Exception):
+    pass
+
+
+def _t2i_until_encode(model, monkeypatch, **kwargs):
+    # Runs generate_image without references up to the prompt encoding; returns (encoded prompt, (width, height)).
+    seen = {}
+
+    def validate(width, height, steps, references):
+        seen["size"] = (width, height)
+
+    def encode(prompt, images):
+        seen["prompt"] = prompt
+        raise _Encoded
+
+    monkeypatch.setattr(
+        "mflux.models.qwen21.variants.edit.qwen_image_21_edit.QwenImage21LatentCreator.validate", validate
+    )
+    model._encode_prompt = encode
+    with pytest.raises(_Encoded):
+        model.generate_image(seed=1, prompt="a fox", num_inference_steps=4, output_resolution=1024, **kwargs)
+    return seen["prompt"], seen["size"]
+
+
+def test_enhance_prompt_without_references_rewrites_text_to_image(monkeypatch):
+    model = _stub_model()
+    seen = []
+
+    def reply(instruction, images, tokens):
+        seen.append((instruction, len(images)))
+        return '{"rewritten_prompt": "a detailed fox", "wh_ratio": "2:3"}'
+
+    model._vision_reply = reply
+    prompt, (width, height) = _t2i_until_encode(model, monkeypatch, enhance_prompt=True)
+    assert prompt == "a detailed fox"
+    assert seen[0][1] == 0 and "Request: a fox" in seen[0][0]
+    assert width < height  # the proposed 2:3 ratio picks the size
+
+
+def test_text_to_image_rewrite_keeps_an_explicit_size(monkeypatch):
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: (
+        '{"rewritten_prompt": "a detailed fox", "wh_ratio": "2:3"}'
+    )
+    prompt, size = _t2i_until_encode(model, monkeypatch, enhance_prompt=True, width=1024, height=512)
+    assert prompt == "a detailed fox" and size == (1024, 512)
+
+
+def test_text_to_image_rewrite_falls_back_on_an_unparseable_reply(monkeypatch):
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: "no json here"
+    prompt, size = _t2i_until_encode(model, monkeypatch, enhance_prompt=True)
+    assert prompt == "a fox" and size[0] == size[1]
+
+
+def test_rewrite_text_prompt_is_public_and_raises_when_it_cannot_rewrite():
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: (
+        '{"rewritten_prompt": "a detailed fox", "wh_ratio": "16:9"}'
+    )
+    assert model.rewrite_text_prompt("a fox") == ("a detailed fox", "16:9")
+    model._vision_reply = lambda instruction, images, tokens: "no json here"
+    with pytest.raises(ValueError, match="could not be parsed"):
+        model.rewrite_text_prompt("a fox")
+    with pytest.raises(ValueError, match="empty"):
+        model.rewrite_text_prompt(" ")
+
+
+@pytest.mark.parametrize(
+    "reply,expected",
+    [
+        ('{"rewritten_prompt": "a fox", "wh_ratio": "3:2"}', ("a fox", "3:2")),
+        ('thinking... {"rewritten_prompt": " a fox ", "wh_ratio": "wide"}', ("a fox", None)),
+        ('{"rewrited_prompt": "a fox"}', ("a fox", None)),
+        ('{"wh_ratio": "3:2"}', None),
+        ("no json", None),
+    ],
+)
+def test_parse_t2i_rewrite(reply, expected):
+    assert QwenImage21Grounding.parse_t2i_rewrite(reply) == expected
+
+
+def test_vision_reply_without_images_sends_no_pixels():
+    model = _stub_model()
+    seen = {}
+
+    def processor(text, images, return_tensors):
+        seen["images"] = images
+        return {"input_ids": np.zeros((1, 3), np.int32)}
+
+    def generate(input_ids, pixel_values=None, image_grid_thw=None, max_new_tokens=0):
+        seen["pixels"] = pixel_values
+        return [5]
+
+    model.processor = type(
+        "Processor", (), {"__call__": staticmethod(processor), "tokenizer": SimpleNamespace(decode=str)}
+    )()
+    model.text_encoder = SimpleNamespace(generate=generate)
+    model._vision_reply("describe", [], 8)
+    assert seen["images"] is None and seen["pixels"] is None
+
+
+def test_enhance_prompt_without_image_paths_reaches_model_loading(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["qwen21", "--prompt", "p", "--enhance-prompt"])
+
+    class _Loaded(Exception):
+        pass
+
+    def load(**kwargs):
+        raise _Loaded
+
+    monkeypatch.setattr(cli, "QwenImage21Edit", load)
+    with pytest.raises(_Loaded):
+        cli.main()
