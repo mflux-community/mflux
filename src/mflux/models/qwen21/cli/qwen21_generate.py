@@ -2,6 +2,7 @@ from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler, ViggleTurboScheduler
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_small_text_encoder import Qwen21SmallTextEncoder
@@ -14,6 +15,7 @@ DEFAULT_MODEL = "qwen-image-2.1"
 # Same architecture as the default model. The Turbo checkpoint brings its own schedule.
 FAMILY_MODELS = ("qwen-image-2.1-turbo",)
 IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
+CONDITIONAL_OPTIONS = VAEDecodeOptions.conditional_options()
 
 
 def build_parser() -> CommandLineParser:
@@ -25,6 +27,7 @@ def build_parser() -> CommandLineParser:
     parser.add_lora_arguments()
     parser.add_image_generator_arguments(supports_metadata_config=True, supports_dimension_scale_factor=True)
     parser.add_image_to_image_arguments(required=False)
+    parser.add_vae_full_precision_arguments()
     parser.add_output_arguments()
     parser.add_step_cache_arguments()
     return parser
@@ -34,6 +37,7 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    VAEDecodeOptions.warn_encode_only_tiling()
     ViggleTurboScheduler.check_args(parser, args)
 
     model_config = ConfigResolution.resolve_restricted(
@@ -53,6 +57,7 @@ def main():
         small_text_encoder=args.small_text_encoder,
         **lora_init_kwargs_from_args(args),
     )
+    VAEDecodeOptions.apply(args, qwen)
 
     memory_saver = CallbackManager.register_callbacks(
         args=args,

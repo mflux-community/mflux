@@ -6,6 +6,7 @@ from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_ar
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler
 from mflux.models.qwen21.variants.controlnet.qwen_image_21_controlnet import QwenImage21Controlnet
@@ -21,6 +22,7 @@ IGNORED_OPTIONS = {
     "--scheduler": "The ControlNet runs the Euler schedule of its base checkpoint. Other schedulers are not wired.",
 }
 CONDITIONAL_OPTIONS = {
+    **VAEDecodeOptions.conditional_options(),
     "--negative-prompt": {
         "condition": "guidance greater than 1",
         "reason": "Guidance 1 runs only the positive branch.",
@@ -67,6 +69,7 @@ def build_parser() -> CommandLineParser:
         default=1024,
         help="Pixel-area budget for automatic output dimensions (default: 1024).",
     )
+    parser.add_vae_full_precision_arguments()
     parser.add_output_arguments()
     return parser
 
@@ -127,6 +130,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    VAEDecodeOptions.warn_encode_only_tiling()
     if args.guidance is None or args.guidance == 1:
         CommandLineParser.warn_ignored_options(
             {"--negative-prompt": CONDITIONAL_OPTIONS["--negative-prompt"]["reason"]}
@@ -139,6 +143,7 @@ def main() -> None:
         parser.error(str(exc))
     Qwen21TurboScheduler.check_args(parser, args, model_config)
     model = Qwen21ControlnetCommand.load(args)
+    VAEDecodeOptions.apply(args, model)
     memory_saver = CallbackManager.register_callbacks(
         args=args, model=model, latent_creator=Qwen21ControlnetCommand.latent_creator
     )
