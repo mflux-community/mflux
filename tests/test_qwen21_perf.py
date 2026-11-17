@@ -10,6 +10,10 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
     fused_qk_norm_rope_available,
 )
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import (
+    Qwen21TransformerBlock,
+    _gated_residual,
+)
 
 
 @pytest.mark.fast
@@ -336,3 +340,46 @@ class TestTextPrefixCache:
         second = self._run(transformer, embedding, latents)
         assert len(transformer._text_caches) == 1
         assert mx.array_equal(first, second)
+
+
+@pytest.mark.fast
+class TestReferenceBlockFusion:
+    # The cached denoise pass of forward_reference: fused Q/K prologue, broadcast modulation rows and the
+    # compiled gated residual give the same values as the composed ops.
+    @pytest.mark.parametrize("head_dim", [64, 128])
+    def test_cached_attention_fused_prologue_is_bit_identical(self, head_dim):
+        if not fused_qk_norm_rope_available(head_dim):
+            pytest.skip("fused Q/K norm + RoPE kernel unavailable")
+        mx.random.seed(0)
+        attention = Qwen21Attention(dim=2 * head_dim, num_heads=2, head_dim=head_dim)
+        attention.update(
+            {
+                "to_q": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+                "to_k": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+                "to_v": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+            }
+        )
+        # the checkpoints store the Q/K norm weights in the same dtype as the projections
+        attention.norm_q.weight = attention.norm_q.weight.astype(mx.bfloat16)
+        attention.norm_k.weight = attention.norm_k.weight.astype(mx.bfloat16)
+        x = mx.random.normal((1, 24, 2 * head_dim)).astype(mx.bfloat16)
+        angles = mx.arange(24 * head_dim // 2).reshape(24, head_dim // 2).astype(mx.float32) / 64
+        rope = (mx.cos(angles), mx.sin(angles))
+        prefix = tuple(mx.random.normal((1, 2, 8, head_dim)).astype(mx.bfloat16) for _ in range(2))
+        fused, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        mx.eval(fused, composed)
+        assert fused.dtype == composed.dtype
+        assert mx.array_equal(fused, composed)
+
+    def test_select_rows_without_mask_broadcasts_the_target_row(self):
+        value = mx.random.normal((5, 32)).astype(mx.bfloat16)
+        mask = mx.ones((7,), dtype=mx.bool_)
+        broadcast = Qwen21TransformerBlock.select_rows(value, None)
+        masked = Qwen21TransformerBlock.select_rows(value, mask)
+        assert mx.array_equal(mx.broadcast_to(broadcast, masked.shape), masked)
+
+    def test_gated_residual_matches_composed_ops(self):
+        x, gate, y = (mx.random.normal((1, 9, 32)).astype(mx.bfloat16) for _ in range(3))
+        assert mx.array_equal(_gated_residual(x, gate, y), x + mx.tanh(gate) * y)
