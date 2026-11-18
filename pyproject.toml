@@ -83,7 +83,7 @@ dev = [
     # Pinned exactly; keep in sync with .pre-commit-config.yaml (astral-sh/ty-pre-commit rev)
     # and the CI ty step. ty 0.0.72 (62ebbecc7 2026-08-14).
     "ty==0.0.72",
-    "mlx==0.32.0; sys_platform=='darwin'",
+    "mlx==0.32.4; sys_platform=='darwin'",
     "mlx[cuda13]==0.32.2; sys_platform=='linux'",
 ]
 
