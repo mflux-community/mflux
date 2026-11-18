@@ -3,9 +3,10 @@
 ## The problem
 
 `ZImage._predict` returns `mx.compile(predict)` (`variants/z_image.py:263-265`). The DiT sequence
-length is image tokens plus caption tokens (`transformer.py:139`). Image tokens depend only on
-resolution. Caption tokens depend on prompt length, and `_patchify` pads them up to a multiple of 32
-(`transformer.py:202`). A new caption length therefore produces a new input shape.
+length is image tokens plus caption tokens (`transformer.py:137` on `main`, `:139` after PR #1001).
+Image tokens depend only on resolution. Caption tokens depend on prompt length, and `_patchify`
+pads them up to a multiple of 32 (`transformer.py:201` on `main`, `:202` after PR #1001). A new
+caption length therefore produces a new input shape.
 
 One hardware exception matters for any measurement of this. `variants/z_image.py:263-265` returns the
 uncompiled `predict` when `AppleSiliconUtil.is_m1_or_m2()` is true. That predicate tests for "max" or
