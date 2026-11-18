@@ -1,0 +1,10 @@
+{"test": "t6_ordering", "phase": "correctness", "strategy": "none", "max_abs_diff_vs_hack": 0.0, "finite": true}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "hack", "max_abs_diff_vs_hack": 0.0, "finite": true}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "async", "max_abs_diff_vs_hack": 0.0, "finite": true}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "none", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "hack", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "async", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "timing", "strategy": "gpu_only_q8", "median_ms": 30.998582995380275, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "none", "median_ms": 38.86183400027221, "speedup_vs_gpu": 0.7976613505982024, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "hack", "median_ms": 24.348958999325987, "speedup_vs_gpu": 1.2730968496944104, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "async", "median_ms": 46.78862499713432, "speedup_vs_gpu": 0.6625239146753907, "repeat": 3}
