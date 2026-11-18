@@ -102,12 +102,16 @@ def anebench(
     window=None,
     int8in=False,
     repeat=1,
+    calls=1,
+    percall=None,
 ):
     """Benchmark one model/function; returns the parsed JSON result.
 
     repeat>1 runs the benchmark that many times and keeps the best-state run
     (lowest median_ms, lowest load_s), because this machine shows a bimodal ANE
     state that is unrelated to visible process load.
+    calls>1 times that many back-to-back predictions as one sample.
+    percall: path for a JSONL log, one timestamped line per sample.
     """
     cmd = [WATCHDOG, ANEBENCH, model, "--units", units, "--iters", iters, "--layout", layout]
     if shape is not None:
@@ -118,6 +122,10 @@ def anebench(
         cmd += ["--function", function]
     if int8in:
         cmd += ["--int8in"]
+    if calls > 1:
+        cmd += ["--calls", calls]
+    if percall is not None:
+        cmd += ["--percall", percall]
     if window is not None:
         cmd += ["--window", *window]
     best = None
