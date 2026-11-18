@@ -1,5 +1,8 @@
 // ANE matmul benchmark. Usage: anebench MODEL.mlpackage [--units ane|all|gpu|cpu] [--iters N]
 //   [--tokens T] [--shape T O I] [--function NAME] [--layout conv|token] [--int8in]
+//   [--calls N] [--percall PATH.jsonl] [--window W0 W1]
+// --calls N times N back-to-back predictions as one sample (fused-vs-separate arms).
+// --percall appends one JSON line per timed sample: {"t": epoch_s, "ms": x}.
 // Model name: <variant>_<T>x<O>x<I>.mlpackage; flags override what the name implies.
 import CoreML
 import Foundation
@@ -14,7 +17,7 @@ let a = CommandLine.arguments
 guard a.count >= 2 else { print("usage"); exit(2) }
 var units = MLComputeUnits.cpuAndNeuralEngine, iters = 50, i = 2
 var tokOverride: Int? = nil, shapeOverride: (Int, Int, Int)? = nil, fnName: String? = nil
-var layoutOverride: String? = nil, int8in = false
+var layoutOverride: String? = nil, int8in = false, calls = 1, percallPath: String? = nil
 while i < a.count {
     if a[i] == "--units" { switch a[i+1] { case "ane": units = .cpuAndNeuralEngine; case "gpu": units = .cpuAndGPU; case "cpu": units = .cpuOnly; default: units = .all }; i += 2 }
     else if a[i] == "--iters" { iters = Int(a[i+1])!; i += 2 }
@@ -23,6 +26,8 @@ while i < a.count {
     else if a[i] == "--function" { fnName = a[i+1]; i += 2 }
     else if a[i] == "--layout" { layoutOverride = a[i+1]; i += 2 }
     else if a[i] == "--int8in" { int8in = true; i += 1 }
+    else if a[i] == "--calls" { calls = Int(a[i+1])!; i += 2 }
+    else if a[i] == "--percall" { percallPath = a[i+1]; i += 2 }
     else { i += 1 }
 }
 let path = a[1]
@@ -68,16 +73,36 @@ let out = try MLMultiArray(shape: (cl ? [1, O, 1, T] : [T, O]).map { NSNumber(va
 opts.outputBackings = ["y": out]
 
 t0 = now(); _ = try model.prediction(from: provider, options: opts); let tFirst = now() - t0
-for _ in 0..<10 { _ = try model.prediction(from: provider, options: opts) }
+for _ in 0..<10 { for _ in 0..<calls { _ = try model.prediction(from: provider, options: opts) } }
 var ts: [Double] = []
+let percall: FileHandle? = percallPath.map { p in
+    FileManager.default.createFile(atPath: p, contents: nil)
+    return FileHandle(forWritingAtPath: p)!
+}
+func record(_ startWall: Double, _ ms: Double) {
+    if let fh = percall {
+        fh.write("{\"t\":\(startWall),\"ms\":\(ms),\"calls\":\(calls)}\n".data(using: .utf8)!)
+    }
+}
 var w0 = 0.0, w1 = 0.0
 if let k = a.firstIndex(of: "--window") { w0 = Double(a[k+1])!; w1 = Double(a[k+2])! }
-if w1 > 0 {   // windowed mode: loop until w1, keep calls that start inside [w0, w1]
-    while Date().timeIntervalSince1970 < w1 { let st = Date().timeIntervalSince1970; let s = now(); _ = try model.prediction(from: provider, options: opts); if st >= w0 { ts.append(now() - s) } }
-} else { for _ in 0..<iters { let s = now(); _ = try model.prediction(from: provider, options: opts); ts.append(now() - s) } }
+if w1 > 0 {   // windowed mode: loop until w1, keep samples that start inside [w0, w1]
+    while Date().timeIntervalSince1970 < w1 {
+        let st = Date().timeIntervalSince1970; let s = now()
+        for _ in 0..<calls { _ = try model.prediction(from: provider, options: opts) }
+        if st >= w0 { let ms = (now() - s) * 1e3; ts.append(ms / 1e3); record(st, ms) }
+    }
+} else {
+    for _ in 0..<iters {
+        let st = Date().timeIntervalSince1970; let s = now()
+        for _ in 0..<calls { _ = try model.prediction(from: provider, options: opts) }
+        let ms = (now() - s) * 1e3; ts.append(ms / 1e3); record(st, ms)
+    }
+}
+percall?.closeFile()
 guard !ts.isEmpty else { FileHandle.standardError.write("measurement window missed: no samples collected\n".data(using: .utf8)!); exit(3) }
 ts.sort(); let med = ts[ts.count / 2], p90 = ts[Int(Double(ts.count) * 0.9)]
-let tflops = 2.0 * Double(T) * Double(I) * Double(O) / med / 1e12
+let tflops = 2.0 * Double(T) * Double(I) * Double(O) * Double(calls) / med / 1e12
 let rss1 = rssMB()
 let fnField = fnName.map { ",\"function\":\"\($0)\"" } ?? ""
-print("{\"model\":\"\(base)\"\(fnField),\"T\":\(T),\"units\":\"\(units.rawValue)\",\"compile_s\":\(tCompile),\"load_s\":\(tLoad),\"first_call_s\":\(tFirst),\"median_ms\":\(med*1e3),\"p90_ms\":\(p90*1e3),\"tflops\":\(tflops),\"rss_delta_mb\":\(rss1-rss0)}")
+print("{\"model\":\"\(base)\"\(fnField),\"T\":\(T),\"calls\":\(calls),\"units\":\"\(units.rawValue)\",\"compile_s\":\(tCompile),\"load_s\":\(tLoad),\"first_call_s\":\(tFirst),\"median_ms\":\(med*1e3),\"p90_ms\":\(p90*1e3),\"tflops\":\(tflops),\"rss_delta_mb\":\(rss1-rss0)}")
