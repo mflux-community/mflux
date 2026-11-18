@@ -62,8 +62,8 @@ def positive_float(value: str) -> float:
         parsed = float(value)
     except ValueError:
         raise argparse.ArgumentTypeError(f"'{value}' is not a valid number")
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError(f"'{value}' must be > 0")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError(f"'{value}' must be a finite number > 0")
     return parsed
 
 
@@ -167,8 +167,9 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--base-model", type=str, required=False, metavar="MODEL", help="When using a third-party HuggingFace model or local path, explicitly name the built-in model it is based on (e.g. dev, schnell, qwen-image).")
         self.add_argument("--quantize",  "-q", type=int, choices=ui_defaults.QUANTIZE_CHOICES, default=None, help=f"Quantize the model ({' or '.join(map(str, ui_defaults.QUANTIZE_CHOICES))}, Default is None)")
 
-    def add_compute_precision_arguments(self) -> None:
-        self.add_argument("--compute-precision", type=str, choices=sorted(ComputePrecision.CHOICES), default=None, help="Run the inside of the attention and feed-forward layers in this precision; the residual stream, norms, text encoder and VAE keep the model's own. float16 helps most on GPUs with slow bfloat16 (Apple M1 and M2); the gain is small or zero on M4 and M5. The image changes slightly for the same seed. Default: off.")
+    def add_compute_precision_arguments(self, help_text: str | None = None) -> None:
+        default_help = "Run the inside of the attention and feed-forward layers in this precision; the residual stream, norms, text encoder and VAE keep the model's own. float16 helps most on GPUs with slow bfloat16 (Apple M1 and M2); the gain is small or zero on M4 and M5. The image changes slightly for the same seed. Default: off."
+        self.add_argument("--compute-precision", type=str, choices=sorted(ComputePrecision.CHOICES), default=None, help=help_text or default_help)
 
     def add_lora_arguments(self, bake_by_default: bool = True) -> None:
         # bake_by_default is off for a model whose LoRAs lose part of their update in a merge (MOSS-Image).
@@ -552,6 +553,16 @@ class CommandLineParser(argparse.ArgumentParser):
                     namespace.cfg_end = positive_fraction(str(prior_gen_metadata["cfg_end"]))
                 except argparse.ArgumentTypeError as exc:
                     self.error(f"cfg_end in --config-from-conf: {exc}")
+            # DreamLite records an edit's image guidance, which adds a pass to every step.
+            if (
+                hasattr(namespace, "image_guidance")
+                and prior_gen_metadata.get("image_guidance") is not None
+                and not self._option_was_provided("--image-guidance")
+            ):
+                try:
+                    namespace.image_guidance = positive_float(str(prior_gen_metadata["image_guidance"]))
+                except argparse.ArgumentTypeError as exc:
+                    self.error(f"image_guidance in --config-from-conf: {exc}")
             # MOSS-Image records the layers its negative CFG branch skips. They change the image too.
             if (
                 hasattr(namespace, "uncond_skip_layers")
