@@ -75,7 +75,8 @@ No pairing change is needed. This makes the port cheaper than it first looked.
 ## Expected gain
 
 RoPE plus the norm plus the layout change is a subset of that few-percent non-matmul term, so the
-ceiling is the whole of that term. Treat 4.7% as a loose upper bound rather than a measurement, and
-expect 1 to 2%. Measure the fused path against the composed path at S=4224 before and after. Keep the
+ceiling is the whole of that term. The observed spread, 1.4% to 6.8%, is the honest range, so do not
+quote 4.7% as a bound: one of the runs exceeded it. Expect 1 to 2%, and accept that the uncertainty in
+the budget is of the same size as the gain. Measure the fused path against the composed path at S=4224 before and after. Keep the
 bitwise comparison in the test. Repeat each timing enough times to clear the run-to-run band, which is
 about plus or minus 1.5% of block time for this method.

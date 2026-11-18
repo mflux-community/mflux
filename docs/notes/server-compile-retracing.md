@@ -24,38 +24,50 @@ No measurement of the retrace cost exists yet. Measure that before choosing an a
 
 ## Option 1: compile shapeless
 
-Blockers are the places where a shape becomes a Python int. After the mask removal, six remain in
-the traced path. This list is verified against the current tree.
+Blockers are the places where a shape becomes a Python int. This branch is based on `main` and does
+not carry PR #1001, so the primary numbers below are `main`'s. The column on the right is where each
+read moves once PR #1001 lands.
 
 Reads that change with caption length, so these are the ones that matter per request:
 
-- `transformer.py:201` — `cap_ori_len = cap_feats.shape[0]`
-- `attention.py:53` — `batch_size, seq_len, _ = hidden_states.shape`
-- `attention.py:99` — `batch_size, seq_len, n_heads, head_dim = x.shape`
+| read | `main` | with PR #1001 |
+|---|---|---|
+| `cap_ori_len = cap_feats.shape[0]` | `transformer.py:200` | `:201` |
+| `batch_size, seq_len, _ = hidden_states.shape` | `attention.py:53` | unchanged |
+| `batch_size, seq_len, n_heads, head_dim = x.shape` | `attention.py:99` | unchanged |
 
 Reads that change only with resolution, so they are stable across prompts on a fixed-size server:
 
-- `transformer.py:138` — `x_len = x_emb.shape[1]`
-- `transformer.py:208` — `C, F, H, W = image.shape`
-- `transformer.py:217` — `image_ori_len = image.shape[0]`
+| read | `main` | with PR #1001 |
+|---|---|---|
+| `x_len = x_emb.shape[1]` | `transformer.py:136` | `:138` |
+| `C, F, H, W = image.shape` | `:207` | `:208` |
+| `image_ori_len = image.shape[0]` | `:216` | `:217` |
+
+Three further reads exist on `main` today and disappear with PR #1001, because they existed only to
+size the all-True masks: `x_emb.shape[0]` at `:108`, `cap_emb.shape[0]` at `:124` and
+`unified.shape[1]` at `:139`. Two of those three varied with caption length. So on `main` the traced
+path has nine such reads, and six survive PR #1001. Count the three mask reads until that PR lands.
 
 Start with the three caption-dependent reads. The two in `attention.py` only build reshape targets,
 which is the easiest case. Whether MLX accepts them under `shapeless` tracing is untested, so try it
 first and read the error before refactoring anything.
 
-Worth noting: dropping the all-True attention mask removed three of these reads, and two of those
-were caption-dependent (`cap_emb.shape[0]` and `unified.shape[1]`). The remaining set is smaller than
-when this investigation started.
+That is the whole benefit of PR #1001 for this problem: it removes a third of the blockers, and the
+two caption-dependent ones among them. It is not a fix on its own, because `cap_feats.shape[0]` and
+the two `attention.py` unpacks still vary with prompt length.
 
 ## Option 2: bucket the caption length
 
 Bucketing the padding modulus inside `_patchify` does **not** work. The trace key is the shape that
 enters the compiled function, and `_patchify` runs inside it (`transformer.py:97`, padding at
-`:201-204`). A 30-token prompt and a 45-token prompt therefore arrive as two
-different input shapes. They produce two traces, even though both then pad to 64. The padding has to happen before the compiled
-call, on `text_encodings` in `predict`'s caller.
+`:200-201`). Coarsening the modulus therefore buys nothing on its own. Take 33 tokens and 45 tokens.
+`(-33) % 32` is 31 and `(-45) % 32` is 19, so both pad to 64 and share a bucket. They still arrive at
+`predict` as `(33, D)` and `(45, D)`, which are two trace keys. The padding has to happen before the
+compiled call, on `text_encodings` in the caller, for bucketing to reduce traces at all.
 
-That is a wider change than it sounds, because `cap_ori_len = cap_feats.shape[0]` (`:200`) is also how
+That is a wider change than it sounds, because `cap_ori_len = cap_feats.shape[0]` (`:200` on `main`,
+`:201` after PR #1001) is also how
 the model learns which caption rows are real. If the caller pads first, those pad rows become real
 rows: `cap_pos_ids` spreads over them, and `cap_pad_mask` marks none of them. So the caller must pass
 the true length alongside the padded tensor, or the padding and position work has to move out of
