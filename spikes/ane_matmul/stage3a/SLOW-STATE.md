@@ -1,14 +1,16 @@
 # Slow-state probe: why the same ANE work takes ~1.5x longer at random
 
-Date: 2026-11-18. Run 1: 21:38-21:49. Run 2 (with `macmon` ANE power monitoring): 22:09-22:20. Machine: M4 Max, macOS 27.0.1. Branch `experiment/zit-on-ane-stage3`.
+Date: 2026-11-18. Run 1: 21:38-21:49. Run 2 (with `macmon` ANE power monitoring): 22:09-22:20. Run 3 (from the foreground `qwen serve` session): 22:37-22:48. Machine: M4 Max, macOS 27.0.1. Branch `experiment/zit-on-ane-stage3`.
 
-Raw evidence: `results/slow_state.jsonl` (summaries, both runs). Timestamped samples: `results/slow_state_percall*.jsonl`. System samples: `results/slow_state_sys*.jsonl`. ANE/GPU power at 1 s: `results/slow_state_macmon_run2.jsonl`. Scripts: `stage3a/slow_state_probe.py` and `stage3a/slow_state_sampler.py`. Both runs passed the quiet gate and ran under `watchdog.sh` and the shared `BENCH.lock`.
+Raw evidence: `results/slow_state.jsonl` (summaries, all runs). Timestamped samples: `results/slow_state_percall*.jsonl`. System samples: `results/slow_state_sys*.jsonl`. ANE/GPU power at 1 s: `results/slow_state_macmon_run2.jsonl` and `results/slow_state_macmon_run3.jsonl`. Scripts: `stage3a/slow_state_probe.py` and `stage3a/slow_state_sampler.py`. All runs passed the quiet gate and ran under `watchdog.sh` and the shared `BENCH.lock`.
 
-**Headline (run 2):** the slow state shows up directly in ANE power. Fast buckets draw **5.01 W** from the ANE rail. Slow buckets draw **2.50 W**. The same work per prediction then takes 1.6x longer. GPU frequency stays flat (777 against 773 MHz). That is the signature of a downclocked or QoS-limited ANE. A co-tenant stealing ANE time would raise total ANE power, not halve it.
+**Headline (run 3): the slow state is gone. The cause is session QoS.** Scriv suspected that the launchd-managed `qwen serve` daemon ran throttled. He restarted it in the foreground. The same probe then produced 13,069 samples, and zero of them were slow. Median 45.89 ms. p90 46.44 ms. Throughput 14.48 TFLOPS. Run 2, from the launchd session, was 69.7% slow with a 108.8 ms slow median. ANE power tells the story. Run 2: 5.01 W in fast buckets, 2.50 W in slow buckets. Run 3: a steady **9.32 W**. ANE work submitted from the background launchd session runs downclocked. The same work from the foreground session runs at full rate.
+
+**Run 2 headline (still valid within its session):** the slow state shows up directly in ANE power. Fast buckets draw **5.01 W** from the ANE rail. Slow buckets draw **2.50 W**. The same work per prediction then takes 1.6x longer. GPU frequency stays flat (777 against 773 MHz). A co-tenant stealing ANE time would raise total ANE power, not halve it.
 
 ## Method
 
-- Workload: the w1w3 shape (20480x3840, T=4224, W8A16) in a continuous 600-second loop, from `compiled/sa_w1w3.mlmodelc` (coremldata hash `094f7e8eefb125a9`). One prediction per sample, each sample logged with its start timestamp. CPU_AND_NE compute units.
+- Workload: the w1w3 shape (20480x3840, T=4224, W8A16) in a continuous 600-second loop, from `compiled/sa_w1w3.mlmodelc` (coremldata hash `094f7e8eefb125a9`). One prediction per sample. The logger attaches a wall-clock timestamp to each sample. CPU_AND_NE compute units.
 - System sampler: one record every ~2 s with these fields:
   - thermal state (`pmset -g therm`)
   - memory free % (`memory_pressure`)
@@ -74,29 +76,48 @@ macmon join — per-call samples bucketed by slow fraction into the overlapping 
 
 The sys-sampler join again showed no separation (CPU busy 135 against 120%, memory free ~85% both, swap ~1582 MB both).
 
+## Run 3 (foreground session): the slow state disappears
+
+Identical workload, method and gate. The only change: `qwen serve` runs in the foreground from a terminal. Every child process (the probe, `anebench`, Core ML) then inherits the terminal's foreground QoS instead of the launchd service's background QoS. 13,069 samples in 600 s.
+
+| Metric | Run 1 (launchd) | Run 2 (launchd) | Run 3 (foreground) |
+|---|---|---|---|
+| Slow fraction | 54.1% | 69.7% | **0.0%** |
+| Median | 73.1 ms | 79.7 ms | **45.9 ms** |
+| p90 | 87.6 ms | 114.0 ms | **46.4 ms** |
+| Fastest state median | 55.6 ms | 66.7 ms | **45.9 ms** |
+| Throughput | — | — | **14.48 TFLOPS** |
+| ANE power (macmon) | not logged | 5.01 W fast / 2.50 W slow | **9.32 W steady** |
+| GPU frequency | — | 777 / 773 MHz | 781 MHz |
+
+- The run-3 latency distribution is tight: p25-p75 spans 45.7-46.2 ms, max 55.7 ms. No second mode exists.
+- 45.9 ms matches the Stage 1 idle-machine rate for this shape (2 x 22.8 ms separate w1 calls = 45.6 ms). Every measurement since Stage 1, including the Stage 3a battery, ran degraded to some degree by the session QoS.
+- Co-tenant CPU load during run 3 exceeded runs 1-2. One Electron process hit 259.9% and `duetexpertd` hit 98.6%. The slow state never appeared. CPU contention is definitively not the cause.
+- The added `anebench` priority logging returned no values (the `pgrep`/`ps` probe missed the process), so the QoS class itself was not captured directly. The session-level A/B is the evidence.
+
 ## Conclusion
 
-The slow state is an ANE clock/QoS state. Evidence:
+The slow state is a QoS-driven ANE clock state, tied to the calling process tree:
 
-1. ANE power halves (5.01 to 2.50 W) while the work per prediction stays identical. Latency rises 1.6x at the same time.
-2. GPU frequency does not move (777 against 773 MHz), so this is not a whole-chip power cap.
-3. A hidden ANE co-tenant would raise total ANE power during slow samples. The measured power falls, which rules out contention as the direct cause. Apple-intelligence daemons (`duetexpertd`, `siriactionsd`, `ANECompilerService`) were active in both fast and slow buckets alike.
-4. The behaviour matches the two-clock-state pattern already documented for short GPU kernels on this machine.
+1. Launchd-managed session (runs 1-2): the ANE rail draws 2.5-5.0 W, and latency flips between two states on the scale of seconds.
+2. Foreground user session (run 3): the ANE rail holds 9.3 W, and latency is stable at the hardware's full rate.
+3. GPU frequency stays flat across all states (~773-781 MHz), so this is ANE-specific, not a whole-chip power cap.
+4. Co-tenant CPU load does not explain it: run 3 had the heaviest CPU co-tenants and zero slow samples. A co-tenant on the ANE itself would raise ANE power, not halve it.
 
-Run 2 resolves the earlier hypotheses list in favour of hypothesis 1 (ANE-internal clock/QoS states). `powermetrics` stays unavailable to agents (`sudo -n` demands a password). `macmon` provides the ANE power rail without sudo, and it answered the question.
+Runs 1-2 answered "what" (a downclocked ANE). Run 3 answers "why": the benchmark processes inherited a throttled QoS from the launchd-managed agent daemon. `powermetrics` stays unavailable to agents (`sudo -n` demands a password). `macmon` provides the ANE power rail without sudo, and it carried the diagnosis.
 
-## Proposal: adaptive split
+## Proposal after run 3
 
-The production path should absorb the state. Proposal for 3b/3c:
+The primary fix is operational, not algorithmic:
 
-1. Detect the state directly: read the ANE power rail the way `macmon` does (IOReport, no sudo), or simply measure achieved ms-per-column. Record the predict duration inside the bridge (`AneModel::predict`) in a small ring buffer. Time the GPU half with an MLX event pair around the quantized matmul.
-2. Keep an EWMA of ms-per-column for each half, per shape.
-3. Pick the split every N layer calls (N=4, one block): choose the variant that minimises max(t_gpu_est, t_ane_est) from a small precompiled set, e.g. ANE shares {40%, 50%, 60%}.
-4. Cost: each compiled model bakes in its ANE width, so every variant adds one function per layer. With no weight deduplication (Stage 3a test 4), 3 variants multiply the ANE disk footprint by 3. A cheaper 2-variant set {50%, 33%} covers the slow state at 2x disk. It shifts work to the GPU when the ANE is slow.
-5. Fallback if disk matters: keep the static per-shape splits from Stage 3a (they came from best-state numbers) and accept the variance. The split still pays in the slow state. With run 2's 1.63x inflation, the t2-measured w1w3 50:50 ANE half (31.8 ms) becomes the critical path at ~51.8 ms. That is still below the 65.1 ms q8 solo, so the split needs no static re-balance.
+1. Run every mflux benchmark (3d) and every agent-driven ANE measurement from a foreground terminal session. For agent daemons under launchd, check the service's QoS configuration or run benchmarks through a foreground wrapper.
+2. Keep `macmon` ANE power in the benchmark harness as a cheap validity canary: ~9 W on this workload means full rate, ~2.5-5 W means throttled. Flag any timed run below a power floor.
+3. The adaptive-split controller (EWMA of ms-per-column per half, re-pick the ANE width variant every block) becomes optional insurance rather than a requirement. End users run mflux from a terminal, which is a foreground session, so they should not meet the slow state. If mflux ever ships a daemon/server mode, revisit it. The design from the run-2 proposal stays valid as written.
+4. Fallback numbers still hold: even at run 2's 1.63x inflation the w1w3 50:50 split (~51.8 ms ANE-bound) beat the 65.1 ms q8 solo.
 
 ## Consequences for 3b and 3d
 
-- Budget w1w3-class ANE halves at best-state numbers (t2/t4b). Treat p90 as ~1.6x the median in production timing models. The whole level also drifts between sessions: run 2's fast state matches run 1's mid range.
-- All 3d benchmark tables need interleaved modes and best-of-N, per the standing rule. A single sequential pass can land one mode in the slow state for its whole run.
-- Evaluate the go/no-go criterion (>=1.3x per step) on best-state numbers, with a slow-state sensitivity note. At run 2's 1.63x ANE inflation, the w1w3 50:50 layer degrades from 31.8 ms to ~51.8 ms (ANE-bound). That still beats the 65.1 ms q8 solo. The split design degrades gracefully into the slow state.
+- Re-baseline in the foreground session before 3b integration work. The true best-state numbers beat the Stage 3a tables: w1w3 fused runs 45.9 ms (14.5 TFLOPS) against the 52.8-54.0 ms that throttling produced. The t2/t6 split speedups come from one throttled session, so the GPU:ANE balance may shift. Re-run the t2 sweep from the foreground session before freezing the ratios in config.
+- All Stage 3a absolute ANE numbers are conservative. The relative conclusions (fusion wins, enumerated works, multifunction parity, group-wise fails) come from single-session comparisons and stand.
+- All 3d benchmark tables need interleaved modes, best-of-N, and a macmon ANE-power canary per the standing rules.
+- The go/no-go criterion (>=1.3x per step) looks safer than the run-1/2 data suggested. Throttling slowed the ANE half during every Stage 3a measurement and the GPU half less.
