@@ -56,7 +56,7 @@ Best split: 50 : 50.
 
 - The spike patch ran with `mx.compile` on M4 (patch effective, images changed). Other chips are not tested.
 - The MLX ordering of GPU and CPU streams matters. Without a data dependency that forces the ANE launch first, the two halves run one after the other (35 ms instead of 21 ms).
-- The nanobind ABI must match MLX (version 2.13.0 for MLX 0.32.0).
+- The nanobind ABI must match MLX. Use nanobind 2.13.x for MLX 0.32.0 to 0.32.3 and nanobind 3.1.x for MLX 0.32.4. CMake checks this.
 - Token count is fixed at 4224 in the Core ML model. Other resolutions need other models.
 - W8A8 error over 30 blocks is not measured.
 - The W8A8 model applies the per-token scale after the matmul. The partial sums can exceed fp16 before that scale if int8 weights are unit scale. With real weight scales (about 0.0005 to 0.01) a worst-case test stays finite. Real activations passed the accuracy test.
