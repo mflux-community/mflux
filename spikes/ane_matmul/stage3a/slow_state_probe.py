@@ -226,6 +226,7 @@ def analyse():
             cpu_speed_limit=mean("cpu_speed_limit"),
             mem_free_pct=mean("mem_free_pct"),
             swap_used_mb=mean("swap_used_mb"),
+            anebench_pri=mean("anebench_pri"),
             top_cpu_peaks=sorted(names.items(), key=lambda kv: -kv[1])[:4],
         )
 
