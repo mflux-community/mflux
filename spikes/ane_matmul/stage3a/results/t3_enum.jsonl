@@ -2,3 +2,6 @@
 {"test": "t3_enum", "phase": "plan", "layer": "w1", "kind": "fixed", "plan": {"ios19.constexpr_blockwise_shift_scale:?": 1, "const:?": 5, "ios18.conv:ANE": 1, "identity:ANE": 1}}
 {"test": "t3_enum", "phase": "plan", "layer": "w2", "kind": "enum", "plan": {"const:?": 32, "ios19.slice_by_index:ANE": 4, "ios19.constexpr_blockwise_shift_scale:?": 4, "ios18.conv:ANE": 4, "ios19.add:ANE": 3, "identity:ANE": 1}}
 {"test": "t3_enum", "phase": "plan", "layer": "w2", "kind": "fixed", "plan": {"const:?": 28, "ios19.slice_by_index:ANE": 4, "ios19.constexpr_blockwise_shift_scale:?": 4, "ios18.conv:ANE": 4, "ios19.add:ANE": 3, "identity:ANE": 1}}
+{"test": "t3_enum", "phase": "correctness", "model": "enum_w1.mlpackage", "T": 4608, "cosine_vs_fp64": 0.9999999569227546, "n_inf": 0}
+{"test": "t3_enum", "phase": "correctness", "model": "enum_w1.mlpackage", "T": 16128, "cosine_vs_fp64": 0.9999999569350869, "n_inf": 0}
+{"test": "t3_enum", "phase": "correctness", "model": "enum_w2.mlpackage", "T": 4608, "cosine_vs_fp64": 0.9999999094838988, "n_inf": 0}

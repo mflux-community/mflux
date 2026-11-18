@@ -10,15 +10,21 @@ var feats: [String: MLFeatureValue] = [:]
 let names = ["x", "tok"]
 for (k, n) in names.enumerated() where a.count > 3 + k {
     let d = model.modelDescription.inputDescriptionsByName[n]!.multiArrayConstraint!
-    let m = try MLMultiArray(shape: d.shape, dataType: d.dataType)
     let data = try Data(contentsOf: URL(fileURLWithPath: a[3 + k]))
     let esize = d.dataType == .float16 ? 2 : 1
-    let expected = d.shape.map { $0.intValue }.reduce(1, *) * esize
+    // For enumerated-shape models the described shape is only the default.
+    // Keep the leading dims and derive the last dim from the file size.
+    var shape = d.shape.map { $0.intValue }
+    let prefixCount = shape.dropLast().reduce(1, *)
+    let nElems = data.count / esize
+    if nElems % prefixCount == 0 { shape[shape.count - 1] = nElems / prefixCount }
+    let m = try MLMultiArray(shape: shape.map { NSNumber(value: $0) }, dataType: d.dataType)
+    let expected = shape.reduce(1, *) * esize
     guard data.count == expected else {
         FileHandle.standardError.write("input \(n): file has \(data.count) bytes, model expects \(expected)\n".data(using: .utf8)!)
         exit(2)
     }
-    data.withUnsafeBytes { src in memcpy(m.dataPointer, src.baseAddress!, data.count) }
+    _ = data.withUnsafeBytes { src in memcpy(m.dataPointer, src.baseAddress!, data.count) }
     feats[n] = MLFeatureValue(multiArray: m)
 }
 let out = try model.prediction(from: MLDictionaryFeatureProvider(dictionary: feats)).featureValue(for: "y")!.multiArrayValue!
