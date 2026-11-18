@@ -92,9 +92,21 @@ class QwenImage21Grounding:
     def balanced_json_spans(text: str) -> list[str]:
         # Substrings that hold a balanced {...} span, in order of appearance (ported
         # from the official prompt_rewrite answer parser).
+        # Braces inside a JSON string (a description that mentions "}") do not count; quotes are only
+        # tracked inside an object, so apostrophes or quotes in the prose around it do not matter.
         spans, depth, start = [], 0, -1
+        in_string = escaped = False
         for i, ch in enumerate(text):
-            if ch == "{":
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"' and depth > 0:
+                in_string = True
+            elif ch == "{":
                 if depth == 0:
                     start = i
                 depth += 1
@@ -121,7 +133,7 @@ class QwenImage21Grounding:
 
     @staticmethod
     def parse_t2i_rewrite(text: str) -> tuple[str, str | None] | None:
-        # (rewritten_prompt, wh_ratio or None); the ratio is kept only when it looks like "W:H".
+        # (rewritten_prompt, wh_ratio or None); the ratio is kept only when it looks like "W:H" with W, H > 0.
         for candidate in reversed(QwenImage21Grounding.balanced_json_spans(text)):
             try:
                 obj = json.loads(candidate)
@@ -130,11 +142,8 @@ class QwenImage21Grounding:
             rewritten = obj.get("rewritten_prompt") or obj.get("rewrited_prompt")
             if isinstance(rewritten, str) and rewritten.strip():
                 ratio = obj.get("wh_ratio")
-                ok = (
-                    isinstance(ratio, str)
-                    and len(ratio.split(":")) == 2
-                    and all(p.strip().isdigit() for p in ratio.split(":"))
-                )
+                parts = ratio.split(":") if isinstance(ratio, str) else []
+                ok = len(parts) == 2 and all(p.strip().isdigit() and int(p) > 0 for p in parts)
                 return rewritten.strip(), ratio.strip() if ok else None
         return None
 

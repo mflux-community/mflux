@@ -865,6 +865,15 @@ def test_rewrite_text_prompt_is_public_and_raises_when_it_cannot_rewrite():
         ('{"rewrited_prompt": "a fox"}', ("a fox", None)),
         ('{"wh_ratio": "3:2"}', None),
         ("no json", None),
+        # a zero side would divide by zero when the ratio sets the canvas
+        ('{"rewritten_prompt": "a fox", "wh_ratio": "0:1"}', ("a fox", None)),
+        ('{"rewritten_prompt": "a fox", "wh_ratio": "16:0"}', ("a fox", None)),
+        # braces and escaped quotes inside the description belong to the string
+        ('{"rewritten_prompt": "a square icon showing }", "wh_ratio": "1:1"}', ("a square icon showing }", "1:1")),
+        (
+            'it\'s done: {"rewritten_prompt": "a sign reading \\"{OPEN}\\"", "wh_ratio": "4:3"}',
+            ('a sign reading "{OPEN}"', "4:3"),
+        ),
     ],
 )
 def test_parse_t2i_rewrite(reply, expected):
