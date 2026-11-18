@@ -4,7 +4,7 @@ Date: 2026-11-18. Run 1: 21:38-21:49. Run 2 (with `macmon` ANE power monitoring)
 
 Raw evidence: `results/slow_state.jsonl` (summaries, both runs). Timestamped samples: `results/slow_state_percall*.jsonl`. System samples: `results/slow_state_sys*.jsonl`. ANE/GPU power at 1 s: `results/slow_state_macmon_run2.jsonl`. Scripts: `stage3a/slow_state_probe.py` and `stage3a/slow_state_sampler.py`. Both runs passed the quiet gate and ran under `watchdog.sh` and the shared `BENCH.lock`.
 
-**Headline (run 2):** the slow state shows up directly in ANE power. Fast buckets draw **5.01 W** from the ANE rail, slow buckets **2.50 W** — half the power for the same work per prediction, while GPU frequency stays flat (777 against 773 MHz). That is the signature of a downclocked or QoS-limited ANE, not of a co-tenant stealing ANE time (a co-tenant would raise total ANE power, not halve it).
+**Headline (run 2):** the slow state shows up directly in ANE power. Fast buckets draw **5.01 W** from the ANE rail. Slow buckets draw **2.50 W**. The same work per prediction then takes 1.6x longer. GPU frequency stays flat (777 against 773 MHz). That is the signature of a downclocked or QoS-limited ANE. A co-tenant stealing ANE time would raise total ANE power, not halve it.
 
 ## Method
 
