@@ -16,7 +16,7 @@ class ZImageTransformerBlock(nn.Module):
         self.ffn_norm2 = nn.RMSNorm(dim, eps=norm_eps)
         self.adaLN_modulation = [nn.Linear(min(dim, 256), 4 * dim, bias=True)]
 
-    def __call__(self, x: mx.array, attn_mask: mx.array, freqs_cis: mx.array, t_emb: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, attn_mask: mx.array | None, freqs_cis: mx.array, t_emb: mx.array) -> mx.array:
         # Compute modulation parameters
         modulation = mx.expand_dims(self.adaLN_modulation[0](t_emb), axis=1)
         scale_msa, gate_msa, scale_mlp, gate_mlp = mx.split(modulation, 4, axis=2)

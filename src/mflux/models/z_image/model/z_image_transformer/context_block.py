@@ -15,7 +15,7 @@ class ZImageContextBlock(nn.Module):
         self.ffn_norm1 = nn.RMSNorm(dim, eps=norm_eps)
         self.ffn_norm2 = nn.RMSNorm(dim, eps=norm_eps)
 
-    def __call__(self, x: mx.array, attn_mask: mx.array, freqs_cis: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, attn_mask: mx.array | None, freqs_cis: mx.array) -> mx.array:
         attn_out = self.attention(self.attention_norm1(x), attention_mask=attn_mask, freqs_cis=freqs_cis)
         x = x + self.attention_norm2(attn_out)
         ffn_out = self.feed_forward(self.ffn_norm1(x))
