@@ -387,14 +387,16 @@ class QwenImage21Edit(nn.Module):
     def _proposed_ratio(resolution: int, wh_ratio: str, default: float) -> float:
         # The rewrite's "W:H" sets the canvas only when it keeps the automatic size near the resolution's pixel
         # budget (1000000:1 would give a 1,024,000 x 32 canvas, past the budget through the 32-pixel minimum).
-        # A side with hundreds of digits makes w / h overflow a float, or round to 0.0: keep the default size then.
+        # Past (resolution / 16)^2 either way the long side alone is over twice the budget, so such a ratio (and one
+        # whose w / h overflows a float or rounds to 0.0) keeps the default size before dimensions() could overflow.
         w, h = (int(part) for part in wh_ratio.split(":"))
         try:
             ratio = w / h
         except OverflowError:
-            ratio = 0.0
-        if not 0 < ratio < math.inf:
-            logger.info("enhance_prompt: ignoring ratio %s, it is not a usable aspect ratio", wh_ratio)
+            ratio = math.inf
+        bound = (resolution / 16) ** 2
+        if not 1 / bound <= ratio <= bound:
+            logger.info("enhance_prompt: ignoring ratio %s, no canvas at this resolution can use it", wh_ratio)
             return default
         width, height = QwenImage21LatentCreator.dimensions(resolution, ratio)
         if width * height > 1.1 * resolution * resolution:

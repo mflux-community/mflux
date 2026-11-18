@@ -834,6 +834,8 @@ def test_enhance_prompt_without_references_rewrites_text_to_image(monkeypatch):
         "1000000:1",  # past the pixel budget through the 32-pixel minimum
         "9" * 400 + ":1",  # w / h overflows a float
         "1:" + "9" * 400,  # w / h rounds to 0.0
+        "1" + "0" * 304 + ":1",  # w / h is finite, but the canvas width would overflow
+        "1:1" + "0" * 304,
     ],
 )
 def test_text_to_image_rewrite_ignores_an_unusable_ratio(monkeypatch, wh_ratio):
