@@ -179,6 +179,7 @@ def main():
 
 
 if __name__ == "__main__":
+    RESULTS.mkdir(parents=True, exist_ok=True)
     lock = "/Users/ianscrivener/MFlux/mflux-upstream/spikes/BENCH.lock"
     fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     os.write(fd, json.dumps({"owner": f"3b0-ordering-{os.getpid()}", "pid": os.getpid(), "at": time.time()}).encode())
