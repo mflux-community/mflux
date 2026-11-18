@@ -53,7 +53,7 @@ class QwenImage21Initializer:
             PrequantizedResolution.weights_root(
                 model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
             ),
-            download_patterns or definition.get_download_patterns(),
+            qwen21_w8a8.download_patterns(download_patterns or definition.get_download_patterns()),
         )
         if root is None:
             raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")

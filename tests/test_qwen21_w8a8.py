@@ -62,6 +62,26 @@ def test_w8a8_linear_matches_the_float_projection(backend):
 
 
 @pytest.mark.fast
+@pytest.mark.parametrize("rows", [1, 14, 77, 129])
+@pytest.mark.parametrize("out", [64, 96, 200, 384])
+def test_gemm_partial_tiles_match_the_integer_product(rows, out):
+    # Rows and output widths that are not multiples of the tile (BM 128, BN 64) must give the exact
+    # int8 product, with every tile reading only inside xq and the weight.
+    if not w8a8.tensor_ops_available():
+        pytest.skip("the INT8 TensorOps GEMM needs an Apple M5 GPU")
+    mx.random.seed(3)
+    x = mx.random.normal((rows, 512)).astype(mx.bfloat16)
+    weight, scale = convrot(mx.random.normal((out, 512)) / 20)
+    scale = scale.reshape(-1)
+    y = w8a8.matmul(x, weight, scale)
+    xq, xs = w8a8.rotate_quantize(x)
+    acc = np.array(xq).astype(np.int64) @ np.array(weight).astype(np.int64).T
+    ref = (acc.astype(np.float32) * np.array(xs)[:, None]) * np.array(scale)[None, :]
+    assert y.shape == (rows, out)
+    assert mx.array_equal(y, mx.array(ref).astype(mx.bfloat16)).item()
+
+
+@pytest.mark.fast
 def test_rotate_quantize_kernel_matches_the_reference():
     if not w8a8.tensor_ops_available():
         pytest.skip("checked on Apple M5 GPUs, where the kernel runs")
@@ -75,10 +95,8 @@ def test_rotate_quantize_kernel_matches_the_reference():
     assert mx.mean((diff > 0).astype(mx.float32)).item() < 1e-3
 
 
-@pytest.mark.fast
-def test_load_reads_an_int8_convrot_dit(tmp_path, backend):
-    mx.random.seed(2)
-    reference = QwenImage21Transformer(TINY)
+def write_int8_convrot(tmp_path, reference) -> tuple:
+    # What ComfyUI stores for a DiT: int8 convrot block projections (gate/up fused), everything else as is.
     stored = {}
     for key, value in tree_flatten(reference.parameters()):
         prefix = key.removesuffix(".weight")
@@ -96,6 +114,14 @@ def test_load_reads_an_int8_convrot_dit(tmp_path, backend):
         stored[prefix + ".comfy_quant"] = mx.array(np.frombuffer(QUANT.encode(), np.uint8))
     path = tmp_path / "qwen_image_2.1_int8_convrot.safetensors"
     mx.save_safetensors(str(path), stored)
+    return path, stored
+
+
+@pytest.mark.fast
+def test_load_reads_an_int8_convrot_dit(tmp_path, backend):
+    mx.random.seed(2)
+    reference = QwenImage21Transformer(TINY)
+    path, stored = write_int8_convrot(tmp_path, reference)
 
     model = QwenImage21Transformer(TINY)
     qwen21_w8a8.convert(model)
@@ -126,3 +152,34 @@ def test_load_rejects_another_quantization(tmp_path):
     )
     with pytest.raises(ValueError, match="unsupported quantization"):
         qwen21_w8a8.load(model, path)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("drop", ["transformer_blocks.1.attn.to_k.weight_scale", "norm_out.linear.weight"])
+def test_load_rejects_an_incomplete_checkpoint(tmp_path, drop):
+    # A missing scale would otherwise stay at zero and silence the layer without an error.
+    path, stored = write_int8_convrot(tmp_path, QwenImage21Transformer(TINY))
+    del stored[drop]
+    mx.save_safetensors(str(path), stored)
+    model = QwenImage21Transformer(TINY)
+    qwen21_w8a8.convert(model)
+    with pytest.raises(ValueError, match="does not match the transformer"):
+        qwen21_w8a8.load(model, path)
+
+
+@pytest.mark.fast
+def test_w8a8_skips_the_float_dit_download_and_refuses_to_save(tmp_path, monkeypatch):
+    patterns = ["vae/*.safetensors", "transformer/*.safetensors", "transformer/*.json"]
+    monkeypatch.delenv("MFLUX_QWEN21_W8A8", raising=False)
+    assert qwen21_w8a8.download_patterns(patterns) == patterns
+    monkeypatch.setenv("MFLUX_QWEN21_W8A8", str(tmp_path))
+    assert qwen21_w8a8.download_patterns(patterns) == ["vae/*.safetensors", "transformer/*.json"]
+
+    class Model:
+        transformer = QwenImage21Transformer(TINY)
+
+    model = Model()
+    qwen21_w8a8.check_savable(model)  # an ordinary model saves
+    qwen21_w8a8.prepare(model, object, quantize=None, lora_paths=None)
+    with pytest.raises(ValueError, match="cannot be saved"):
+        qwen21_w8a8.check_savable(model)

@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 import mlx.core as mx
-from mlx.utils import tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 
 from mflux.models.common.quantization.w8a8 import GROUP, W8A8Linear
 
@@ -34,6 +34,22 @@ def checkpoint() -> Path | None:
     return Path(path).expanduser() if path else None
 
 
+def download_patterns(patterns: list[str]) -> list[str]:
+    """The checkpoint files to fetch: without the float DiT shards when the DiT comes from MFLUX_QWEN21_W8A8."""
+    if checkpoint() is None:
+        return patterns
+    return [p for p in patterns if p != "transformer/*.safetensors"]
+
+
+def check_savable(model) -> None:
+    """save_model would write int8 weights and scales as an ordinary checkpoint that cannot be reloaded."""
+    if getattr(model, "_w8a8_checkpoint", None) is not None:
+        raise ValueError(
+            "A model loaded with MFLUX_QWEN21_W8A8 cannot be saved; its DiT is the int8_convrot file "
+            f"({model._w8a8_checkpoint}). Load it without the variable to save the checkpoint."
+        )
+
+
 def prepare(model, definition, quantize: int | None, lora_paths: list[str] | None):
     """Before loading: with MFLUX_QWEN21_W8A8 set, swap the block projections for W8A8Linear and return a weight
     definition without the transformer (load() reads it from the int8 file), plus that file; else (definition, None)."""
@@ -45,6 +61,7 @@ def prepare(model, definition, quantize: int | None, lora_paths: list[str] | Non
     if not path.exists():
         raise FileNotFoundError(f"MFLUX_QWEN21_W8A8 points to a missing file: {path}")
     convert(model.transformer)
+    model._w8a8_checkpoint = path
 
     class WithoutTransformer(definition):
         @staticmethod
@@ -74,6 +91,24 @@ def _check_quant(weights: dict) -> None:
             or int(config.get("convrot_groupsize", 0)) != GROUP
         ):
             raise ValueError(f"{key}: unsupported quantization {config}")
+
+
+def _check_complete(path: Path, transformer, params: dict[str, mx.array]) -> None:
+    # update(strict=False) would leave a missing parameter (such as a projection's scale) at its zero
+    # initial value and would accept a wrong shape, so the file must match the transformer exactly.
+    expected = dict(tree_flatten(transformer.parameters()))
+    missing = sorted(set(expected) - set(params))
+    unexpected = sorted(set(params) - set(expected))
+    mismatched = sorted(
+        k
+        for k in set(expected) & set(params)
+        if expected[k].shape != params[k].shape or (expected[k].dtype == mx.int8) != (params[k].dtype == mx.int8)
+    )
+    if missing or unexpected or mismatched:
+        raise ValueError(
+            f"{path} does not match the transformer: missing {missing[:5]} ({len(missing)}), "
+            f"unexpected {unexpected[:5]} ({len(unexpected)}), wrong shape or dtype {mismatched[:5]} ({len(mismatched)})"
+        )
 
 
 def _read(path: Path) -> dict[str, mx.array]:
@@ -107,10 +142,7 @@ def load(transformer, path: Path) -> None:
         for part, half in zip(parts, mx.split(value, len(parts))):
             params[f"{block}{part}.{name}"] = half
     params = Qwen21Initializer._normalize_transformer_weights(params)
-    quantized = sum(1 for k, v in params.items() if v.dtype == mx.int8)
-    expected = len(transformer.transformer_blocks) * len(PROJECTIONS)
-    if quantized != expected:
-        raise ValueError(f"{path}: {quantized} int8 projections, expected {expected}")
+    _check_complete(path, transformer, params)
     transformer.update(tree_unflatten(list(params.items())), strict=False)
     for block in transformer.transformer_blocks:
         attn, mlp = block.attn, block.img_mlp

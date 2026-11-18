@@ -171,6 +171,9 @@ class QwenImage21Controlnet(nn.Module):
         )
 
     def save_model(self, base_path: str) -> None:
+        from mflux.models.qwen21.weights import qwen21_w8a8
+
+        qwen21_w8a8.check_savable(self)
         # The base checkpoint as QwenImage21Edit saves it, with the control branch under controlnet/.
         ModelSaver.save_model(
             self,
