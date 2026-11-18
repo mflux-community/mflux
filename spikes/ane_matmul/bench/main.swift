@@ -1,5 +1,6 @@
 // ANE matmul benchmark. Usage: anebench MODEL.mlpackage [--units ane|all|gpu|cpu] [--iters N]
-// Model name: <v1|v2>_<T>x<O>x<I>.mlpackage
+//   [--tokens T] [--shape T O I] [--function NAME] [--layout conv|token] [--int8in]
+// Model name: <variant>_<T>x<O>x<I>.mlpackage; flags override what the name implies.
 import CoreML
 import Foundation
 
@@ -12,20 +13,32 @@ func rssMB() -> Double {
 let a = CommandLine.arguments
 guard a.count >= 2 else { print("usage"); exit(2) }
 var units = MLComputeUnits.cpuAndNeuralEngine, iters = 50, i = 2
+var tokOverride: Int? = nil, shapeOverride: (Int, Int, Int)? = nil, fnName: String? = nil
+var layoutOverride: String? = nil, int8in = false
 while i < a.count {
     if a[i] == "--units" { switch a[i+1] { case "ane": units = .cpuAndNeuralEngine; case "gpu": units = .cpuAndGPU; case "cpu": units = .cpuOnly; default: units = .all }; i += 2 }
-    else if a[i] == "--iters" { iters = Int(a[i+1])!; i += 2 } else { i += 1 }
+    else if a[i] == "--iters" { iters = Int(a[i+1])!; i += 2 }
+    else if a[i] == "--tokens" { tokOverride = Int(a[i+1])!; i += 2 }
+    else if a[i] == "--shape" { shapeOverride = (Int(a[i+1])!, Int(a[i+2])!, Int(a[i+3])!); i += 4 }
+    else if a[i] == "--function" { fnName = a[i+1]; i += 2 }
+    else if a[i] == "--layout" { layoutOverride = a[i+1]; i += 2 }
+    else if a[i] == "--int8in" { int8in = true; i += 1 }
+    else { i += 1 }
 }
 let path = a[1]
 let base = (path as NSString).lastPathComponent.replacingOccurrences(of: ".mlpackage", with: "")
 let parts = base.split(separator: "_"); let variant = String(parts[0])
-let d = parts[1].split(separator: "x").map { Int($0)! }; let (T, O, I) = (d[0], d[1], d[2])
+var T: Int, O: Int, I: Int
+if let s = shapeOverride { (T, O, I) = s }
+else { let d = parts[1].split(separator: "x").map { Int($0)! }; (T, O, I) = (d[0], d[1], d[2]) }
+if let t = tokOverride { T = t }
 
 let rss0 = rssMB()
 var t0 = now()
 let compiled = try MLModel.compileModel(at: URL(fileURLWithPath: path))
 let tCompile = now() - t0
 let cfg = MLModelConfiguration(); cfg.computeUnits = units
+if let fn = fnName { cfg.functionName = fn }
 t0 = now(); let model = try MLModel(contentsOf: compiled, configuration: cfg); let tLoad = now() - t0
 
 func arr(_ shape: [Int], _ type: MLMultiArrayDataType) -> MLMultiArray {
@@ -35,8 +48,8 @@ func arr(_ shape: [Int], _ type: MLMultiArrayDataType) -> MLMultiArray {
     else { let p = m.dataPointer.bindMemory(to: Int8.self, capacity: n); for k in 0..<n { p[k] = Int8.random(in: -127...127) } }
     return m
 }
-let cl = variant.hasPrefix("c")
-let pre = variant.hasSuffix("p")
+let cl = layoutOverride.map { $0 == "conv" } ?? variant.hasPrefix("c")
+let pre = int8in || variant.hasSuffix("p")
 var feats: [String: MLFeatureValue] = ["x": MLFeatureValue(multiArray: arr(cl ? [1, I, 1, T] : [T, I], pre ? .int8 : .float16))]
 if pre { let s = arr([1, 1, 1, T], .float16); let p = s.dataPointer.bindMemory(to: Float16.self, capacity: T); for k in 0..<T { p[k] = 0.02 }; feats["tok"] = MLFeatureValue(multiArray: s) }
 if variant == "v1" {
@@ -61,4 +74,5 @@ guard !ts.isEmpty else { FileHandle.standardError.write("measurement window miss
 ts.sort(); let med = ts[ts.count / 2], p90 = ts[Int(Double(ts.count) * 0.9)]
 let tflops = 2.0 * Double(T) * Double(I) * Double(O) / med / 1e12
 let rss1 = rssMB()
-print("{\"model\":\"\(base)\",\"units\":\"\(units.rawValue)\",\"compile_s\":\(tCompile),\"load_s\":\(tLoad),\"first_call_s\":\(tFirst),\"median_ms\":\(med*1e3),\"p90_ms\":\(p90*1e3),\"tflops\":\(tflops),\"rss_delta_mb\":\(rss1-rss0)}")
+let fnField = fnName.map { ",\"function\":\"\($0)\"" } ?? ""
+print("{\"model\":\"\(base)\"\(fnField),\"T\":\(T),\"units\":\"\(units.rawValue)\",\"compile_s\":\(tCompile),\"load_s\":\(tLoad),\"first_call_s\":\(tFirst),\"median_ms\":\(med*1e3),\"p90_ms\":\(p90*1e3),\"tflops\":\(tflops),\"rss_delta_mb\":\(rss1-rss0)}")
