@@ -31,7 +31,7 @@ class Qwen21Attention(nn.Module):
         self.use_fused_prologue = fused_qk_norm_rope_available(head_dim) and eps == 1e-6
         self.compute_precision = ComputePrecision()
         self._qkv_weight = None
-        self._w8a8_qkv = None  # (weight, scale, sizes) when the projections are W8A8 (qwen21_w8a8.load)
+        self._w8a8_qkv = None  # (weight, scale, sizes) when the projections are W8A8 (Qwen21W8A8.load)
 
     def __call__(
         self,

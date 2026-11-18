@@ -13,7 +13,7 @@ class Qwen21SwiGLUFeedForward(nn.Module):
         self.gate_layer = nn.Linear(hidden_size, mlp_hidden_size, bias=False)
         self.compute_precision = ComputePrecision()
         self._gate_proj_weight = None
-        self._w8a8_gate_proj = None  # (weight, scale, sizes) when gate/proj are W8A8 (qwen21_w8a8.load)
+        self._w8a8_gate_proj = None  # (weight, scale, sizes) when gate/proj are W8A8 (Qwen21W8A8.load)
 
     def __call__(self, hidden_states: mx.array) -> mx.array:
         dtype = hidden_states.dtype

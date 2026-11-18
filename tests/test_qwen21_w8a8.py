@@ -8,7 +8,7 @@ from mlx.utils import tree_flatten
 from mflux.models.common.quantization import w8a8
 from mflux.models.common.quantization.w8a8 import GROUP, H256, W8A8Linear
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
-from mflux.models.qwen21.weights import qwen21_w8a8
+from mflux.models.qwen21.weights.qwen21_w8a8 import PROJECTIONS, Qwen21W8A8
 
 # W8A8 needs input widths that are multiples of 256: hidden 4 x 64 = 256, feed-forward 512.
 TINY = dict(
@@ -100,7 +100,7 @@ def write_int8_convrot(tmp_path, reference) -> tuple:
     stored = {}
     for key, value in tree_flatten(reference.parameters()):
         prefix = key.removesuffix(".weight")
-        if key.endswith(".weight") and any(prefix.endswith("." + p) for p in qwen21_w8a8.PROJECTIONS):
+        if key.endswith(".weight") and any(prefix.endswith("." + p) for p in PROJECTIONS):
             if prefix.endswith(("img_mlp.gate_layer", "img_mlp.proj")):
                 continue  # stored fused as gate_up below
             stored[key], stored[prefix + ".weight_scale"] = convrot(value)
@@ -124,8 +124,8 @@ def test_load_reads_an_int8_convrot_dit(tmp_path, backend):
     path, stored = write_int8_convrot(tmp_path, reference)
 
     model = QwenImage21Transformer(TINY)
-    qwen21_w8a8.convert(model)
-    qwen21_w8a8.load(model, path)
+    Qwen21W8A8.convert(model)
+    Qwen21W8A8.load(model, path)
 
     block, ref_block = model.transformer_blocks[1], reference.transformer_blocks[1]
     loaded = dict(tree_flatten(model.parameters()))
@@ -144,14 +144,14 @@ def test_load_reads_an_int8_convrot_dit(tmp_path, backend):
 @pytest.mark.fast
 def test_load_rejects_another_quantization(tmp_path):
     model = QwenImage21Transformer(TINY)
-    qwen21_w8a8.convert(model)
+    Qwen21W8A8.convert(model)
     bad = json.dumps({"format": "float8_e4m3fn"})
     path = tmp_path / "other.safetensors"
     mx.save_safetensors(
         str(path), {"transformer_blocks.0.attn.to_q.comfy_quant": mx.array(np.frombuffer(bad.encode(), np.uint8))}
     )
     with pytest.raises(ValueError, match="unsupported quantization"):
-        qwen21_w8a8.load(model, path)
+        Qwen21W8A8.load(model, path)
 
 
 @pytest.mark.fast
@@ -162,27 +162,27 @@ def test_load_rejects_an_incomplete_checkpoint(tmp_path, drop):
     del stored[drop]
     mx.save_safetensors(str(path), stored)
     model = QwenImage21Transformer(TINY)
-    qwen21_w8a8.convert(model)
+    Qwen21W8A8.convert(model)
     with pytest.raises(ValueError, match="does not match the transformer"):
-        qwen21_w8a8.load(model, path)
+        Qwen21W8A8.load(model, path)
 
 
 @pytest.mark.fast
 def test_w8a8_skips_the_float_dit_download_and_refuses_to_save(tmp_path, monkeypatch):
     patterns = ["vae/*.safetensors", "transformer/*.safetensors", "transformer/*.json"]
     monkeypatch.delenv("MFLUX_QWEN21_W8A8", raising=False)
-    assert qwen21_w8a8.download_patterns(patterns) == patterns
+    assert Qwen21W8A8.download_patterns(patterns) == patterns
     monkeypatch.setenv("MFLUX_QWEN21_W8A8", str(tmp_path))
-    assert qwen21_w8a8.download_patterns(patterns) == ["vae/*.safetensors", "transformer/*.json"]
+    assert Qwen21W8A8.download_patterns(patterns) == ["vae/*.safetensors", "transformer/*.json"]
 
     class Model:
         transformer = QwenImage21Transformer(TINY)
 
     model = Model()
-    qwen21_w8a8.check_savable(model)  # an ordinary model saves
-    qwen21_w8a8.prepare(model, object, quantize=None, lora_paths=None)
+    Qwen21W8A8.check_savable(model)  # an ordinary model saves
+    Qwen21W8A8.prepare(model, object, quantize=None, lora_paths=None)
     with pytest.raises(ValueError, match="cannot be saved"):
-        qwen21_w8a8.check_savable(model)
+        Qwen21W8A8.check_savable(model)
 
 
 @pytest.mark.fast
@@ -193,9 +193,9 @@ def test_load_rejects_an_integer_scale(tmp_path):
     stored[key] = stored[key].astype(mx.int32)
     mx.save_safetensors(str(path), stored)
     model = QwenImage21Transformer(TINY)
-    qwen21_w8a8.convert(model)
+    Qwen21W8A8.convert(model)
     with pytest.raises(ValueError, match="wrong shape or dtype"):
-        qwen21_w8a8.load(model, path)
+        Qwen21W8A8.load(model, path)
 
 
 @pytest.mark.fast
