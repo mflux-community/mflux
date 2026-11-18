@@ -106,8 +106,11 @@ def _rotate_quantize_kernel():
     )
 
 
-def rotate_quantize(x: mx.array) -> tuple[mx.array, mx.array]:
-    """Per-row int8 quantization of x H256 (block-diagonal along the last axis) with float32 scales."""
+def rotate_quantize(x: mx.array, pad_rows: int = 1) -> tuple[mx.array, mx.array]:
+    """Per-row int8 quantization of x H256 (block-diagonal along the last axis) with float32 scales.
+
+    The int8 rows are allocated up to a multiple of pad_rows (the GEMM tile height) so that the GEMM never
+    reads past them; the extra rows are not written and only feed output rows that are never stored."""
     rows, k = x.shape
     groups = k // GROUP
     xq, xs = _rotate_quantize_kernel()(
@@ -115,7 +118,7 @@ def rotate_quantize(x: mx.array) -> tuple[mx.array, mx.array]:
         template=[("T", x.dtype), ("MAX_GROUPS", 1 << (groups - 1).bit_length())],
         grid=(GROUP, rows, 1),
         threadgroup=(GROUP, 1, 1),
-        output_shapes=[(rows, k), (rows,)],
+        output_shapes=[(-(-rows // pad_rows) * pad_rows, k), (rows,)],
         output_dtypes=[mx.int8, mx.float32],
     )
     return xq, xs
@@ -123,14 +126,15 @@ def rotate_quantize(x: mx.array) -> tuple[mx.array, mx.array]:
 
 def matmul(x: mx.array, weight: mx.array, scale: mx.array) -> mx.array:
     """x (rows, in) in any float dtype @ an int8 convrot weight (out, in) with float32 scales (out,)."""
-    if not tensor_ops_available():
-        # Rotated activations times the dequantized weight: (x H)(q(W H) s)^T ~ x W^T.
-        w = weight.astype(mx.float32) * scale[:, None]
-        return (rotate(x) @ w.T).astype(x.dtype)
     rows, n = x.shape[0], weight.shape[0]
-    xq, xs = rotate_quantize(x)
     bm = 128 if rows < 8192 else 64
     bn, bk = 8192 // bm, 64
+    if not tensor_ops_available() or n < bn:
+        # Rotated activations times the dequantized weight: (x H)(q(W H) s)^T ~ x W^T. Also used for outputs
+        # narrower than one column tile, which the kernel cannot place inside the weight.
+        w = weight.astype(mx.float32) * scale[:, None]
+        return (rotate(x) @ w.T).astype(x.dtype)
+    xq, xs = rotate_quantize(x, pad_rows=bm)
     (y,) = _kernel()(
         inputs=[xq, weight, xs, scale],
         template=[("BM", bm), ("BN", bn), ("BK", bk), ("T", x.dtype)],
