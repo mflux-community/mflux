@@ -7,6 +7,7 @@ from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_ar
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
+from mflux.models.qwen21.cli import qwen21_vae_options
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler, ViggleTurboScheduler
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_small_text_encoder import Qwen21SmallTextEncoder
@@ -18,9 +19,11 @@ from mflux.utils.scale_factor import ScaleFactor
 
 # Same architecture as qwen-image-2.1. The Turbo checkpoint brings its own schedule.
 FAMILY_MODELS = ("qwen-image-2.1-turbo",)
-IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
+IGNORED_OPTIONS = {
+    "--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora.",
+    **qwen21_vae_options.IGNORED_TILING,
+}
 CONDITIONAL_OPTIONS = {
-    **VAEDecodeOptions.conditional_options(),
     "--scheduler": {
         "condition": "linear Euler or viggle_turbo scheduler only",
         "reason": "Other scheduler values exit with an error before model loading.",
@@ -51,7 +54,7 @@ def build_parser() -> CommandLineParser:
             "If omitted, derive from output-resolution and the last reference's aspect ratio."
         )
     parser.add_image_paths_arguments(required=False)
-    parser.add_vae_full_precision_arguments()
+    parser.add_vae_full_precision_arguments(help=qwen21_vae_options.FULL_PRECISION_HELP)
     parser.add_output_arguments()
     parser.add_argument(
         "--output-resolution",
@@ -150,7 +153,6 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
-    VAEDecodeOptions.warn_encode_only_tiling()
     if args.guidance is None or args.guidance == 1:
         CommandLineParser.warn_ignored_options(
             {"--negative-prompt": CONDITIONAL_OPTIONS["--negative-prompt"]["reason"]}

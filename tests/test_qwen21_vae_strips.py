@@ -56,3 +56,18 @@ class TestQwen21VaeStrips:
         mx.eval(full, strips)
         assert strips.shape == full.shape == (1, 3, 52 * 16, 3 * 16)
         assert mx.abs(strips - full).max().item() < 1e-4
+
+
+def test_qwen_clis_describe_the_tiling_flags_and_the_decode_precision():
+    from mflux.models.qwen21.cli import qwen21_controlnet_generate, qwen21_edit_generate, qwen21_generate
+
+    # Only the text-to-image CLI tiles an encode (its --image-path input); edit and ControlNet encode untiled.
+    for flag in ("--vae-tiling", "--vae-tile-size"):
+        assert flag in qwen21_generate.CONDITIONAL_OPTIONS
+        assert flag in qwen21_edit_generate.IGNORED_OPTIONS and flag not in qwen21_edit_generate.CONDITIONAL_OPTIONS
+        assert flag in qwen21_controlnet_generate.IGNORED_OPTIONS
+        assert flag not in qwen21_controlnet_generate.CONDITIONAL_OPTIONS
+    # Strips and the full-image decode keep the same precision.
+    for cli in (qwen21_generate, qwen21_edit_generate, qwen21_controlnet_generate):
+        action = next(a for a in cli.build_parser()._actions if "--vae-full-precision" in a.option_strings)
+        assert "bf16" not in action.help and "fp32" not in action.help
