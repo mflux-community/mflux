@@ -33,16 +33,13 @@ def compile_c(mlpackage):
     return out
 
 
-def main():
-    MODELS.mkdir(parents=True, exist_ok=True)
-    # Shared synthetic weights: identical arrays feed the multifunction package and the standalones.
+def build_packages():
+    """Build the multifunction package and the 8 standalones from identical weight arrays. Cached."""
     weights = {}
     for i, (name, (O, I, ksplit)) in enumerate(LAYERS.items()):
         weights[name] = gen3a._synth_weights(O, I, seed=100 + i)
 
     mf_path = MODELS / "mf_block.mlpackage"
-    sa_paths = {}
-    # Build the multifunction program directly from the shared weights.
     if not mf_path.exists():
         from coremltools.converters.mil import mil
 
@@ -54,7 +51,7 @@ def main():
             for a8 in (False, True):
                 fname = name + ("_a8" if a8 else "")
 
-                def make(a8=a8, chunks=chunks, s=s, I=I):
+                def make(a8=a8, chunks=chunks, s=s, I=I, ksplit=ksplit):
                     from coremltools.converters.mil import Builder as mb
                     from coremltools.converters.mil.mil import types
 
@@ -75,6 +72,7 @@ def main():
         prog.export_as_multifunction = True
         gen3a.convert(prog, mf_path)
 
+    sa_paths = {}
     for a8 in (False, True):
         for name, (O, I, ksplit) in LAYERS.items():
             tag = f"sa_{name}{'_a8' if a8 else ''}"
@@ -84,6 +82,12 @@ def main():
                 prog = gen3a.build_fixed(T, O, I, ksplit=ksplit, a8=a8, w_s=(w, s))
                 gen3a.convert(prog, p)
             sa_paths[(name, a8)] = p
+    return mf_path, sa_paths
+
+
+def main():
+    MODELS.mkdir(parents=True, exist_ok=True)
+    mf_path, sa_paths = build_packages()
 
     sizes = {"mf": package_bytes(mf_path)}
     for (name, a8), p in sa_paths.items():

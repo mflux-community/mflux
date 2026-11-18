@@ -16,11 +16,19 @@ import tempfile
 import gen3a
 import numpy as np
 import s3a
-from s3a import ANERUN, MODELS, BenchLock, anebench, aneplan, emit, gen_fixed, run
+from s3a import ANERUN, MODELS, WATCHDOG, BenchLock, anebench, aneplan, emit, gen_fixed, run
 
 T = s3a.T_FIXED
 O, I = 3840, 3840
 GROUP = 64
+
+
+def unpack_codes(wq, rows, cols):
+    """MLX bits=8 packs 4 codes per uint32 word; return the [rows, cols] uint8 codes."""
+    a = np.array(wq)
+    if a.dtype == np.uint8:
+        return a.reshape(rows, cols)
+    return a.view(np.uint8).reshape(rows, cols)  # little-endian: byte j holds element j
 
 
 def discover_mlx_format():
@@ -31,7 +39,7 @@ def discover_mlx_format():
     w = mx.array((rng.normal(size=(64, 3840)) * 0.02).astype(np.float32)).astype(mx.bfloat16)
     wq, s, b = mx.quantize(w, group_size=GROUP, bits=8)
     deq = np.array(mx.dequantize(wq, s, b, group_size=GROUP, bits=8).astype(mx.float32)).astype(np.float64)
-    c = np.array(wq).astype(np.uint8).astype(np.float64)
+    c = unpack_codes(wq, 64, 3840).astype(np.float64)
     s64 = np.array(s.astype(mx.float32)).astype(np.float64)
     b64 = np.array(b.astype(mx.float32)).astype(np.float64)
     sg = np.repeat(s64, GROUP, axis=1)
@@ -43,7 +51,9 @@ def discover_mlx_format():
     }
     best = None
     for name, out in formulas.items():
-        err = float(np.abs(out - deq).max())
+        # mx.dequantize returns bf16: round the fp64 candidate to bf16 before comparing.
+        out_bf16 = np.array(mx.array(out).astype(mx.bfloat16).astype(mx.float32)).astype(np.float64)
+        err = float(np.abs(out_bf16 - deq).max())
         if best is None or err < best[1]:
             best = (name, err)
     return w, wq, s, b, deq, best, c, s64, b64
@@ -56,7 +66,7 @@ def anerun_predict(model, x_np):
         x_path = os.path.join(td, "x.bin")
         y_path = os.path.join(td, "y.bin")
         x_cf.tofile(x_path)
-        run([ANERUN, model, y_path, x_path], timeout=600)
+        run([WATCHDOG, ANERUN, model, y_path, x_path], timeout=600)
         y = np.fromfile(y_path, dtype=np.float16).reshape(O, T)
         return np.ascontiguousarray(y.T).astype(np.float64)
 
@@ -80,20 +90,25 @@ def main():
             phase="format",
             best_formula=best[0],
             max_abs_err_vs_dequantize=best[1],
-            wq_dtype=str(np.array(wq).dtype),
-            wq_shape=list(np.array(wq).shape),
-            scale_shape=list(np.array(s).shape),
+            wq_dtype=str(wq.dtype),
+            wq_shape=list(wq.shape),
+            scale_shape=list(s.shape),
+            scale_dtype=str(s.dtype),
+            bias_dtype=str(b.dtype),
         ),
     )
-    if best[1] > 1e-4:
-        emit("t5_groupwise", phase_note="no candidate formula reproduces mx.dequantize; aborting numerics")
+    if best[1] > 1e-3:  # one bf16 ulp at |w|~0.08 is ~3e-4; allow two
+        emit(
+            "t5_groupwise",
+            dict(phase="format", note="no candidate formula reproduces mx.dequantize; aborting numerics"),
+        )
         return
 
     # Full-size weights for the model.
     rng = np.random.default_rng(11)
     w_full = mx.array((rng.normal(size=(O, I)) * 0.02).astype(np.float32)).astype(mx.bfloat16)
     wq_f, s_f, b_f = mx.quantize(w_full, group_size=GROUP, bits=8)
-    c_f = np.array(wq_f).astype(np.uint8)
+    c_f = unpack_codes(wq_f, O, I)
     s_f64 = np.array(s_f.astype(mx.float32)).astype(np.float64)
     b_f64 = np.array(b_f.astype(mx.float32)).astype(np.float64)
 
@@ -133,26 +148,33 @@ def main():
         ),
     )
 
-    # Output-level: ANE conv against MLX quantized_matmul on identical inputs and codes.
-    x_np = rng.normal(size=(T, I)).astype(np.float32)
+    # Output-level: ANE conv against an fp64 emulation of the MLX q8 dequant on the
+    # same fp16 input, plus mx.quantized_matmul (bf16 x) as the production reference.
+    x_np = rng.normal(size=(T, I)).astype(np.float16)
+    deq_w = ref_w.T  # [I, O] fp64, the exact MLX-dequantised weights
+    emul = x_np.astype(np.float64) @ deq_w
     ref = np.array(
         mx.quantized_matmul(
             mx.array(x_np).astype(mx.bfloat16), wq_f, s_f, b_f, transpose=True, group_size=GROUP, bits=8
         ).astype(mx.float32)
     ).astype(np.float64)
-    fp32_truth = x_np.astype(np.float64) @ np.array(w_full.astype(mx.float32)).astype(np.float64).T
 
     p16 = build_bw("bw16", data4, scale4, off4_16)
     y16 = anerun_predict(p16, x_np)
-    cos = float(y16.reshape(-1) @ ref.reshape(-1) / (np.linalg.norm(y16) * np.linalg.norm(ref)))
-    refcos = float(ref.reshape(-1) @ fp32_truth.reshape(-1) / (np.linalg.norm(ref) * np.linalg.norm(fp32_truth)))
+
+    def cosine(a, b):
+        return float(a.reshape(-1) @ b.reshape(-1) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
     emit(
         "t5_groupwise",
         dict(
             phase="outputs",
-            ane_vs_mlxq8_cosine=cos,
-            ane_vs_mlxq8_maxrel=float(np.abs(y16 - ref).max() / np.abs(ref).max()),
-            mlxq8_vs_fp32_cosine=refcos,
+            ane_vs_emulation_cosine=cosine(y16, emul),
+            ane_vs_emulation_maxrel=float(np.abs(y16 - emul).max() / np.abs(emul).max()),
+            mlxq8_vs_emulation_cosine=cosine(ref, emul),
+            ane_vs_mlxq8_cosine=cosine(y16, ref),
+            n_inf=int(np.isinf(y16).sum()),
+            n_nan=int(np.isnan(y16).sum()),
         ),
     )
 

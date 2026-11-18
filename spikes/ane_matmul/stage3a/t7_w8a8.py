@@ -49,7 +49,7 @@ def run_model(model, x_file_bytes, tok_bytes=None, O=O_BIG, T=T_SMALL):
         y_path = os.path.join(td, "y.bin")
         with open(x_path, "wb") as f:
             f.write(x_file_bytes)
-        cmd = [s3a.ANERUN, str(model), y_path, x_path]
+        cmd = [s3a.WATCHDOG, s3a.ANERUN, str(model), y_path, x_path]
         if tok_bytes is not None:
             tok = os.path.join(td, "tok.bin")
             with open(tok, "wb") as f:
@@ -61,9 +61,7 @@ def run_model(model, x_file_bytes, tok_bytes=None, O=O_BIG, T=T_SMALL):
 
 def phase_a():
     for variant in ("c1s", "c1d", "c1p"):
-        prog = G.build_conv(
-            T_SMALL, O_BIG, I, ksplit=1, a8={"c1s": "static", "c1d": "dyn", "c1p": "pre"}.get(variant.replace("c1", ""))
-        )
+        prog = G.build_conv(T_SMALL, O_BIG, I, ksplit=1, a8={"c1s": "static", "c1d": "dyn", "c1p": "pre"}[variant])
         emit("t7_w8a8", dict(phase="graph", variant=variant, mil_ops=mil_ops(prog)))
         path = MODELS / f"{variant}_{T_SMALL}x{O_BIG}x{I}.mlpackage"
         if not path.exists():
@@ -152,11 +150,55 @@ def phase_c():
     )
 
 
+def phase_c2():
+    """Production W8A8 form: host-side per-token quantisation, int8 input, token scale after the matmul.
+
+    Same outlier data as phase C. This is the form Stage 3b would ship, so the
+    overflow behaviour of phase C must not appear here.
+    """
+    rng = np.random.default_rng(9)
+    w = (rng.normal(size=(O_BIG, I)) * 0.02).astype(np.float64)
+    sc_w = np.abs(w).max(axis=1) / 127.0
+    wq = np.clip(np.round(w / sc_w[:, None]), -127, 127)
+    sc_w16 = sc_w.astype(np.float16)
+    x = rng.normal(size=(T_SMALL, I))
+    x[3] *= 300.0  # same outlier token as phase C
+    x16 = x.astype(np.float16).astype(np.float64)
+
+    amax = np.abs(x16).max(axis=1, keepdims=True)
+    sc_t = np.maximum(amax / 127.0, 1e-4)
+    q = np.clip(np.round(x16 / sc_t), -127, 127).astype(np.int8)
+
+    prog = G.build_conv(T_SMALL, O_BIG, I, ksplit=1, a8="pre", w_s=(wq.astype(np.int8), sc_w16))
+    path = MODELS / f"outlier_c1p_{T_SMALL}x{O_BIG}x{I}.mlpackage"
+    if not path.exists():
+        _convert(prog, path)
+    w_deq = wq * sc_w[:, None]
+    ref = (q.astype(np.float64) @ w_deq.T) * sc_t  # post-matmul per-token scale, fp64
+    y = run_model(path, np.ascontiguousarray(q.T).tobytes(), np.ascontiguousarray(sc_t.T.astype(np.float16)).tobytes())
+    cos = float(y.reshape(-1) @ ref.reshape(-1) / (np.linalg.norm(y) * np.linalg.norm(ref)))
+    emit(
+        "t7_w8a8",
+        dict(
+            phase="outlier_pre",
+            case="c1p_host_quant_postscale",
+            cosine_vs_emulation=cos,
+            max_abs_diff=float(np.abs(y - ref).max()),
+            max_abs_ref=float(np.abs(ref).max()),
+            n_inf=int(np.isinf(y).sum()),
+            n_nan=int(np.isnan(y).sum()),
+            outlier_row_max_abs_ref=float(np.abs(ref[3]).max()),
+            outlier_row_max_abs_y=float(np.abs(y[3]).max()),
+        ),
+    )
+
+
 def main():
     MODELS.mkdir(parents=True, exist_ok=True)
     phase_a()
     phase_b()
     phase_c()
+    phase_c2()
 
 
 if __name__ == "__main__":

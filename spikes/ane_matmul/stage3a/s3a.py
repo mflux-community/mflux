@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SPIKE = HERE.parent
 REPO = SPIKE.parent.parent
-PYTHON = str(REPO / ".venv" / "python")
+PYTHON = str(REPO / ".venv" / "bin" / "python")
 WATCHDOG = str(SPIKE / "watchdog.sh")
 ANEBENCH = str(SPIKE / "bench" / "anebench")
 ANEPLAN = str(SPIKE / "bench" / "aneplan")
