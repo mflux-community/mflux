@@ -183,3 +183,37 @@ def test_w8a8_skips_the_float_dit_download_and_refuses_to_save(tmp_path, monkeyp
     qwen21_w8a8.prepare(model, object, quantize=None, lora_paths=None)
     with pytest.raises(ValueError, match="cannot be saved"):
         qwen21_w8a8.check_savable(model)
+
+
+@pytest.mark.fast
+def test_load_rejects_an_integer_scale(tmp_path):
+    # W8A8Linear multiplies by its scale: an int32 scale must be refused like a missing one.
+    path, stored = write_int8_convrot(tmp_path, QwenImage21Transformer(TINY))
+    key = "transformer_blocks.0.attn.to_q.weight_scale"
+    stored[key] = stored[key].astype(mx.int32)
+    mx.save_safetensors(str(path), stored)
+    model = QwenImage21Transformer(TINY)
+    qwen21_w8a8.convert(model)
+    with pytest.raises(ValueError, match="wrong shape or dtype"):
+        qwen21_w8a8.load(model, path)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("initializer", ["text_to_image", "edit"])
+def test_w8a8_settings_fail_before_any_download(tmp_path, monkeypatch, initializer):
+    from mflux.models.common.resolution.path_resolution import PathResolution
+    from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
+    from mflux.models.qwen21.qwen_image21_initializer import QwenImage21Initializer
+
+    def no_download(*args, **kwargs):
+        raise AssertionError("downloaded before the W8A8 settings were checked")
+
+    monkeypatch.setattr(PathResolution, "resolve", staticmethod(no_download))
+    monkeypatch.setenv("MFLUX_QWEN21_W8A8", str(tmp_path / "missing.safetensors"))
+    init = Qwen21Initializer.init if initializer == "text_to_image" else QwenImage21Initializer.init
+    kwargs = dict(quantize=None, model_path=None, model_config=None)
+    with pytest.raises(FileNotFoundError, match="missing file"):
+        init(object(), **kwargs)
+    monkeypatch.setenv("MFLUX_QWEN21_W8A8", str(tmp_path))
+    with pytest.raises(ValueError, match="quantize or LoRAs"):
+        init(object(), **{**kwargs, "quantize": 8})

@@ -38,14 +38,16 @@ class Qwen21Initializer:
         small_text_encoder: bool = False,
     ) -> None:
         precision = ComputePrecision(compute_precision)
+        # MFLUX_QWEN21_W8A8 errors (missing file, quantize or LoRAs) need no download to detect.
+        from mflux.models.qwen21.weights import qwen21_w8a8
+
+        qwen21_w8a8.validate(quantize, lora_paths)
         path = PrequantizedResolution.weights_root(
             model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
         )
         Qwen21Initializer.init_config(model, model_config)
         model.small_text_encoder = small_text_encoder
         definition = Qwen21NoTextEncoderWeightDefinition if small_text_encoder else Qwen21WeightDefinition
-        from mflux.models.qwen21.weights import qwen21_w8a8
-
         root = PathResolution.resolve(path, qwen21_w8a8.download_patterns(definition.get_download_patterns()))
         if root is None:
             raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")

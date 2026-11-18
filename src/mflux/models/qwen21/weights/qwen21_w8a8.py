@@ -50,16 +50,24 @@ def check_savable(model) -> None:
         )
 
 
-def prepare(model, definition, quantize: int | None, lora_paths: list[str] | None):
-    """Before loading: with MFLUX_QWEN21_W8A8 set, swap the block projections for W8A8Linear and return a weight
-    definition without the transformer (load() reads it from the int8 file), plus that file; else (definition, None)."""
+def validate(quantize: int | None, lora_paths: list[str] | None) -> Path | None:
+    """The MFLUX_QWEN21_W8A8 file, checked before anything is downloaded; None when the variable is unset."""
     path = checkpoint()
     if path is None:
-        return definition, None
+        return None
     if quantize is not None or lora_paths:
         raise ValueError("MFLUX_QWEN21_W8A8 loads an int8 DiT; it cannot be combined with quantize or LoRAs.")
     if not path.exists():
         raise FileNotFoundError(f"MFLUX_QWEN21_W8A8 points to a missing file: {path}")
+    return path
+
+
+def prepare(model, definition, quantize: int | None, lora_paths: list[str] | None):
+    """Before loading: with MFLUX_QWEN21_W8A8 set, swap the block projections for W8A8Linear and return a weight
+    definition without the transformer (load() reads it from the int8 file), plus that file; else (definition, None)."""
+    path = validate(quantize, lora_paths)
+    if path is None:
+        return definition, None
     convert(model.transformer)
     model._w8a8_checkpoint = path
 
@@ -93,6 +101,14 @@ def _check_quant(weights: dict) -> None:
             raise ValueError(f"{key}: unsupported quantization {config}")
 
 
+def _same_kind(expected: mx.Dtype, found: mx.Dtype) -> bool:
+    # int8 weights must stay int8; every other parameter (scales, biases, norms) must be floating point,
+    # so an integer scale such as int32 is rejected instead of being multiplied in.
+    if expected == mx.int8:
+        return found == mx.int8
+    return mx.issubdtype(found, mx.floating)
+
+
 def _check_complete(path: Path, transformer, params: dict[str, mx.array]) -> None:
     # update(strict=False) would leave a missing parameter (such as a projection's scale) at its zero
     # initial value and would accept a wrong shape, so the file must match the transformer exactly.
@@ -102,7 +118,7 @@ def _check_complete(path: Path, transformer, params: dict[str, mx.array]) -> Non
     mismatched = sorted(
         k
         for k in set(expected) & set(params)
-        if expected[k].shape != params[k].shape or (expected[k].dtype == mx.int8) != (params[k].dtype == mx.int8)
+        if expected[k].shape != params[k].shape or not _same_kind(expected[k].dtype, params[k].dtype)
     )
     if missing or unexpected or mismatched:
         raise ValueError(

@@ -48,6 +48,8 @@ class QwenImage21Initializer:
         small_text_encoder: bool = False,
     ) -> None:
         precision = ComputePrecision(compute_precision)
+        # MFLUX_QWEN21_W8A8 errors (missing file, quantize or LoRAs) need no download to detect.
+        qwen21_w8a8.validate(quantize, lora_paths)
         definition = QwenImage21NoTextEncoderWeightDefinition if small_text_encoder else QwenImage21WeightDefinition
         root = PathResolution.resolve(
             PrequantizedResolution.weights_root(
