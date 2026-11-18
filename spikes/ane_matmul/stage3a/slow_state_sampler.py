@@ -50,6 +50,13 @@ def sample():
             procs.append([name, pct])
     rec["top_cpu"] = procs
     rec["cpu_busy_sum_pct"] = round(busy_total, 1)
+    # Scheduling state of the benchmark process, to test the QoS-throttle hypothesis.
+    bench = sh(["pgrep", "-x", "anebench"]).strip().split()
+    if bench:
+        info = sh(["ps", "-p", bench[0], "-o", "pri=", "ni=", "flags="]).split()
+        rec["anebench_pri"] = int(info[0]) if info and info[0].isdigit() else None
+        rec["anebench_nice"] = int(info[1]) if len(info) > 1 and info[1].lstrip("-").isdigit() else None
+        rec["anebench_flags"] = info[2] if len(info) > 2 else None
     return rec
 
 
