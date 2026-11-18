@@ -1,0 +1,4 @@
+{"test": "t3_enum", "phase": "plan", "layer": "w1", "kind": "enum", "plan": {"ios19.constexpr_blockwise_shift_scale:?": 1, "const:?": 5, "ios18.conv:ANE": 1, "identity:ANE": 1}}
+{"test": "t3_enum", "phase": "plan", "layer": "w1", "kind": "fixed", "plan": {"ios19.constexpr_blockwise_shift_scale:?": 1, "const:?": 5, "ios18.conv:ANE": 1, "identity:ANE": 1}}
+{"test": "t3_enum", "phase": "plan", "layer": "w2", "kind": "enum", "plan": {"const:?": 32, "ios19.slice_by_index:ANE": 4, "ios19.constexpr_blockwise_shift_scale:?": 4, "ios18.conv:ANE": 4, "ios19.add:ANE": 3, "identity:ANE": 1}}
+{"test": "t3_enum", "phase": "plan", "layer": "w2", "kind": "fixed", "plan": {"const:?": 28, "ios19.slice_by_index:ANE": 4, "ios19.constexpr_blockwise_shift_scale:?": 4, "ios18.conv:ANE": 4, "ios19.add:ANE": 3, "identity:ANE": 1}}

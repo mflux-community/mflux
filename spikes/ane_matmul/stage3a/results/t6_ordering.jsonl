@@ -1,0 +1,3 @@
+{"test": "t6_ordering", "phase": "correctness", "strategy": "none", "max_abs_diff_vs_hack": 0.0, "finite": true}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "hack", "max_abs_diff_vs_hack": 0.0, "finite": true}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "async", "max_abs_diff_vs_hack": 0.0, "finite": true}
