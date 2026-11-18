@@ -35,6 +35,8 @@ class ModelRevisions:
         "briaai/Fibo-Edit-RMBG": "cb134b058d1a6089fc3b9e5fc04a4511337b53ed",
         "briaai/Fibo-lite": "dcd26dfe1051e59b77b88acbacc025613aaa09de",
         "briaai/FIBO-vlm": "bd13da5e0b73c808014d6260963e311c8cdf0d8b",
+        "carlofkl/DreamLite-base": "a9a0f151ffd99d3c37f3fd0472f5e8f1b31215aa",
+        "carlofkl/DreamLite-mobile": "a48c656c291fe98f74a0405961c9e4e3eee5d6c8",
         "circlestone-labs/Anima": "f973fc41ec7545364ac9776c2440285f43ff2a30",
         "Comfy-Org/Lens": "393618fd7db3e370509f84390b9162b8fd839a25",
         "google/gemma-2-2b-it": "299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8",
