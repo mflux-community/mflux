@@ -20,6 +20,8 @@ for share in (1.0, 0.0, 0.5, 0.6):
         x = mx.array(np.load(f"{ACT}/p{p}_w2.npy")).astype(mx.bfloat16)[None]
         y = lin(x)
         mx.eval(y)  # warm-up
+        if lin.last_error():
+            raise RuntimeError(f"ANE prediction failed: {lin.last_error()}")
         for _ in range(5):
             mx.eval(lin(x))
         ts = []

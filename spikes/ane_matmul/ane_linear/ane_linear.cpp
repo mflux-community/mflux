@@ -29,8 +29,9 @@ class AneLinear : public mx::Primitive {
       // An exception must not leave this worker thread: it would terminate the process.
       try {
         model->predict(xp, op);
+        model->clear_error();
       } catch (const std::exception& e) {
-        model->last_error = e.what();
+        model->set_error(e.what());
         std::fprintf(stderr, "ane_linear: prediction failed: %s\n", e.what());
         auto* h = static_cast<uint16_t*>(op);
         std::fill(h, h + (size_t)model->T * model->O, uint16_t(0x7E00));   // fp16 NaN: the failure is visible
@@ -58,7 +59,7 @@ NB_MODULE(_ane_linear, m) {
       .def_ro("tokens", &AneModel::T)
       .def_ro("in_features", &AneModel::I)
       .def_ro("out_features", &AneModel::O)
-      .def_ro("last_error", &AneModel::last_error);
+      .def("last_error", &AneModel::last_error);
   // ane_linear(x[T, I] fp16, model) -> y[T, O] fp16. Build the graph node on the CPU stream.
   m.def(
       "ane_linear",

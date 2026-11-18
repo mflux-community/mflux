@@ -88,6 +88,10 @@ class AneSplitLinear(nn.Module):
             path = build_ane_model(w_bf16[: self.oa], cache_dir, tag + "_head", ksplit)
             self.ane = _extension().AneModel(path, T_FIXED, I, self.oa)
 
+    def last_error(self) -> str:
+        """Error text of the latest failed ANE call, or an empty string. Call after mx.eval."""
+        return self.ane.last_error() if self.ane is not None else ""
+
     def __call__(self, x: mx.array) -> mx.array:
         shape = x.shape
         xf = x.reshape(-1, self.I)
