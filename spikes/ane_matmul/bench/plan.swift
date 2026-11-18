@@ -9,7 +9,12 @@ while i < CommandLine.arguments.count {
     else { modelPath = CommandLine.arguments[i]; i += 1 }
 }
 guard let path = modelPath else { print("usage: aneplan MODEL.mlpackage [--function NAME]"); exit(2) }
-let url = try MLModel.compileModel(at: URL(fileURLWithPath: path))
+let url: URL
+if (path as NSString).pathExtension == "mlmodelc" {
+    url = URL(fileURLWithPath: path)
+} else {
+    url = try MLModel.compileModel(at: URL(fileURLWithPath: path))
+}
 let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndNeuralEngine
 if let fn = fnName { cfg.functionName = fn }
 let plan = try await MLComputePlan.load(contentsOf: url, configuration: cfg)

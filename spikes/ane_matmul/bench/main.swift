@@ -35,7 +35,12 @@ if let t = tokOverride { T = t }
 
 let rss0 = rssMB()
 var t0 = now()
-let compiled = try MLModel.compileModel(at: URL(fileURLWithPath: path))
+let compiled: URL
+if (path as NSString).pathExtension == "mlmodelc" {
+    compiled = URL(fileURLWithPath: path)   // already compiled: load directly
+} else {
+    compiled = try MLModel.compileModel(at: URL(fileURLWithPath: path))
+}
 let tCompile = now() - t0
 let cfg = MLModelConfiguration(); cfg.computeUnits = units
 if let fn = fnName { cfg.functionName = fn }
