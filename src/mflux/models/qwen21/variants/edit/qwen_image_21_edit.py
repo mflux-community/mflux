@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import shutil
 from pathlib import Path
 
@@ -104,14 +105,22 @@ class QwenImage21Edit(nn.Module):
             raise ValueError(f"verify_retries must be >= 0, got {verify_retries}.")
         if self.small_text_encoder and (auto_mask is not None or enhance_prompt or verify):
             raise ValueError(QwenImage21Edit.SMALL_TEXT_ENCODER_VISION_ERROR)
-        needs_source = mask_image is not None or auto_mask is not None or strength < 1 or enhance_prompt or verify
+        # enhance_prompt without a reference image rewrites a text-to-image request instead of an edit.
+        needs_source = mask_image is not None or auto_mask is not None or strength < 1 or verify
         if needs_source and not image_paths:
-            raise ValueError("mask_image, auto_mask, strength, enhance_prompt and verify need a reference image.")
+            raise ValueError("mask_image, auto_mask, strength and verify need a reference image.")
         images = [open_oriented(path).convert("RGBA") for path in image_paths]
         # The first reference is the edit source: inpaint blending, strength starts,
         # prompt rewriting and verification all read it at its own size.
         source = images[0] if images else None
         ratio = images[-1].width / images[-1].height if images else 1.0
+        original_prompt = prompt
+        if enhance_prompt and not images:
+            # Text to image: the rewrite also proposes an aspect ratio, used when no size was given.
+            prompt, wh_ratio = self._rewrite_text_prompt(prompt)
+            logger.info("enhance_prompt: %r -> %r (ratio %s)", original_prompt, prompt, wh_ratio)
+            if wh_ratio is not None and width is None and height is None:
+                ratio = QwenImage21Edit._proposed_ratio(output_resolution, wh_ratio, ratio)
         default_width, default_height = QwenImage21LatentCreator.dimensions(output_resolution, ratio)
         width = default_width if width is None else width
         height = default_height if height is None else height
@@ -132,8 +141,7 @@ class QwenImage21Edit(nn.Module):
             image_strength=1 - strength if strength < 1 else None,
             scheduler=Qwen21TurboScheduler.for_model(self.model_config, scheduler),
         )
-        original_prompt = prompt
-        if enhance_prompt:
+        if enhance_prompt and images:
             prompt = self._rewrite_prompt(prompt, images)
             logger.info("enhance_prompt: %r -> %r", original_prompt, prompt)
         # White = repaint, black = preserve; drives per-step latent blending and a final pixel composite.
@@ -365,9 +373,41 @@ class QwenImage21Edit(nn.Module):
         if self.small_text_encoder:
             raise ValueError(QwenImage21Edit.SMALL_TEXT_ENCODER_VISION_ERROR)
         if not images:
-            raise ValueError("rewrite_prompt needs at least one reference image.")
+            raise ValueError(
+                "rewrite_prompt needs at least one reference image; use rewrite_text_prompt for text to image."
+            )
         QwenImage21Edit._check_reference_count(images)
         return self._rewritten(prompt, [open_oriented(image).convert("RGBA") for image in images])
+
+    def rewrite_text_prompt(self, prompt: str) -> tuple[str, str | None]:
+        # Text-to-image counterpart of rewrite_prompt: the description enhance_prompt=True encodes when no
+        # reference image is given, and the aspect ratio ("W:H", or None) it proposes. Raises when it can't rewrite.
+        if self.small_text_encoder:
+            raise ValueError(QwenImage21Edit.SMALL_TEXT_ENCODER_VISION_ERROR)
+        return self._rewritten_text(prompt)
+
+    @staticmethod
+    def _proposed_ratio(resolution: int, wh_ratio: str, default: float) -> float:
+        # The rewrite's "W:H" sets the canvas only when it keeps the automatic size near the resolution's pixel
+        # budget (1000000:1 would give a 1,024,000 x 32 canvas, past the budget through the 32-pixel minimum).
+        # Past (resolution / 16)^2 either way the long side alone is over twice the budget, so such a ratio (and one
+        # whose w / h overflows a float or rounds to 0.0) keeps the default size before dimensions() could overflow.
+        w, h = (int(part) for part in wh_ratio.split(":"))
+        try:
+            ratio = w / h
+        except OverflowError:
+            ratio = math.inf
+        bound = (resolution / 16) ** 2
+        if not 1 / bound <= ratio <= bound:
+            logger.info("enhance_prompt: ignoring ratio %s, no canvas at this resolution can use it", wh_ratio)
+            return default
+        width, height = QwenImage21LatentCreator.dimensions(resolution, ratio)
+        if width * height > 1.1 * resolution * resolution:
+            logger.info(
+                "enhance_prompt: ignoring ratio %s, its canvas %dx%d is past the pixel budget", wh_ratio, width, height
+            )
+            return default
+        return ratio
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:
@@ -389,6 +429,25 @@ class QwenImage21Edit(nn.Module):
         except Exception as exc:  # noqa: BLE001
             logger.warning("enhance_prompt failed (%s); using the original", exc)
             return prompt
+
+    def _rewrite_text_prompt(self, prompt: str) -> tuple[str, str | None]:
+        # Best-effort like _rewrite_prompt: any failure keeps the original request and the default size.
+        if not prompt or not prompt.strip():
+            return prompt, None
+        try:
+            return self._rewritten_text(prompt)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("enhance_prompt failed (%s); using the original", exc)
+            return prompt, None
+
+    def _rewritten_text(self, prompt: str) -> tuple[str, str | None]:
+        if not prompt or not prompt.strip():
+            raise ValueError("There is no request to rewrite: the prompt is empty.")
+        reply = self._vision_reply(QwenImage21Grounding.REWRITE_T2I_PROMPT.format(request=prompt), [], 512)
+        parsed = QwenImage21Grounding.parse_t2i_rewrite(reply)
+        if parsed is None:
+            raise ValueError(f"The rewrite reply could not be parsed: {reply[:120]!r}")
+        return parsed
 
     def _rewritten(self, prompt: str, images: list[Image.Image]) -> str:
         if not prompt or not prompt.strip():
@@ -421,11 +480,11 @@ class QwenImage21Edit(nn.Module):
             raise RuntimeError("The text encoder was released by the memory saver; reload the model.")
         feeds = [QwenImage21Edit._vision_feed(image) for image in images]
         text = QwenImage21Grounding.chat(instruction, len(feeds))
-        inputs = self.processor(text=[text], images=feeds, return_tensors="np")
+        inputs = self.processor(text=[text], images=feeds or None, return_tensors="np")
         ids = self.text_encoder.generate(
             mx.array(inputs["input_ids"]),
-            pixel_values=mx.array(inputs["pixel_values"]),
-            image_grid_thw=mx.array(inputs["image_grid_thw"]),
+            pixel_values=mx.array(inputs["pixel_values"]) if feeds else None,
+            image_grid_thw=mx.array(inputs["image_grid_thw"]) if feeds else None,
             max_new_tokens=max_new_tokens,
         )
         reply = self.processor.tokenizer.decode(ids)
