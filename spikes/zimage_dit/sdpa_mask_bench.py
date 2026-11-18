@@ -86,9 +86,11 @@ def _branch() -> str:
         return "unknown"
 
 
-def attn_macs(seq_len: int) -> float:
-    # QK^T and A@V: one S*S*D matmul each, per head.
-    return 2.0 * seq_len * seq_len * HEAD_DIM * HEADS
+def attn_macs(seq_len: int, causal: bool = False) -> float:
+    # QK^T and A@V: one S*S*D matmul each, per head. A causal mask keeps only the lower triangle,
+    # so scoring that row with the dense count reports throughput that was never earned.
+    pairs = seq_len * (seq_len + 1) / 2 if causal else float(seq_len * seq_len)
+    return 2.0 * pairs * HEAD_DIM * HEADS
 
 
 def timed(fn, reps: int, warmup: int = 10) -> dict:
@@ -184,7 +186,9 @@ def main() -> None:
             if reference is None:
                 reference = out
             stats.update(
-                label=label, seq_len=seq_len, tflops=attn_macs(seq_len) * 2 / (stats["median_ms"] * 1e-3) / 1e12
+                label=label,
+                seq_len=seq_len,
+                tflops=attn_macs(seq_len, label == "causal_str") * 2 / (stats["median_ms"] * 1e-3) / 1e12,
             )
             if label != "causal_str":
                 stats.update(compare(reference, out))
@@ -193,7 +197,7 @@ def main() -> None:
             rows.append(stats)
 
         base = next(r for r in rows if r["label"] == "none")
-        print(f"--- S={seq_len}  (QK^T + AV = {attn_macs(seq_len) * 2 / 1e12:.3f} TFLOP) ---")
+        print(f"--- S={seq_len}  (dense QK^T + AV = {attn_macs(seq_len) * 2 / 1e12:.3f} TFLOP) ---")
         print(f"{'variant':22s} {'median_ms':>10s} {'p90_ms':>9s} {'vs none':>9s} {'TFLOP/s':>8s}  identical")
         for row in sorted(rows, key=lambda r: r["median_ms"]):
             delta = (row["median_ms"] / base["median_ms"] - 1) * 100

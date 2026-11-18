@@ -2,9 +2,12 @@
 
 transformer.py used to build mx.ones(...) masks for all three block streams. attention.py:83-88
 turns any mask into an additive one, so an all-True mask became an all-zero one: mathematically a
-no-op, but SDPA still reads the broadcast, which measured 1.2% of block time at 1024x1024.
-These tests pin both halves of the claim -- the output is bitwise identical, and no mask reaches
-the attention kernel.
+no-op, but SDPA still reads the broadcast. Isolated attention measured that read at 2.0% to 4.3%
+across three sequence lengths and two MLX versions. The block-level effect did not reproduce: one
+run said +1.21% and another -1.63%. So no step-level saving is claimed here; see
+spikes/zimage_dit/README.md for both runs.
+These tests pin what is exact rather than what is small: the output is bitwise identical, and no
+mask reaches the attention kernel.
 
 Scoped to ZImageTransformer. ZImageControlNetTransformer (transformer_controlnet.py:342, 400, 418)
 still builds the same all-True masks: its blocks take the mask positionally, so dropping it there is

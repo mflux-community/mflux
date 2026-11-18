@@ -64,8 +64,22 @@ claims this number, and not the block-level one.
 Three things worth knowing from this table. A materialised per-head mask costs four times the broadcast
 one, so any future mask must stay `(1,1,1,S)`. The kernel reaches about 10.5 TFLOP/s at 4224 and 5952,
 and 9.6 at 1152, which is matmul-class throughput. So attention is not inefficient here.
-`mask="causal"` runs in about half the time, because it does half the FLOPs at the same TFLOP/s. That
-ratio is what confirms the FLOP model rather than contradicting it.
+`mask="causal"` is a useful control, but only once its work is counted correctly. A causal mask keeps
+the lower triangle, so it contributes `S(S+1)/2` score entries rather than `S*S`. An earlier version of
+this script scored the causal row with the dense count. It reported about 20 TFLOP/s. That was an
+artefact of the arithmetic, not a faster kernel. With the triangular count, from a 15-rep run on
+MLX 0.32.4:
+
+| S | causal ms | causal TFLOP/s | dense ms | dense TFLOP/s |
+|---|---|---|---|---|
+| 1152 | 1.243 | 8.21 | 2.124 | 9.60 |
+| 4224 | 13.675 | 10.02 | 25.824 | 10.61 |
+| 5952 | 27.240 | 9.99 | 51.089 | 10.65 |
+
+At the two long sequences causal takes roughly 0.53 of the time. Scored on its own work it runs
+within about 6% of the dense rate, which is the half-the-work ratio the model predicts. At 1152 it sits about 14% below, where
+the fixed cost per launch is no longer amortised. So the control holds at the lengths that matter here,
+and it is weaker at the short one.
 
 ## `block_linear_share.py`
 
@@ -116,8 +130,8 @@ Run from the repo root. `uv run` picks the pinned project environment. That envi
 during this work. `pyproject.toml` on `main` pinned `mlx==0.32.0`, and `experiment/zit-on-ane` now
 pins `mlx==0.32.4` at the maintainer's request. Which branch an environment was synced from therefore
 changes the numbers. Every table below names its MLX version. Only the stamped third SDPA run
-carries a commit too; runs A and B predate that rule and were taken from the shared checkout's venv,
-which belongs to whichever branch was synced there. They are labelled accordingly rather than given a
+carries a commit too. Runs A and B predate that rule. They were taken from the shared checkout's venv,
+which belongs to whichever branch was synced there. They are labelled accordingly, rather than given a
 provenance they do not have.
 
 ```sh

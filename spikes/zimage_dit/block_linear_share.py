@@ -166,7 +166,11 @@ def measure(block, label, h_tok, w_tok, reps):
     t_attn_m = timed(sdpa_masked, (q, k, v, mask), reps)
     t_attn_n = timed(sdpa_none, (q, k, v), reps)
     other = t_full - t_lin - t_attn_m
-    linear_flops = 2 * (4 * DIM * DIM + 3 * DIM * HIDDEN + T_EMB * 4 * DIM) * seq
+    # The seven fat projections run once per token. The adaLN projection consumes t_emb, which is
+    # (1, T_EMB), so it runs once per step whatever seq is. Counting it per token overstates the
+    # linear FLOPs by about 2.2%.
+    token_macs = 4 * DIM * DIM + 3 * DIM * HIDDEN
+    linear_flops = 2 * (token_macs * seq + T_EMB * 4 * DIM)
     attn_flops = 4 * seq * seq * DIM
 
     return {
