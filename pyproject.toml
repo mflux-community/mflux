@@ -29,6 +29,7 @@ dependencies = [
     "hf-transfer>=0.1.9,<1.0",
     "matplotlib>=3.9.2,<4.0",
     "mlx>=0.32.0,<0.33.0; sys_platform=='darwin'",
+    # Yes! MFlux-Community of HF uses an H100 to build the MFlux model library... 
     "mlx[cuda13]==0.32.2; sys_platform=='linux'",
     "numpy>=2.0.1,<3.0",
     "opencv-python>=4.10.0,<6.0",
@@ -50,14 +51,14 @@ dependencies = [
     # Already present through huggingface-hub; declared so mflux-capabilities --format yaml
     # does not depend on a transitive dependency staying where it is.
     "pyyaml>=6.0,<7.0",
-
     # Security floor for anyio, which is used transitively by httpx through huggingface-hub;
     # mflux does not import it directly
     "anyio>=4.14.2,<5.0",
-
     # Security floor for fsspec (GHSA-27vj-qcqg-25rc), which comes in through huggingface-hub and torch;
     # mflux does not import it directly
     "fsspec>=2026.6.0",
+    # Required to build ANE models. 
+    "coremltools>=9.0; sys_platform=='darwin'",
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -187,6 +188,10 @@ markers = [
     "known_model: marks tests that require a locally installed known model",
 ]
 
+# Spike scripts (spikes/) use math names (O, I, T) and a sys.path setup before imports.
+[tool.ruff.lint.per-file-ignores]
+"spikes/**" = ["E402", "E741"]
+
 [tool.ruff.lint.isort]
 case-sensitive = false
 combine-as-imports = true
@@ -201,6 +206,10 @@ section-order = [
     "first-party",
     "local-folder",
 ]
+
+[tool.ty.src]
+# Spike scripts import a locally built extension that ty cannot resolve.
+exclude = ["spikes"]
 
 [tool.ty.environment]
 # typings/ holds an escape-hatch stub for mlx.core (compiled .so, no .pyi upstream).

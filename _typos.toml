@@ -16,6 +16,10 @@ extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PN
 # "temperal_downsample" key in published Qwen VAE configs and Diffusers;
 # RGBa (in the identifier list above) = premultiplied Pillow image mode.
 [default.extend-words]
+# ane = Apple Neural Engine (spikes/ane_matmul).
+ane = "ane"
+ANE = "ANE"
+Ane = "Ane"
 hed = "hed"
 HED = "HED"
 thre = "thre"
