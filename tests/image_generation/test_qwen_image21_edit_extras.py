@@ -828,10 +828,18 @@ def test_enhance_prompt_without_references_rewrites_text_to_image(monkeypatch):
     assert width < height  # the proposed 2:3 ratio picks the size
 
 
-def test_text_to_image_rewrite_ignores_a_ratio_past_the_pixel_budget(monkeypatch):
+@pytest.mark.parametrize(
+    "wh_ratio",
+    [
+        "1000000:1",  # past the pixel budget through the 32-pixel minimum
+        "9" * 400 + ":1",  # w / h overflows a float
+        "1:" + "9" * 400,  # w / h rounds to 0.0
+    ],
+)
+def test_text_to_image_rewrite_ignores_an_unusable_ratio(monkeypatch, wh_ratio):
     model = _stub_model()
     model._vision_reply = lambda instruction, images, tokens: (
-        '{"rewritten_prompt": "a detailed fox", "wh_ratio": "1000000:1"}'
+        '{"rewritten_prompt": "a detailed fox", "wh_ratio": "%s"}' % wh_ratio
     )
     prompt, size = _t2i_until_encode(model, monkeypatch, enhance_prompt=True)
     assert prompt == "a detailed fox" and size == (1024, 1024)

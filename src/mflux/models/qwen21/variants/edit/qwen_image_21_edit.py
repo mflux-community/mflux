@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import shutil
 from pathlib import Path
 
@@ -386,14 +387,22 @@ class QwenImage21Edit(nn.Module):
     def _proposed_ratio(resolution: int, wh_ratio: str, default: float) -> float:
         # The rewrite's "W:H" sets the canvas only when it keeps the automatic size near the resolution's pixel
         # budget (1000000:1 would give a 1,024,000 x 32 canvas, past the budget through the 32-pixel minimum).
+        # A side with hundreds of digits makes w / h overflow a float, or round to 0.0: keep the default size then.
         w, h = (int(part) for part in wh_ratio.split(":"))
-        width, height = QwenImage21LatentCreator.dimensions(resolution, w / h)
+        try:
+            ratio = w / h
+        except OverflowError:
+            ratio = 0.0
+        if not 0 < ratio < math.inf:
+            logger.info("enhance_prompt: ignoring ratio %s, it is not a usable aspect ratio", wh_ratio)
+            return default
+        width, height = QwenImage21LatentCreator.dimensions(resolution, ratio)
         if width * height > 1.1 * resolution * resolution:
             logger.info(
                 "enhance_prompt: ignoring ratio %s, its canvas %dx%d is past the pixel budget", wh_ratio, width, height
             )
             return default
-        return w / h
+        return ratio
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:
