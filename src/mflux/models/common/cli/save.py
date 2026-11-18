@@ -12,6 +12,7 @@ from mflux.models.common.resolution.prequantized_resolution import PrequantizedR
 from mflux.models.common.resolution.quantization_resolution import QuantizationResolution
 from mflux.models.common.weights.saving.hf_cache_alias import HfCacheAlias
 from mflux.models.common.weights.saving.saved_model_info import SavedModelInfo, SaveTarget
+from mflux.models.dreamlite.variants.txt2img.dreamlite import DreamLite
 from mflux.models.ernie_image.variants.txt2img.ernie_image import ErnieImage
 from mflux.models.fibo.variants.edit.fibo_edit import FIBOEdit
 from mflux.models.fibo.variants.txt2img.fibo import FIBO
@@ -58,6 +59,8 @@ MODEL_CLASSES: dict[str, type] = {
     "dev-fill-catvton": Flux1,
     "dev-kontext": Flux1,
     "dev-redux": Flux1Redux,
+    "dreamlite": DreamLite,
+    "dreamlite-mobile": DreamLite,
     "ernie-image": ErnieImage,
     "ernie-image-turbo": ErnieImage,
     "fibo": FIBO,

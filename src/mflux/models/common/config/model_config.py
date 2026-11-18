@@ -164,6 +164,16 @@ class ModelConfig:
 
     @staticmethod
     @lru_cache
+    def dreamlite() -> "ModelConfig":
+        return AVAILABLE_MODELS["dreamlite"]
+
+    @staticmethod
+    @lru_cache
+    def dreamlite_mobile() -> "ModelConfig":
+        return AVAILABLE_MODELS["dreamlite-mobile"]
+
+    @staticmethod
+    @lru_cache
     def krea2() -> "ModelConfig":
         return AVAILABLE_MODELS["krea-2"]
 
@@ -641,6 +651,30 @@ AVAILABLE_MODELS = {
         num_train_steps=1000,
         max_sequence_length=None,
         supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "dreamlite": ModelConfig(
+        priority=43,
+        aliases=["dreamlite", "dreamlite-base"],
+        model_name="carlofkl/DreamLite-base",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=None,
+        supports_guidance=True,
+        requires_sigma_shift=False,
+    ),
+    "dreamlite-mobile": ModelConfig(
+        priority=44,
+        aliases=["dreamlite-mobile"],
+        model_name="carlofkl/DreamLite-mobile",
+        base_model=None,
+        controlnet_model=None,
+        custom_transformer_model=None,
+        num_train_steps=1000,
+        max_sequence_length=None,
+        supports_guidance=False,
         requires_sigma_shift=False,
     ),
     "flux2-klein-9b": ModelConfig(

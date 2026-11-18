@@ -439,6 +439,48 @@ def test_sensenova_saved_package_passes_in_its_component_directories(tmp_path, s
     assert (result.check, result.format, result.problems) == ("pass", "mflux", ())
 
 
+@pytest.fixture
+def dreamlite_names(monkeypatch):
+    monkeypatch.setattr(ModelChecker, "_resolve_model_key", staticmethod(lambda reference, base_model=None: "dreamlite"))  # fmt: skip
+    return {
+        component: (SENSENOVA_KEYS / f"dreamlite_{component}.txt").read_text().split()
+        for component in ("unet", "vae", "text_encoder")
+    }
+
+
+@pytest.mark.fast
+def test_dreamlite_upstream_component_directories_pass(tmp_path, dreamlite_names):
+    write_safetensors(tmp_path / "unet" / "diffusion_pytorch_model.safetensors", names=dreamlite_names["unet"])
+    write_safetensors(tmp_path / "vae" / "diffusion_pytorch_model.safetensors", names=dreamlite_names["vae"])
+    write_safetensors(tmp_path / "text_encoder" / "model.safetensors", names=dreamlite_names["text_encoder"])
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert (result.check, result.format, result.problems) == ("pass", "safetensors", ())
+
+
+@pytest.mark.fast
+def test_dreamlite_without_its_unet_fails(tmp_path, dreamlite_names):
+    write_safetensors(tmp_path / "vae" / "diffusion_pytorch_model.safetensors", names=dreamlite_names["vae"])
+    write_safetensors(tmp_path / "text_encoder" / "model.safetensors", names=dreamlite_names["text_encoder"])
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert result.check == "fail"
+    assert any("unet" in problem for problem in result.problems)
+
+
+@pytest.mark.fast
+def test_dreamlite_saved_package_passes_in_its_component_directories(tmp_path, dreamlite_names):
+    metadata = {"mflux_version": "0.21.0", "quantization_level": "8"}
+    for index, component in enumerate(("vae", "unet", "text_encoder")):
+        write_safetensors(tmp_path / component / "0.safetensors", metadata, names=[f"weight_{index}"])
+
+    result = ModelChecker.check(str(tmp_path))
+
+    assert (result.check, result.format, result.problems) == ("pass", "mflux", ())
+
+
 # Set these variables to run the known-model cases on a host that has the packages:
 #   MFLUX_CHECK_KNOWN_HF_MODEL     a Hugging Face reference in the local cache (safetensors format)
 #   MFLUX_CHECK_KNOWN_MFLUX_MODEL  a local path to an MFlux-saved package
