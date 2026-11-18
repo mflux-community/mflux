@@ -828,6 +828,20 @@ def test_enhance_prompt_without_references_rewrites_text_to_image(monkeypatch):
     assert width < height  # the proposed 2:3 ratio picks the size
 
 
+def test_text_to_image_rewrite_ignores_a_ratio_past_the_pixel_budget(monkeypatch):
+    model = _stub_model()
+    model._vision_reply = lambda instruction, images, tokens: (
+        '{"rewritten_prompt": "a detailed fox", "wh_ratio": "1000000:1"}'
+    )
+    prompt, size = _t2i_until_encode(model, monkeypatch, enhance_prompt=True)
+    assert prompt == "a detailed fox" and size == (1024, 1024)
+
+
+def test_parse_rewrite_skips_placeholders_and_unterminated_objects():
+    assert QwenImage21Grounding.parse_rewrite('{"note":"unterminated} {"rewritten_prompt": "a fox"}') == "a fox"
+    assert QwenImage21Grounding.parse_rewrite('{"rewritten_prompt": "<|image_pad|> a fox"}') is None
+
+
 def test_text_to_image_rewrite_keeps_an_explicit_size(monkeypatch):
     model = _stub_model()
     model._vision_reply = lambda instruction, images, tokens: (
@@ -874,6 +888,12 @@ def test_rewrite_text_prompt_is_public_and_raises_when_it_cannot_rewrite():
             'it\'s done: {"rewritten_prompt": "a sign reading \\"{OPEN}\\"", "wh_ratio": "4:3"}',
             ('a sign reading "{OPEN}"', "4:3"),
         ),
+        # "²".isdigit() is true but int("²") raises: not a usable ratio
+        ('{"rewritten_prompt": "a fox", "wh_ratio": "²:3"}', ("a fox", None)),
+        # an unterminated string in an earlier object does not hide the final one
+        ('{"note":"unterminated} {"rewritten_prompt": "a fox", "wh_ratio": "3:2"}', ("a fox", "3:2")),
+        # a description with an invented vision placeholder cannot be encoded
+        ('{"rewritten_prompt": "an icon <|image_pad|> of a fox", "wh_ratio": "1:1"}', None),
     ],
 )
 def test_parse_t2i_rewrite(reply, expected):

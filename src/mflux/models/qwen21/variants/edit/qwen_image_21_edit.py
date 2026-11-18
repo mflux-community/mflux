@@ -119,8 +119,7 @@ class QwenImage21Edit(nn.Module):
             prompt, wh_ratio = self._rewrite_text_prompt(prompt)
             logger.info("enhance_prompt: %r -> %r (ratio %s)", original_prompt, prompt, wh_ratio)
             if wh_ratio is not None and width is None and height is None:
-                w, h = (int(part) for part in wh_ratio.split(":"))
-                ratio = w / h
+                ratio = QwenImage21Edit._proposed_ratio(output_resolution, wh_ratio, ratio)
         default_width, default_height = QwenImage21LatentCreator.dimensions(output_resolution, ratio)
         width = default_width if width is None else width
         height = default_height if height is None else height
@@ -382,6 +381,19 @@ class QwenImage21Edit(nn.Module):
         if self.small_text_encoder:
             raise ValueError(QwenImage21Edit.SMALL_TEXT_ENCODER_VISION_ERROR)
         return self._rewritten_text(prompt)
+
+    @staticmethod
+    def _proposed_ratio(resolution: int, wh_ratio: str, default: float) -> float:
+        # The rewrite's "W:H" sets the canvas only when it keeps the automatic size near the resolution's pixel
+        # budget (1000000:1 would give a 1,024,000 x 32 canvas, past the budget through the 32-pixel minimum).
+        w, h = (int(part) for part in wh_ratio.split(":"))
+        width, height = QwenImage21LatentCreator.dimensions(resolution, w / h)
+        if width * height > 1.1 * resolution * resolution:
+            logger.info(
+                "enhance_prompt: ignoring ratio %s, its canvas %dx%d is past the pixel budget", wh_ratio, width, height
+            )
+            return default
+        return w / h
 
     @staticmethod
     def _check_reference_count(image_paths: list) -> None:

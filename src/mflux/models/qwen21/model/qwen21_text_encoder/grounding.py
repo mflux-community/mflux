@@ -94,27 +94,55 @@ class QwenImage21Grounding:
         # from the official prompt_rewrite answer parser).
         # Braces inside a JSON string (a description that mentions "}") do not count; quotes are only
         # tracked inside an object, so apostrophes or quotes in the prose around it do not matter.
-        spans, depth, start = [], 0, -1
-        in_string = escaped = False
-        for i, ch in enumerate(text):
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == '"':
-                    in_string = False
-            elif ch == '"' and depth > 0:
-                in_string = True
-            elif ch == "{":
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == "}" and depth > 0:
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    spans.append(text[start : i + 1])
+        # An object left open at the end (an unterminated string, a cut-off reply) hides nothing: the scan
+        # resumes just after its opening brace, so a valid object later in the reply is still found.
+        spans, offset = [], 0
+        while offset < len(text):
+            depth, start = 0, -1
+            in_string = escaped = False
+            for i in range(offset, len(text)):
+                ch = text[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                elif ch == '"' and depth > 0:
+                    in_string = True
+                elif ch == "{":
+                    if depth == 0:
+                        start = i
+                    depth += 1
+                elif ch == "}" and depth > 0:
+                    depth -= 1
+                    if depth == 0:
+                        spans.append(text[start : i + 1])
+            if depth == 0:
+                break
+            offset = start + 1
         return spans
+
+    @staticmethod
+    def _usable_text(value) -> str | None:
+        # A rewritten description is usable when it is a non-empty string without vision placeholders: the
+        # processor would try to expand an <|image_pad|> the rewrite invented and fail.
+        if not isinstance(value, str) or not value.strip():
+            return None
+        if any(token in value for token in ("<|image_pad|>", "<|video_pad|>", "<|vision_start|>", "<|vision_end|>")):
+            return None
+        return value.strip()
+
+    @staticmethod
+    def _ratio(value) -> str | None:
+        # "W:H" with ASCII decimal W, H > 0 (str.isdigit also accepts "²", which int() rejects).
+        if not isinstance(value, str):
+            return None
+        match = re.fullmatch(r"\s*([0-9]+)\s*:\s*([0-9]+)\s*", value)
+        if match is None or int(match.group(1)) == 0 or int(match.group(2)) == 0:
+            return None
+        return value.strip()
 
     @staticmethod
     def parse_rewrite(text: str) -> str | None:
@@ -126,9 +154,11 @@ class QwenImage21Grounding:
                 obj = json.loads(candidate)
             except json.JSONDecodeError:
                 continue
-            rewritten = obj.get("rewritten_prompt") or obj.get("rewrited_prompt")
-            if isinstance(rewritten, str) and rewritten.strip():
-                return rewritten.strip()
+            if not isinstance(obj, dict):
+                continue
+            rewritten = QwenImage21Grounding._usable_text(obj.get("rewritten_prompt") or obj.get("rewrited_prompt"))
+            if rewritten is not None:
+                return rewritten
         return None
 
     @staticmethod
@@ -139,12 +169,11 @@ class QwenImage21Grounding:
                 obj = json.loads(candidate)
             except json.JSONDecodeError:
                 continue
-            rewritten = obj.get("rewritten_prompt") or obj.get("rewrited_prompt")
-            if isinstance(rewritten, str) and rewritten.strip():
-                ratio = obj.get("wh_ratio")
-                parts = ratio.split(":") if isinstance(ratio, str) else []
-                ok = len(parts) == 2 and all(p.strip().isdigit() and int(p) > 0 for p in parts)
-                return rewritten.strip(), ratio.strip() if ok else None
+            if not isinstance(obj, dict):
+                continue
+            rewritten = QwenImage21Grounding._usable_text(obj.get("rewritten_prompt") or obj.get("rewrited_prompt"))
+            if rewritten is not None:
+                return rewritten, QwenImage21Grounding._ratio(obj.get("wh_ratio"))
         return None
 
     @staticmethod
