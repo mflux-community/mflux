@@ -35,8 +35,8 @@ Comparison against the throttled Stage 3a sweep (best speedup per shape/mode):
 This supersedes design rule 2 in `STAGE3A-REPORT.md`. The report stays unedited. Cite this file instead.
 
 - **Use 50:50 for o, qkv, w2, and w1w3 with the bf16 half.**
-- **w1w3 with the q8 half can take 45:55, which gains about 5% at best state.** The 40:60 and 45:55 points sit within noise of each other.
-- The unthrottled ANE is fast enough to take half the columns everywhere. The earlier preference for a larger GPU share came from ANE throttling.
+- For w1w3 with the q8 half, 45:55 gains about 5% at best state. The 40:60 and 45:55 points sit within noise of each other.
+- The unthrottled ANE is fast enough to take half the columns for every shape. The earlier GPU-heavy ratios came from throttling.
 
 ## Updated projection
 
