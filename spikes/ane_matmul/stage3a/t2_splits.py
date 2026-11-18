@@ -31,7 +31,7 @@ def round64(v):
 
 
 def gpu_solo(O, I, mode):
-    out = run([PYTHON, os.path.join(os.path.dirname(__file__), "gpu_half.py"), T, O, I, mode, 0, 0])
+    out = run([WATCHDOG, PYTHON, os.path.join(os.path.dirname(__file__), "gpu_half.py"), T, O, I, mode, 0, 0])
     return json.loads(out.strip().splitlines()[-1])["median_ms"]
 
 
