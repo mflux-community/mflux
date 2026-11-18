@@ -115,8 +115,8 @@ def main():
         for name, (O, I, ksplit) in LAYERS.items():
             for a8 in (False, True):
                 fname = name + ("_a8" if a8 else "")
-                mf_r = anebench(mf_c, shape=(T, O, I), function=fname, iters=30)
-                sa_r = anebench(sa_c[(name, a8)], shape=(T, O, I), iters=30)
+                mf_r = anebench(mf_c, shape=(T, O, I), function=fname, iters=30, repeat=3)
+                sa_r = anebench(sa_c[(name, a8)], shape=(T, O, I), iters=30, repeat=3)
                 emit(
                     "t4_multifn",
                     dict(

@@ -8,6 +8,7 @@ fixed-shape model, and load behaviour. Synthetic weights.
 import os
 
 import gen3a
+import s3a
 from s3a import MODELS, BenchLock, anebench, aneplan, emit, gen_fixed
 
 TOKENS = [4608, 6528, 8320, 16128]
@@ -27,25 +28,27 @@ def main():
         for T in TOKENS:
             gen_fixed(MODELS, T, O, I, fixed_variant)
 
-    # Placement (not timed).
-    for name, O, I, ksplit, fixed_variant in LAYERS:
-        emit("t3_enum", dict(phase="plan", layer=name, kind="enum", plan=aneplan(enum_paths[name])))
-        emit(
-            "t3_enum",
-            dict(
-                phase="plan",
-                layer=name,
-                kind="fixed",
-                plan=aneplan(MODELS / f"{fixed_variant}_{TOKENS[0]}x{O}x{I}.mlpackage"),
-            ),
-        )
+    # Placement (not timed). Skip if an earlier run already recorded the plans.
+    prior = (s3a.RESULTS / "t3_enum.jsonl").read_text() if (s3a.RESULTS / "t3_enum.jsonl").exists() else ""
+    if '"phase": "plan"' not in prior:
+        for name, O, I, ksplit, fixed_variant in LAYERS:
+            emit("t3_enum", dict(phase="plan", layer=name, kind="enum", plan=aneplan(enum_paths[name])))
+            emit(
+                "t3_enum",
+                dict(
+                    phase="plan",
+                    layer=name,
+                    kind="fixed",
+                    plan=aneplan(MODELS / f"{fixed_variant}_{TOKENS[0]}x{O}x{I}.mlpackage"),
+                ),
+            )
 
     with BenchLock(owner=f"stage3a-t3-{os.getpid()}"):
         for name, O, I, ksplit, fixed_variant in LAYERS:
             for T in TOKENS:
-                fixed = anebench(MODELS / f"{fixed_variant}_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=30)
+                fixed = anebench(MODELS / f"{fixed_variant}_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=30, repeat=3)
                 try:
-                    enum = anebench(enum_paths[name], shape=(T, O, I), iters=30)
+                    enum = anebench(enum_paths[name], shape=(T, O, I), iters=30, repeat=3)
                     enum_res = dict(
                         enum_ms=enum["median_ms"],
                         enum_tflops=enum["tflops"],

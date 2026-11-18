@@ -30,13 +30,31 @@ def round64(v):
     return max(64, int(round(v / 64)) * 64)
 
 
-def gpu_solo(O, I, mode):
-    out = run([WATCHDOG, PYTHON, os.path.join(os.path.dirname(__file__), "gpu_half.py"), T, O, I, mode, 0, 0])
-    return json.loads(out.strip().splitlines()[-1])["median_ms"]
+def gpu_solo(O, I, mode, repeat=3):
+    best = None
+    for _ in range(repeat):
+        out = run([WATCHDOG, PYTHON, os.path.join(os.path.dirname(__file__), "gpu_half.py"), T, O, I, mode, 0, 0])
+        ms = json.loads(out.strip().splitlines()[-1])["median_ms"]
+        best = ms if best is None else min(best, ms)
+    return best
 
 
-def concurrent(O_gpu, O_ane, I, mode, variant):
-    """Run the GPU half and the ANE half in one shared window; return both medians."""
+def concurrent(O_gpu, O_ane, I, mode, variant, repeat=3):
+    """Run both halves in one shared window, repeated. Return the best-state (gpu_ms, ane_ms).
+
+    Best state = the repeat with the lowest layer time max(gpu, ane), so both
+    halves come from the same window and the pair stays consistent.
+    """
+    best = None
+    for _ in range(repeat):
+        gpu_ms, ane_ms = _concurrent_once(O_gpu, O_ane, I, mode, variant)
+        layer = max(gpu_ms, ane_ms)
+        if best is None or layer < max(best[0], best[1]):
+            best = (gpu_ms, ane_ms)
+    return best
+
+
+def _concurrent_once(O_gpu, O_ane, I, mode, variant):
     start = time.time() + RAMP_S
     end = start + WINDOW_S
     ane_model = MODELS / f"{variant}_{T}x{O_ane}x{I}.mlpackage"
@@ -102,7 +120,9 @@ def main():
                         speedup=1.0,
                     ),
                 )
-                ane_full = s3a.anebench(MODELS / f"{variant}_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=50)
+                ane_full = s3a.anebench(
+                    MODELS / f"{variant}_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=50, repeat=3
+                )
                 emit(
                     "t2_splits",
                     dict(

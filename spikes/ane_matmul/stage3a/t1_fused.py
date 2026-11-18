@@ -27,8 +27,8 @@ def main():
         for label, (fused_o, fused_i, fused_v), (sep_o, sep_i, sep_v), n in CASES:
             fused_path = MODELS / f"{fused_v}_{T}x{fused_o}x{fused_i}.mlpackage"
             sep_path = MODELS / f"{sep_v}_{T}x{sep_o}x{sep_i}.mlpackage"
-            r_fused = anebench(fused_path, shape=(T, fused_o, fused_i), iters=50)
-            r_sep = anebench(sep_path, shape=(T, sep_o, sep_i), iters=50)
+            r_fused = anebench(fused_path, shape=(T, fused_o, fused_i), iters=50, repeat=3)
+            r_sep = anebench(sep_path, shape=(T, sep_o, sep_i), iters=50, repeat=3)
             emit(
                 "t1_fused",
                 dict(

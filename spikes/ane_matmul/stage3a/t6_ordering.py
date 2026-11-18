@@ -99,17 +99,34 @@ def main():
     mx.eval(fq, fs, fb, x0)
 
     with BenchLock(owner=f"stage3a-t6-{os.getpid()}"):
-        ts = []
-        for _ in range(30):
-            t0 = time.perf_counter()
-            mx.eval(mx.quantized_matmul(x0.reshape(-1, I), fq, fs, fb, transpose=True, group_size=64, bits=8))
-            ts.append(time.perf_counter() - t0)
-        ts.sort()
-        gpu_only = ts[len(ts) // 2] * 1e3
-        emit("t6_ordering", dict(phase="timing", strategy="gpu_only_q8", median_ms=gpu_only))
-        for strategy, (call, x) in layers.items():
-            med, _ = bench(call, x)
-            emit("t6_ordering", dict(phase="timing", strategy=strategy, median_ms=med, speedup_vs_gpu=gpu_only / med))
+        # Alternate the strategies across 3 rounds and keep each one's best-state
+        # median, because this machine flips between a fast and a slow ANE state.
+        best = {}
+        for _ in range(3):
+            ts = []
+            for _ in range(30):
+                t0 = time.perf_counter()
+                mx.eval(mx.quantized_matmul(x0.reshape(-1, I), fq, fs, fb, transpose=True, group_size=64, bits=8))
+                ts.append(time.perf_counter() - t0)
+            ts.sort()
+            med = ts[len(ts) // 2] * 1e3
+            best["gpu_only_q8"] = min(best.get("gpu_only_q8", med), med)
+            for strategy, (call, x) in layers.items():
+                m, _ = bench(call, x)
+                best[strategy] = min(best.get(strategy, m), m)
+        gpu_only = best["gpu_only_q8"]
+        emit("t6_ordering", dict(phase="timing", strategy="gpu_only_q8", median_ms=gpu_only, repeat=3))
+        for strategy in ("none", "hack", "async"):
+            emit(
+                "t6_ordering",
+                dict(
+                    phase="timing",
+                    strategy=strategy,
+                    median_ms=best[strategy],
+                    speedup_vs_gpu=gpu_only / best[strategy],
+                    repeat=3,
+                ),
+            )
 
 
 if __name__ == "__main__":

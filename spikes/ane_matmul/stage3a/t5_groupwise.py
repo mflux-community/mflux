@@ -183,8 +183,8 @@ def main():
     )
 
     with BenchLock(owner=f"stage3a-t5-{os.getpid()}"):
-        bw = anebench(p16, shape=(T, O, I), iters=50)
-        pc = anebench(MODELS / f"c1_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=50)
+        bw = anebench(p16, shape=(T, O, I), iters=50, repeat=3)
+        pc = anebench(MODELS / f"c1_{T}x{O}x{I}.mlpackage", shape=(T, O, I), iters=50, repeat=3)
         emit(
             "t5_groupwise",
             dict(
