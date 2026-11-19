@@ -42,15 +42,32 @@ def _to_np32(w) -> np.ndarray:
     return np.array(w.astype(mx.float32))
 
 
+_WEIGHT_CACHE: dict[tuple, tuple] = {}
+
+
 def prepare_block_weights(spec: MlpSpec, w1, w3, w2) -> BlockWeights:
-    """w1,w3: [H,D]; w2: [D,H]; any array-like convertible with np.asarray(..., float32)."""
-    w1, w3, w2 = (_to_np32(w) for w in (w1, w3, w2))
+    """w1,w3: [H,D]; w2: [D,H]; any array-like convertible with np.asarray(..., float32).
+
+    Memoised on the source arrays and the weight-bearing spec fields. The quantised codes do not
+    depend on mpad, so a share sweep would otherwise re-quantise every block per share: at 34
+    blocks and 4 shares that is ~16 GB of duplicate host int8, which is swap territory on 36 GB
+    and would invalidate the very runs it is meant to time. Keyed by id() and made safe by
+    holding the source arrays alive in the cache value, so a key's id cannot be reused.
+    """
+    key = (id(w1), id(w3), id(w2), spec.weight_dtype, spec.scale_mode, spec.w2_scale)
+    hit = _WEIGHT_CACHE.get(key)
+    if hit is not None:
+        return hit[0]
+    src = (w1, w3, w2)
+    w1, w3, w2 = (_to_np32(w) for w in src)
     if spec.weight_dtype == "int8":
         (q1, s1), (q3, s3), (q2, s2) = quantize_per_row(w1), quantize_per_row(w3), quantize_per_row(w2)
     else:
         q1, q3, q2 = (w.astype(np.float16) for w in (w1, w3, w2))
         s1, s3, s2 = (np.ones(w.shape[0], dtype=np.float32) for w in (w1, w3, w2))
-    return BlockWeights(q1, q3, q2, program_scales(spec, s1, s3, s2), epilogue_gain(spec, s2))
+    bw = BlockWeights(q1, q3, q2, program_scales(spec, s1, s3, s2), epilogue_gain(spec, s2))
+    _WEIGHT_CACHE[key] = (bw, src)
+    return bw
 
 
 class AneBackend:
