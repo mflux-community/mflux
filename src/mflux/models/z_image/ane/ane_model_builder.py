@@ -38,7 +38,8 @@ class AneModelBuilder:
     def cache_path(w: np.ndarray, prec: str, ksplit: int, tag: str, cache_dir: Path, tiers: list[int]) -> Path:
         digest = hashlib.sha1(np.ascontiguousarray(w, dtype=np.float32).tobytes()).hexdigest()[:12]
         od, idd = w.shape
-        return cache_dir / f"{tag}_{prec}_{od}x{idd}_k{ksplit}_{digest}.mlpackage"
+        tier_tag = "-".join(str(t) for t in tiers)
+        return cache_dir / f"{tag}_{prec}_{od}x{idd}_k{ksplit}_t{tier_tag}_{digest}.mlpackage"
 
     @staticmethod
     def build(w: np.ndarray, prec: str, ksplit: int, path: Path, tiers: list[int] | None = None) -> Path:

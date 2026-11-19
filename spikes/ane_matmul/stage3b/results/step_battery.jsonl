@@ -1,0 +1,2 @@
+{"arm": "base", "res": 1024, "passno": 1, "patched_blocks": 0, "patch_s": null, "step_med_ms": 4988.6, "step_min_ms": 4982.8, "step_all": [4985.7, 4983.2, 4982.8, 4988.8, 5138.2, 5051.9, 4989.9, 4988.5], "canary_med_ms": 55.5, "wall_s": 62.0}
+{"arm": "ane16", "res": 1024, "passno": 1, "patched_blocks": 32, "patch_s": 163.5, "step_med_ms": 80429.6, "step_min_ms": 72192.5, "step_all": [80927.7, 72192.5, 79931.5, 76442.9, 83508.5, 95635.4, 83480.8, 77949.2], "canary_med_ms": 55.2, "wall_s": 1031.1}

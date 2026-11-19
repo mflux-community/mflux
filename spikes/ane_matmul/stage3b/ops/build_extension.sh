@@ -19,9 +19,11 @@ case "$MLX_VER" in
   *) echo "MLX $MLX_VER: pick the nanobind pin in this script per CMakeLists.txt rules" ; exit 1 ;;
 esac
 
-if [ ! -d "$SCRATCH/nanobind" ]; then
-  mkdir -p "$SCRATCH"
-  uv pip install --target "$SCRATCH" "nanobind==$NB_PIN"
+# version-scoped cache: a stale dir from another MLX pin must never be reused
+SCRATCH_NB="$SCRATCH/nb-$NB_PIN"
+if [ ! -d "$SCRATCH_NB/nanobind" ]; then
+  mkdir -p "$SCRATCH_NB"
+  uv pip install --target "$SCRATCH_NB" "nanobind==$NB_PIN"
 fi
 
 MLX_DIR=$($PY -c "
@@ -35,7 +37,7 @@ for d in site.getsitepackages():
 [ -d "$MLX_DIR" ] || { echo "MLX cmake dir not found at $MLX_DIR"; exit 1; }
 
 mkdir -p "$BUILD"
-PYTHONPATH="$SCRATCH" cmake -S "$SRC" -B "$BUILD" \
+PYTHONPATH="$SCRATCH_NB" cmake -S "$SRC" -B "$BUILD" \
   -DPython_EXECUTABLE="$PY" \
   -DMLX_DIR="$MLX_DIR" \
   -DCMAKE_BUILD_TYPE=Release

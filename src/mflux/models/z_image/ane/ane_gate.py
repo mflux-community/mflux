@@ -36,15 +36,19 @@ class AneGate:
 
         chip = AneGate._chip_name().lower()
         gen = re.search(r"apple m(\d+)", chip)
-        if gen:
-            number = int(gen.group(1))
-            if number <= 2:
-                raise ValueError(f"--ane refuses this machine ({AneGate._chip_name()}): the ANE path is M3 or newer.")
-            if number == 5 and not allow_m5:
-                raise ValueError(
-                    f"{AneGate._chip_name()} detected: the ANE split is tuned on M3/M4. "
-                    "Pass --ane-allow-m5 once you have confirmed it works on your M5."
-                )
+        if not gen:
+            raise ValueError(
+                f"--ane cannot identify the Apple chip ('{AneGate._chip_name()}'). "
+                "The path is tuned on M3/M4; refuse on an unknown chip."
+            )
+        number = int(gen.group(1))
+        if number <= 2:
+            raise ValueError(f"--ane refuses this machine ({AneGate._chip_name()}): the ANE path is M3 or newer.")
+        if number == 5 and not allow_m5:
+            raise ValueError(
+                f"{AneGate._chip_name()} detected: the ANE split is tuned on M3/M4. "
+                "Pass --ane-allow-m5 once you have confirmed it works on your M5."
+            )
 
     @staticmethod
     def warn_if_background_qos() -> None:
