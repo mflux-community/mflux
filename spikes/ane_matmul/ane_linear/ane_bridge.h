@@ -63,6 +63,15 @@ class AneModel {
 // ~/zCode_26_11/drawthings-ane-research/DRAWTHINGS-ANE-FINDINGS.md
 // (liuliu/ccv, BSD-3-Clause); written from that description, no source copied.
 // All buffers wrap MLX memory zero-copy, including int8.
+// Stage 3d: one fused weightless program for a whole SwiGLU MLP (W8A16). The program has no
+// baked weights, so it declares N graph inputs of arbitrary rank and dtype; all of them wrap
+// caller-owned host buffers zero-copy, and the single output wraps a caller-owned fp16 buffer.
+struct WLTensor {
+  std::string name;
+  std::vector<int64_t> shape;  // row-major, contiguous
+  bool int8 = false;           // else fp16
+};
+
 class WLModel {
  public:
   // path: .mlpackage. compiled_dir: optional persistent .mlmodelc cache,
@@ -71,6 +80,11 @@ class WLModel {
   ~WLModel();
   // x: int8 contiguous [K, Mpad] (tokens last); w: int8 [N, K]; out: fp16 [N, Mpad].
   void predict(const void* x, const void* w, void* out);
+  // Fused form (3d): register the program's inputs and its output name/shape once, then call
+  // with the payload pointers. in_ptrs is parallel to the vector passed to set_fused.
+  void set_fused(const std::vector<WLTensor>& ins, const std::string& out_name,
+                 const std::vector<int64_t>& out_shape);
+  void predict_fused(const std::vector<const void*>& in_ptrs, void* out);
   int Mpad, N, K;
   std::string last_error() {
     std::lock_guard<std::mutex> g(mu_);
@@ -90,5 +104,8 @@ class WLModel {
   std::mutex mu_;
   std::string error_;
   std::atomic<long> copybacks_{0};
+  std::vector<WLTensor> fused_ins_;
+  std::string fused_out_name_;
+  std::vector<int64_t> fused_out_shape_;
   std::unique_ptr<AneModelImpl> impl_;
 };

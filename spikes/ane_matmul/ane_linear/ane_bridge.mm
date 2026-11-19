@@ -290,3 +290,100 @@ void WLModel::predict(const void* x, const void* w, void* out) {
     throw std::runtime_error(std::string("ObjC exception: ") + e.name.UTF8String + ": " + e.reason.UTF8String);
   }
 }
+
+// ---- WLModel fused form: Stage 3d row-split MLP ----
+
+static NSMutableArray* shape_array(const std::vector<int64_t>& shape) {
+  NSMutableArray* shp = [NSMutableArray arrayWithCapacity:shape.size()];
+  for (int64_t v : shape) [shp addObject:@(v)];
+  return shp;
+}
+
+static NSArray<NSNumber*>* row_major_strides(const std::vector<int64_t>& shape) {
+  NSMutableArray* st = [NSMutableArray arrayWithCapacity:shape.size()];
+  long run = 1;
+  for (auto it = shape.rbegin(); it != shape.rend(); ++it) {
+    [st insertObject:@(run) atIndex:0];
+    run *= (*it > 0 ? *it : 1);
+  }
+  return st;
+}
+
+void WLModel::set_fused(const std::vector<WLTensor>& ins, const std::string& out_name,
+                        const std::vector<int64_t>& out_shape) {
+  fused_ins_ = ins;
+  fused_out_name_ = out_name;
+  fused_out_shape_ = out_shape;
+}
+
+void WLModel::predict_fused(const std::vector<const void*>& in_ptrs, void* out) {
+  @try {
+  @autoreleasepool {
+    NSError* err = nil;
+    if (in_ptrs.size() != fused_ins_.size())
+      throw std::runtime_error("wl fused: input count mismatch");
+    NSMutableDictionary* d = [NSMutableDictionary dictionary];
+    for (size_t k = 0; k < fused_ins_.size(); ++k) {
+      const WLTensor& t = fused_ins_[k];
+      MLMultiArray* a = [[MLMultiArray alloc] initWithDataPointer:const_cast<void*>(in_ptrs[k])
+                                                            shape:shape_array(t.shape)
+                                                         dataType:(t.int8 ? MLMultiArrayDataTypeInt8
+                                                                           : MLMultiArrayDataTypeFloat16)
+                                                          strides:row_major_strides(t.shape)
+                                                      deallocator:nil
+                                                            error:&err];
+      if (!a)
+        throw std::runtime_error("wl fused input wrap failed: " + t.name + ": " +
+                                 (err.localizedDescription ? err.localizedDescription.UTF8String : "?"));
+      d[[NSString stringWithUTF8String:t.name.c_str()]] = [MLFeatureValue featureValueWithMultiArray:a];
+    }
+    MLMultiArray* ya = [[MLMultiArray alloc] initWithDataPointer:out
+                                                           shape:shape_array(fused_out_shape_)
+                                                        dataType:MLMultiArrayDataTypeFloat16
+                                                         strides:row_major_strides(fused_out_shape_)
+                                                     deallocator:nil
+                                                           error:&err];
+    if (!ya)
+      throw std::runtime_error(std::string("wl fused output wrap failed: ") +
+                               (err.localizedDescription ? err.localizedDescription.UTF8String : "?"));
+    NSString* on = [NSString stringWithUTF8String:fused_out_name_.c_str()];
+    MLDictionaryFeatureProvider* in = [[MLDictionaryFeatureProvider alloc] initWithDictionary:d error:&err];
+    if (!in) throw std::runtime_error("wl fused provider failed");
+    MLPredictionOptions* opts = [[MLPredictionOptions alloc] init];
+    opts.outputBackings = @{on : ya};
+    id<MLFeatureProvider> res = [impl_->model predictionFromFeatures:in options:opts error:&err];
+    if (!res)
+      throw std::runtime_error("wl fused predict failed: " +
+                               std::string(err.localizedDescription.UTF8String));
+    MLMultiArray* got = [res featureValueForName:on].multiArrayValue;
+    if (got.dataPointer != out) {  // backing ignored: the caller would read a stale buffer
+      copybacks_.fetch_add(1, std::memory_order_relaxed);
+      const int rank = (int)got.shape.count;
+      std::vector<long> gs(rank), es(rank);
+      long total = 1;
+      for (int i = rank - 1; i >= 0; --i) {
+        gs[i] = total;
+        total *= got.shape[i].longValue;
+      }
+      for (int i = 0; i < rank; ++i) es[i] = got.strides[i].longValue;
+      const uint16_t* src = static_cast<const uint16_t*>(got.dataPointer);
+      uint16_t* dst = static_cast<uint16_t*>(out);
+      std::vector<int> idx(rank, 0);
+      for (long n = 0; n < total; ++n) {  // odometer, in case Core ML returns permuted strides
+        long so = 0, dd = 0;
+        for (int i = 0; i < rank; ++i) {
+          so += (long)idx[i] * es[i];
+          dd += (long)idx[i] * gs[i];
+        }
+        dst[dd] = src[so];
+        for (int i = rank - 1; i >= 0; --i) {
+          if (++idx[i] < got.shape[i].intValue) break;
+          idx[i] = 0;
+        }
+      }
+    }
+  }
+  } @catch (NSException* e) {
+    throw std::runtime_error(std::string("ObjC exception: ") + e.name.UTF8String + ": " + e.reason.UTF8String);
+  }
+}

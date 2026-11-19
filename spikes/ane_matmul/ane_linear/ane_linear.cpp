@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <nanobind/nanobind.h>
@@ -341,4 +342,33 @@ NB_MODULE(_ane_linear, m) {
             std::make_shared<WLLinear>(mx::default_stream(mx::Device::cpu), model), {x, w});
       },
       nb::arg("xt"), nb::arg("wt"), nb::arg("model"));
+
+  // Stage 3d: fused weightless MLP (whole SwiGLU block for a row slice, one ANE call).
+  // Register the program's inputs once; each call passes host pointers only, so nothing is
+  // copied and no per-call Core ML setup happens. The GIL is released across the prediction:
+  // the caller runs this on a worker thread while the main thread enqueues the GPU's rows,
+  // and if the GIL were held that enqueue would not start until the ANE finished.
+  m.def(
+      "wl_fused_load",
+      [](const std::string& path, const std::string& compiled_dir, const std::vector<std::string>& names,
+         const std::vector<std::vector<int64_t>>& shapes, const std::vector<int>& int8s,
+         const std::string& out_name, const std::vector<int64_t>& out_shape) {
+        auto model = std::make_shared<WLModel>(path, compiled_dir, 0, 0, 0);
+        std::vector<WLTensor> ins;
+        for (size_t k = 0; k < names.size(); ++k)
+          ins.push_back(WLTensor{names[k], shapes[k], int8s[k] != 0});
+        model->set_fused(ins, out_name, out_shape);
+        return model;
+      },
+      nb::arg("path"), nb::arg("compiled_dir"), nb::arg("names"), nb::arg("shapes"), nb::arg("int8s"),
+      nb::arg("out_name"), nb::arg("out_shape"));
+  m.def(
+      "wl_fused_predict",
+      [](std::shared_ptr<WLModel> model, const std::vector<uintptr_t>& in_ptrs, uintptr_t out) {
+        std::vector<const void*> p;
+        p.reserve(in_ptrs.size());
+        for (uintptr_t v : in_ptrs) p.push_back(reinterpret_cast<const void*>(v));
+        model->predict_fused(p, reinterpret_cast<void*>(out));
+      },
+      nb::arg("model"), nb::arg("in_ptrs"), nb::arg("out"), nb::call_guard<nb::gil_scoped_release>());
 }

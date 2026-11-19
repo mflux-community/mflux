@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import resource
 import subprocess
@@ -26,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from mlp_program import DIM, HIDDEN, MlpSpec, plan_split, reference_fp16  # noqa: E402
+from mlp_program import DIM, MlpSpec, plan_split, reference_fp16  # noqa: E402
 from rowsplit import (  # noqa: E402
     AneBackend,
     BridgeBackend,
@@ -58,7 +57,7 @@ class MirrorBackend(AneBackend):
 def sh(cmd: list[str]) -> str:
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
-    except Exception:
+    except Exception:  # noqa: BLE001 -- a missing sysctl/vm_stat just yields NaN probes
         return ""
 
 
@@ -85,9 +84,7 @@ class MacmonSampler:
 
     def __enter__(self):
         try:
-            self._proc = subprocess.Popen(
-                ["macmon", "pipe", "-s", "0", "-i", "500"], stdout=subprocess.PIPE, text=True
-            )
+            self._proc = subprocess.Popen(["macmon", "pipe", "-s", "0", "-i", "500"], stdout=subprocess.PIPE, text=True)
             threading.Thread(target=self._read, daemon=True).start()
         except FileNotFoundError:
             self._proc = None
@@ -97,7 +94,7 @@ class MacmonSampler:
         for line in self._proc.stdout:
             try:
                 self.samples.append(float(json.loads(line)["ane_power"]))
-            except Exception:
+            except Exception:  # noqa: BLE001 -- macmon emits header and non-power lines too
                 pass
 
     def __exit__(self, *exc):
@@ -145,7 +142,11 @@ def make_inputs():
 
 
 def make_backend(name: str, cache: Path) -> AneBackend:
-    return {"coremltools": lambda: CoreMLToolsBackend(cache), "bridge": BridgeBackend, "mirror": MirrorBackend}[name]()
+    return {
+        "coremltools": lambda: CoreMLToolsBackend(cache),
+        "bridge": lambda: BridgeBackend(cache),
+        "mirror": MirrorBackend,
+    }[name]()
 
 
 def split_blocks(blocks, backend, spec, stats_sink):
@@ -231,14 +232,21 @@ def t1(args, backend):
         y = np.asarray(backend.run(spec, w, np.array(x[:, :m].astype(mx.float16))), dtype=np.float32) * w.gain
         r = np.array(ref).ravel().astype(np.float64)
         c = float(r @ y.ravel() / (np.linalg.norm(r) * np.linalg.norm(y.ravel())))
-        rows.append({"share": share, "mpad": m, "cosine": c, "nonfinite": int((~np.isfinite(y)).sum()),
-                     "max_abs_y": float(np.nanmax(np.abs(y))), "pass": c >= 0.9999 and np.isfinite(y).all()})
+        rows.append(
+            {
+                "share": share,
+                "mpad": m,
+                "cosine": c,
+                "nonfinite": int((~np.isfinite(y)).sum()),
+                "max_abs_y": float(np.nanmax(np.abs(y))),
+                "pass": c >= 0.9999 and np.isfinite(y).all(),
+            }
+        )
         print(rows[-1])
     return {"t1": rows, "compute_plan": getattr(backend, "plan_reports", {})}
 
 
 def t2(args, backend):
-    import mlx.core as mx
     from mlx import nn
 
     blocks = make_blocks(N_BLOCKS)
@@ -250,8 +258,11 @@ def t2(args, backend):
     for share in args.shares:
         m, _ = plan_split(SEQ, share)
         spec = MlpSpec(mpad=m, weight_dtype=args.weight_dtype, scale_mode=args.scale_mode, w2_scale=args.w2_scale)
-        sffs = [RowSplitFFN(f, backend, spec, prepare_block_weights(spec, f.w1.weight, f.w3.weight, f.w2.weight), sink) for f in ffs]
-        arms[f"share_{share}_m{m}"] = (lambda s=sffs: mlp_chain(s, norms, x))
+        sffs = [
+            RowSplitFFN(f, backend, spec, prepare_block_weights(spec, f.w1.weight, f.w3.weight, f.w2.weight), sink)
+            for f in ffs
+        ]
+        arms[f"share_{share}_m{m}"] = lambda s=sffs: mlp_chain(s, norms, x)
     mlp_chain(ffs, norms, x)  # warm-up
     return {"t2": interleave(arms, args.repeats), "per_call_ms": sink.summary_ms()}
 
@@ -268,7 +279,7 @@ def t3_t4(args, backend, ladder):
             m, _ = plan_split(SEQ, share)
             spec = MlpSpec(mpad=m, weight_dtype=args.weight_dtype, scale_mode=args.scale_mode, w2_scale=args.w2_scale)
             sb = split_blocks(main[:n], backend, spec, sink)
-            arms[f"share_{share}_m{m}"] = (lambda sb=sb, n=n: chain(refiners + sb, x, mask, freqs, t_emb))
+            arms[f"share_{share}_m{m}"] = lambda sb=sb, n=n: chain(refiners + sb, x, mask, freqs, t_emb)
         chain(refiners + main[:n], x, mask, freqs, t_emb)  # warm-up
         out[f"blocks_{n}"] = {"arms": interleave(arms, args.repeats), "per_call_ms": sink.summary_ms()}
     return out
@@ -292,10 +303,17 @@ def main():
         sys.exit("s3a.LOCK not held; refusing to run a timed test")
     backend = make_backend(args.backend, Path(args.cache))
     if args.test != "t1" and backend.weights_copied:
-        print("WARNING: backend copies weights per call (or is not the ANE): timings are NOT gate-valid", file=sys.stderr)
+        print(
+            "WARNING: backend copies weights per call (or is not the ANE): timings are NOT gate-valid", file=sys.stderr
+        )
 
-    result = {"test": args.test, "args": vars(args), "weights_copied": backend.weights_copied,
-              "swap_mb_start": swap_used_mb(), "wired_gb_start": wired_gb()}
+    result = {
+        "test": args.test,
+        "args": vars(args),
+        "weights_copied": backend.weights_copied,
+        "swap_mb_start": swap_used_mb(),
+        "wired_gb_start": wired_gb(),
+    }
     if args.test == "t1":
         result.update(t1(args, backend))
     elif args.test == "t2":
@@ -304,8 +322,12 @@ def main():
         result.update(t3_t4(args, backend, [N_BLOCKS]))
     else:
         result.update(t3_t4(args, backend, [8, 16, N_BLOCKS]))
-    result.update(swap_mb_end=swap_used_mb(), wired_gb_end=wired_gb(), peak_rss_gb=peak_rss_gb(),
-                  commit=sh(["git", "rev-parse", "--short", "HEAD"]).strip())
+    result.update(
+        swap_mb_end=swap_used_mb(),
+        wired_gb_end=wired_gb(),
+        peak_rss_gb=peak_rss_gb(),
+        commit=sh(["git", "rev-parse", "--short", "HEAD"]).strip(),
+    )
 
     Path(args.out).mkdir(parents=True, exist_ok=True)
     path = Path(args.out) / f"{args.test}_{args.backend}_{int(time.time())}.json"

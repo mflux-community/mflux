@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-
 from mlp_program import (
     MlpSpec,
     convert_to_mlpackage,
@@ -98,24 +97,94 @@ class CoreMLToolsBackend(AneBackend):
 
 
 class BridgeBackend(AneBackend):
-    """TODO(scriv): wire to the weightless / shared-surface bridge from f16ba7bf.
+    """The 3c weightless bridge (f16ba7bf), extended in 3d with a fused multi-input call.
 
-    The bridge sources are not in this repo (only the prebuilt darwin .so is), so this is a stub.
-    Contract: load the mlpackage for `spec` once, bind w1/w3/w2/s1/s3/s2 per block to fixed surfaces
-    (no per-call copy, wired memory flat), and make run() copy x in, predict, and return y.
+    The program holds no baked weights: w1/w3/w2 arrive as int8 graph inputs and the scales as
+    fp16, all wrapped around the caller's numpy buffers with initWithDataPointer, and the output
+    wraps a reusable buffer. No per-call weight copy and no per-call Core ML setup, which is the
+    only way these timings can be gate-valid (weights_copied stays False from the base class).
+
+    The predict releases the GIL, so the main thread can enqueue the GPU's rows while the ANE
+    runs its own -- without that, the row split's whole premise (both engines working at once)
+    would not even be measured.
     """
 
+    def __init__(self, cache_dir: str | Path, compiled_dir: str | Path | None = None):
+        import sys
+
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Durable compile cache, never /tmp: macOS deletes /tmp and the compiled .mlmodelc is
+        # the slow part to rebuild (the rule stage 3c learned, cf. aneprobe-tmp-cache memory).
+        self.compiled_root = Path(compiled_dir or (Path.home() / "Library/Caches/mflux/ane_wl3d"))
+        self.compiled_root.mkdir(parents=True, exist_ok=True)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ane_linear"))
+        import _ane_linear as ext  # lazy: the numpy-only tests must not need the bridge
+
+        self.ext = ext
+        self._models: dict[str, object] = {}
+        self._outs: dict[str, np.ndarray] = {}
+        self.plan_reports: dict[str, str] = {}
+
+    def _prepare(self, spec: MlpSpec):
+        if spec.name in self._models:
+            return self._models[spec.name], self._outs[spec.name]
+        M, D, H = spec.mpad, spec.dim, spec.hidden
+        pkg = self.cache_dir / f"{spec.name}.mlpackage"
+        if not pkg.exists():
+            convert_to_mlpackage(spec, str(self.cache_dir))
+        compiled = self.compiled_root / spec.name
+        model = self.ext.wl_fused_load(
+            str(pkg),
+            str(compiled),
+            ["x_rows", "w1", "w3", "w2", "s1", "s3", "s2"],
+            [[1, M, D], [H, D], [H, D], [D, H], [H], [H], [D]],
+            [0, 1, 1, 1, 0, 0, 0],
+            "y_rows",
+            [1, M, D],
+        )
+        # After the load, because wl_fused_load is what produces the compiled .mlmodelc.
+        self.plan_reports.setdefault(spec.name, compute_plan_report(compiled))
+        # One ANE worker thread serialises calls, so one reusable output per spec is safe.
+        out = np.zeros((1, M, D), dtype=np.float16)
+        self._models[spec.name] = model
+        self._outs[spec.name] = out
+        return model, out
+
     def run(self, spec, weights, x):
-        raise NotImplementedError("wire the f16ba7bf weightless bridge here")
+        model, out = self._prepare(spec)
+        ins = [
+            np.ascontiguousarray(x, dtype=np.float16),
+            np.ascontiguousarray(weights.w1, dtype=np.int8),
+            np.ascontiguousarray(weights.w3, dtype=np.int8),
+            np.ascontiguousarray(weights.w2, dtype=np.int8),
+            np.ascontiguousarray(weights.scales["s1"], dtype=np.float16),
+            np.ascontiguousarray(weights.scales["s3"], dtype=np.float16),
+            np.ascontiguousarray(weights.scales["s2"], dtype=np.float16),
+        ]
+        self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], out.ctypes.data)
+        err = model.last_error()
+        if err:
+            raise RuntimeError(f"bridge predict failed: {err}")
+        return out
 
 
-def compute_plan_report(mlpackage: Path) -> str:
-    """Open question 1: which compute device does each op get? (macOS 14.4+ MLComputePlan)."""
+def compute_plan_report(model_dir: Path) -> str:
+    """Open question 1: which compute device does each op get? (macOS 14.4+ MLComputePlan).
+
+    model_dir must be a COMPILED .mlmodelc. Handing this a .mlpackage aborts the whole process:
+    MLComputePlan tries to read <pkg>/coremldata.bin, fails, and throws a std::ios_base::failure
+    that no Python try/except can catch (measured 2026-11-20 -- it killed the first 3d probe).
+    The suffix check below is the only safe guard, so callers pass the bridge's compiled cache.
+    """
+    model_dir = Path(model_dir)
+    if model_dir.suffix == ".mlpackage":
+        return "compute plan skipped: needs a compiled .mlmodelc; a .mlpackage aborts the process"
     try:
         import coremltools as ct
 
         plan = ct.models.compute_plan.MLComputePlan.load_from_path(
-            str(mlpackage), compute_units=ct.ComputeUnit.CPU_AND_NE
+            str(model_dir), compute_units=ct.ComputeUnit.CPU_AND_NE
         )
         main = plan.model_structure.program.functions["main"]
         counts: dict[str, int] = {}
@@ -127,7 +196,7 @@ def compute_plan_report(mlpackage: Path) -> str:
             if usage and "NeuralEngine" not in dev and op.operator_name not in ("const", "constexpr_cast"):
                 fallbacks.append(f"{op.operator_name}->{dev}")
         return f"preferred devices: {counts}; non-ANE ops: {fallbacks or 'none'}"
-    except Exception as exc:  # report-only, never fail the run
+    except Exception as exc:  # noqa: BLE001 -- report-only, never fail the run
         return f"compute plan unavailable: {exc}"
 
 
