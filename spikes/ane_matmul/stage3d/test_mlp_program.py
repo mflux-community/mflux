@@ -1,8 +1,13 @@
 import numpy as np
 import pytest
-
 from mlp_program import (
-    MlpSpec, epilogue_gain, plan_split, program_scales, quantize_per_row, reference_fp16, reference_fp32,
+    MlpSpec,
+    epilogue_gain,
+    plan_split,
+    program_scales,
+    quantize_per_row,
+    reference_fp16,
+    reference_fp32,
 )
 
 D, H, M = 384, 1024, 256  # scaled-down dims, same structure
@@ -21,6 +26,12 @@ def _cos(a, b):
     return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
+def _relerr(a, b):
+    """Relative L2 error of a against reference b. Unlike cosine it is NOT scale-invariant."""
+    a, b = a.ravel().astype(np.float64), b.ravel().astype(np.float64)
+    return float(np.linalg.norm(a - b) / np.linalg.norm(b))
+
+
 @pytest.mark.parametrize("scale_mode,w2_scale", [("weight", "program"), ("output", "program"), ("output", "epilogue")])
 def test_mirror_matches_fp32(scale_mode, w2_scale):
     spec = MlpSpec(mpad=M, dim=D, hidden=H, scale_mode=scale_mode, w2_scale=w2_scale, k13_chunks=1, k2_chunks=4)
@@ -28,8 +39,13 @@ def test_mirror_matches_fp32(scale_mode, w2_scale):
     (q1, s1), (q3, s3), (q2, s2) = quantize_per_row(w1), quantize_per_row(w3), quantize_per_row(w2)
     y, stats = reference_fp16(x, {"w1": q1, "w3": q3, "w2": q2}, program_scales(spec, s1, s3, s2), spec)
     out = y.astype(np.float32) * epilogue_gain(spec, s2)
+    ref = reference_fp32(x, w1, w3, w2)
     assert stats["nonfinite"] == 0
-    assert _cos(out, reference_fp32(x, w1, w3, w2)) > 0.999
+    assert _cos(out, ref) > 0.999
+    # Cosine alone let a 128x gain error through this test: in output mode the w2 scale was
+    # folded by INPUT_SHRINK although h is not a shrunk quantity, and the direction still
+    # matched perfectly. Scale is a separate property, so assert on it separately.
+    assert _relerr(out, ref) < 0.05, f"gain wrong: relerr {_relerr(out, ref):.4f} for {scale_mode}/{w2_scale}"
 
 
 def test_headroom_prevents_overflow():

@@ -66,12 +66,19 @@ def quantize_per_row(w: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def program_scales(spec: MlpSpec, s1: np.ndarray, s3: np.ndarray, s2: np.ndarray) -> dict[str, np.ndarray]:
-    """Host-side scale vectors fed to the program (fp16). Output mode folds the x pre-shrink into the scale."""
+    """Host-side scale vectors fed to the program (fp16). Output mode folds the x pre-shrink into
+    the s1/s3 scales only, because x is the sole input that gets shrunk.
+
+    s2 must NOT carry the fold: its matmul consumes h (the SwiGLU product), which is already
+    restored by s1/s3. Folding it too made the program output 128x too large, and the numpy
+    mirror inherited the same reasoning, so mirror-vs-program agreed and both disagreed with the
+    real FFN -- and T1's cosine, being scale-invariant, scored it 0.9998 and passed it.
+    """
     fold = INPUT_SHRINK if spec.scale_mode == "output" else 1.0
     return {
         "s1": (s1 * fold).astype(np.float16),
         "s3": (s3 * fold).astype(np.float16),
-        "s2": (s2 * (fold if spec.scale_mode == "output" else 1.0)).astype(np.float16),
+        "s2": s2.astype(np.float16),
     }
 
 
@@ -79,7 +86,7 @@ def epilogue_gain(spec: MlpSpec, s2: np.ndarray) -> np.ndarray:
     """fp32 per-channel gain applied by the GPU to the program output [.., D]."""
     gain = np.full(spec.dim, HEADROOM, dtype=np.float32)
     if spec.w2_scale == "epilogue":
-        gain = gain * s2.astype(np.float32) * INPUT_SHRINK
+        gain = gain * s2.astype(np.float32)  # no INPUT_SHRINK: see program_scales
     return gain
 
 
@@ -111,7 +118,11 @@ def build_mil_program(spec: MlpSpec):
         for i in range(k_chunks):
             lo, hi = i * step, (i + 1) * step
             xi = x if k_chunks == 1 else mb.slice_by_index(x=x, begin=[0, 0, lo], end=[1, M, hi], name=f"{prefix}_x{i}")
-            wi = wf if k_chunks == 1 else mb.slice_by_index(x=wf, begin=[0, lo], end=[out_dim, hi], name=f"{prefix}_w{i}")
+            wi = (
+                wf
+                if k_chunks == 1
+                else mb.slice_by_index(x=wf, begin=[0, lo], end=[out_dim, hi], name=f"{prefix}_w{i}")
+            )
             yi = mb.matmul(x=xi, y=wi, transpose_y=True, name=f"{prefix}_mm{i}")
             acc = yi if acc is None else mb.add(x=acc, y=yi, name=f"{prefix}_acc{i}")
         if spec.scale_mode == "output" and scale_in_program:
@@ -164,7 +175,10 @@ def reference_fp16(x: np.ndarray, q: dict, scales: dict, spec: MlpSpec) -> tuple
         step = a.shape[-1] // chunks
         acc = None
         for i in range(chunks):
-            part = (a[..., i * step : (i + 1) * step].astype(np.float32) @ w[:, i * step : (i + 1) * step].astype(np.float32).T).astype(f16)
+            part = (
+                a[..., i * step : (i + 1) * step].astype(np.float32)
+                @ w[:, i * step : (i + 1) * step].astype(np.float32).T
+            ).astype(f16)
             acc = part if acc is None else (acc + part).astype(f16)
         return acc
 

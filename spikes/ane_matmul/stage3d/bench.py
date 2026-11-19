@@ -13,7 +13,9 @@ Reboot first, hold s3a.LOCK, keep watchdog.sh armed (pass --lock-file to check t
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import re
 import resource
 import subprocess
@@ -231,15 +233,23 @@ def t1(args, backend):
         ref = ff(x[:, :m]).astype(mx.float32)
         y = np.asarray(backend.run(spec, w, np.array(x[:, :m].astype(mx.float16))), dtype=np.float32) * w.gain
         r = np.array(ref).ravel().astype(np.float64)
-        c = float(r @ y.ravel() / (np.linalg.norm(r) * np.linalg.norm(y.ravel())))
+        yv = y.astype(np.float64).ravel()
+        c = float(r @ yv / (np.linalg.norm(r) * np.linalg.norm(yv)))
+        # relerr is the scale-sensitive half of the check. The cosine gate on its own scored a
+        # 128x gain error at 0.9998; the mirror's intended math sits at relerr ~0.008 vs bf16,
+        # so 0.02 admits correct output and rejects any constant-gain mistake.
+        relerr = float(np.linalg.norm(yv - r) / np.linalg.norm(r))
+        ratio = float(r @ yv / (yv @ yv)) if yv @ yv else float("nan")
         rows.append(
             {
                 "share": share,
                 "mpad": m,
                 "cosine": c,
+                "relerr": relerr,
+                "gain_ratio": ratio,
                 "nonfinite": int((~np.isfinite(y)).sum()),
                 "max_abs_y": float(np.nanmax(np.abs(y))),
-                "pass": c >= 0.9999 and np.isfinite(y).all(),
+                "pass": c >= 0.9999 and relerr <= 0.02 and np.isfinite(y).all(),
             }
         )
         print(rows[-1])
@@ -296,13 +306,23 @@ def main():
     ap.add_argument("--w2-scale", default="program", choices=["program", "epilogue"])
     ap.add_argument("--cache", default=str(Path(__file__).parent / "cache"))
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
-    ap.add_argument("--lock-file", default=None, help="path to s3a.LOCK; refuse to time without it")
+    ap.add_argument("--lock-wait-s", type=int, default=3600, help="how long to wait for BENCH.lock on timed runs")
     args = ap.parse_args()
 
-    if args.test != "t1" and args.lock_file and not Path(args.lock_file).exists():
-        sys.exit("s3a.LOCK not held; refusing to run a timed test")
+    # Timed runs take the cooperative BENCH.lock that stages 3a-3c already use, so two agents
+    # cannot contend for the GPU and corrupt each other's numbers. Checking that a path exists
+    # is not the same discipline: it passes for a lock somebody else is holding.
+    timed = args.test != "t1"
+    if timed:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage3a"))
+        from s3a import BenchLock
+
+        gate = BenchLock(owner=f"stage3d-{os.getpid()}", wait_s=args.lock_wait_s)
+    else:
+        gate = contextlib.nullcontext()
+
     backend = make_backend(args.backend, Path(args.cache))
-    if args.test != "t1" and backend.weights_copied:
+    if timed and backend.weights_copied:
         print(
             "WARNING: backend copies weights per call (or is not the ANE): timings are NOT gate-valid", file=sys.stderr
         )
@@ -311,23 +331,24 @@ def main():
         "test": args.test,
         "args": vars(args),
         "weights_copied": backend.weights_copied,
-        "swap_mb_start": swap_used_mb(),
-        "wired_gb_start": wired_gb(),
     }
-    if args.test == "t1":
-        result.update(t1(args, backend))
-    elif args.test == "t2":
-        result.update(t2(args, backend))
-    elif args.test == "t3":
-        result.update(t3_t4(args, backend, [N_BLOCKS]))
-    else:
-        result.update(t3_t4(args, backend, [8, 16, N_BLOCKS]))
-    result.update(
-        swap_mb_end=swap_used_mb(),
-        wired_gb_end=wired_gb(),
-        peak_rss_gb=peak_rss_gb(),
-        commit=sh(["git", "rev-parse", "--short", "HEAD"]).strip(),
-    )
+    with gate:
+        result["swap_mb_start"] = swap_used_mb()
+        result["wired_gb_start"] = wired_gb()
+        if args.test == "t1":
+            result.update(t1(args, backend))
+        elif args.test == "t2":
+            result.update(t2(args, backend))
+        elif args.test == "t3":
+            result.update(t3_t4(args, backend, [N_BLOCKS]))
+        else:
+            result.update(t3_t4(args, backend, [8, 16, N_BLOCKS]))
+        result.update(
+            swap_mb_end=swap_used_mb(),
+            wired_gb_end=wired_gb(),
+            peak_rss_gb=peak_rss_gb(),
+            commit=sh(["git", "rev-parse", "--short", "HEAD"]).strip(),
+        )
 
     Path(args.out).mkdir(parents=True, exist_ok=True)
     path = Path(args.out) / f"{args.test}_{args.backend}_{int(time.time())}.json"
