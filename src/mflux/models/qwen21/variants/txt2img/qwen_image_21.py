@@ -182,6 +182,9 @@ class QwenImage21(nn.Module):
         )
 
     def save_model(self, base_path: str) -> None:
+        from mflux.models.qwen21.weights.qwen21_w8a8 import Qwen21W8A8
+
+        Qwen21W8A8.check_savable(self)
         if self.small_text_encoder:
             raise ValueError("A model built with --small-text-encoder cannot be saved; load it without the flag.")
         ModelSaver.save_model(

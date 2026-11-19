@@ -104,7 +104,9 @@ def build_parser() -> CommandLineParser:
     parser.add_argument(
         "--enhance-prompt",
         action="store_true",
-        help="Rewrite the instruction into a detailed prompt with the built-in Qwen3-VL first.",
+        help="Rewrite the prompt into a detailed one with the built-in Qwen3-VL first. Without --image-paths "
+        "this rewrites a text-to-image request and, unless --width/--height are given, uses the aspect ratio "
+        "the rewrite proposes.",
     )
     parser.add_argument(
         "--verify",
@@ -126,7 +128,6 @@ def validate_edit_args(parser: CommandLineParser, args, paths: list) -> None:
         "--mask-image": args.mask_image is not None,
         "--auto-mask": args.auto_mask is not None,
         "--strength": args.strength != 1.0,
-        "--enhance-prompt": args.enhance_prompt,
         "--verify": args.verify,
     }
     used = [flag for flag, on in edits.items() if on]
@@ -144,7 +145,9 @@ def validate_edit_args(parser: CommandLineParser, args, paths: list) -> None:
         parser.error("--verify-retries needs --verify")
     if args.use_step_cache and not args.use_kv_cache:
         parser.error("--use-step-cache needs --use-kv-cache (the default)")
-    vision_chat = [flag for flag in ("--auto-mask", "--enhance-prompt", "--verify") if flag in used]
+    vision_chat = [flag for flag in ("--auto-mask", "--verify") if flag in used]
+    if args.enhance_prompt:
+        vision_chat.insert(1 if args.auto_mask is not None else 0, "--enhance-prompt")
     if args.small_text_encoder and vision_chat:
         parser.error(f"{', '.join(vision_chat)} need the native Qwen3-VL text encoder; remove --small-text-encoder.")
 

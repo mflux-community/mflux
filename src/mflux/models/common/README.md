@@ -819,7 +819,7 @@ Use the model READMEs for exact command names and options. General utilities tha
 - **Training**: `mflux-train`
 - **Utilities**: `mflux-save-depth`
 
-For model-specific generation commands (Flux, Flux2, Flux3, Iris, SenseNova, Qwen, Z-Image, FIBO) and specialized features (ControlNet, depth, fill, Redux, in-context editing, kontext, concept attention, upscaling), see the respective model READMEs and the top-level `README.md`.
+For model-specific generation commands (Flux, Flux2, Flux3, Iris, SenseNova, DreamLite, Qwen, Z-Image, FIBO) and specialized features (ControlNet, depth, fill, Redux, in-context editing, kontext, concept attention, upscaling), see the respective model READMEs and the top-level `README.md`.
 
 ---
 
