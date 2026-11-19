@@ -542,7 +542,7 @@ def test_vision_reply_expands_one_placeholder_per_image():
     assert seen["sizes"][0] == (736, 352)  # ~512px budget, aspect kept
 
 
-def test_step_cache_reuses_the_extract_step_on_an_unchanged_signal():
+def test_step_cache_reuses_the_extract_step_on_an_unchanged_signal(monkeypatch):
     mx.random.seed(0)
     model = QwenImage21Transformer(
         dict(
@@ -563,9 +563,8 @@ def test_step_cache_reuses_the_extract_step_on_an_unchanged_signal():
     cache, step_cache = [], StepCache(0.12)
     first = model(hidden, text, mx.array([0.5]), layout, cache, step_cache=step_cache)
     assert step_cache.hidden.shape[1] == layout.target_tokens
-    stored = step_cache.hidden
+    monkeypatch.setattr(step_cache, "store", lambda *_: pytest.fail("expected the remaining blocks to be skipped"))
     second = model(hidden, text, mx.array([0.5]), layout, cache, step_cache=step_cache)
-    assert step_cache.hidden is stored  # skipped: blocks 1..N did not run
     np.testing.assert_allclose(np.array(second), np.array(first), rtol=1e-4, atol=1e-4)
 
 
@@ -599,6 +598,24 @@ def test_step_cache_recomputes_once_the_signal_accumulates():
     cache.store(mx.zeros((1, 2, 2)), mx.ones((1, 2, 2)))
     assert cache.should_skip(mx.ones((1, 2, 2)) * 1.05)
     assert not cache.should_skip(mx.ones((1, 2, 2)) * 1.2)
+
+
+def test_step_cache_forecasts_residuals_from_full_steps():
+    cache = StepCache(0.12)
+
+    def signal(value):
+        return mx.full((1, 2, 2), value, dtype=mx.bfloat16)
+
+    cache.store(signal(12), signal(10))  # prefill residual = 2
+    assert cache.should_skip(signal(10.25))
+    np.testing.assert_array_equal(np.array(cache.hidden.astype(mx.float32)), 12.25)
+
+    assert not cache.should_skip(signal(20))
+    cache.store(signal(26), signal(20))  # residual = 6 after two steps, slope = 2 per step
+    for first_block, expected in [(20.5, 28.5), (20.75, 30.75)]:
+        assert cache.should_skip(signal(first_block))
+        assert cache.hidden.dtype == mx.bfloat16
+        np.testing.assert_array_equal(np.array(cache.hidden.astype(mx.float32)), expected)
 
 
 def test_generation_head_is_optional_when_loading():
