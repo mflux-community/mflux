@@ -9,3 +9,14 @@
 {"phase": "prod_w2", "O": 3840, "I": 10240, "ksplit": 4, "cos_w8a16": 0.9999577, "cos_q8_vs_fp32": 0.9999159, "finite": true}
 {"phase": "timing_w8a16_enum4608", "median_ms": 6.29}
 {"phase": "timing_q8pre_enum4608", "median_ms": 9.25}
+{"phase": "build", "seconds": 0.8}
+{"phase": "w8a16_enum", "cosine_vs_fp32": 0.9999628, "finite": true, "err": "''"}
+{"phase": "q8pre_enum", "max_rel_vs_emulation": 0.000986, "finite": true, "cos_vs_w8a16": 0.9999626, "err": "''"}
+{"phase": "fail_loud", "raised": "RuntimeError: predict failed: MultiArray Shape (5000 x 3840) was not in enumerated set of allowed shapes", "recorded": "'predict failed: MultiArray Shape (5000 x 3840) was not in enumerated set of allowed shapes'"}
+{"phase": "tier6528_pad", "cosine_vs_fp32": 0.9999627, "finite": true}
+{"phase": "prod_qkv", "O": 11520, "I": 3840, "ksplit": 1, "cos_w8a16": 0.9999625, "cos_q8_vs_fp32": 0.9999253, "finite": true}
+{"phase": "prod_o", "O": 3840, "I": 3840, "ksplit": 1, "cos_w8a16": 0.9999624, "cos_q8_vs_fp32": 0.9999253, "finite": true}
+{"phase": "prod_w13", "O": 20480, "I": 3840, "ksplit": 1, "cos_w8a16": 0.9999627, "cos_q8_vs_fp32": 0.9999254, "finite": true}
+{"phase": "prod_w2", "O": 3840, "I": 10240, "ksplit": 4, "cos_w8a16": 0.9999577, "cos_q8_vs_fp32": 0.9999159, "finite": true}
+{"phase": "timing_w8a16_enum4608", "median_ms": 6.26}
+{"phase": "timing_q8pre_enum4608", "median_ms": 5.63}

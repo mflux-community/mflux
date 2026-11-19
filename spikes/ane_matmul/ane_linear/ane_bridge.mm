@@ -74,7 +74,7 @@ void AneModel::predict(const void* x, void* out, int rows) {
   }
 }
 
-void AneModel::predict_q8(const void* x_i8, const float* tok, void* out, int rows) {
+void AneModel::predict_q8(const void* x_i8_cf, const float* tok, void* out, int rows) {
   @try {
   @autoreleasepool {
     NSError* err = nil;
@@ -83,22 +83,13 @@ void AneModel::predict_q8(const void* x_i8, const float* tok, void* out, int row
     for (int r = 0; r < rows; ++r) h[r] = static_cast<_Float16>(tok[r]);
     // Enumerated int8 inputs must arrive channels-first (1, I, 1, rows): a token-major
     // int8 boundary fails the CoreML plan builder (stage3b/diag_q8plan.py, arms C vs D).
-    // int8 arrays cannot wrap an external pointer, so allocate owned and transpose-copy.
+    // int8 arrays cannot wrap an external pointer. The binding already transposed and
+    // materialised (I, rows) on MLX's device, so this is a straight memcpy.
     MLMultiArray* xin = [[MLMultiArray alloc] initWithShape:@[@1, @(I), @1, @(rows)]
                                                     dataType:MLMultiArrayDataTypeInt8
                                                        error:&err];
     if (!xin) throw std::runtime_error("int8 input alloc failed");
-    {
-      int8_t* dst = static_cast<int8_t*>(xin.dataPointer);
-      const int8_t* src = static_cast<const int8_t*>(x_i8);
-      const int TR = 64, TC = 64;  // blocked copy keeps both tiles in L1
-      for (int i0 = 0; i0 < I; i0 += TC)
-        for (int r0 = 0; r0 < rows; r0 += TR) {
-          int i1 = std::min(i0 + TC, I), r1 = std::min(r0 + TR, rows);
-          for (int i = i0; i < i1; ++i)
-            for (int r = r0; r < r1; ++r) dst[(size_t)i * rows + r] = src[(size_t)r * I + i];
-        }
-    }
+    memcpy(xin.dataPointer, x_i8_cf, (size_t)rows * I);
     MLMultiArray* tin = [[MLMultiArray alloc] initWithShape:@[@1, @1, @1, @(rows)]
                                                   dataType:MLMultiArrayDataTypeFloat16
                                                      error:&err];

@@ -27,9 +27,12 @@ Arms A to C pass numerics against hand math (`max_rel_vs_ref=0.000835`, fp16
 rounding scale). D fails identically with and without output backings, so
 backings are innocent. The fix: the W8A8 model takes `x int8 (1, I, 1, t)` and
 `tok fp16 (1, 1, 1, t)`, and the final transpose to token-major output happens
-inside the graph. The bridge transposes the caller's `(rows, I)` int8 buffer
-into the channels-first array during the copy. It uses 64x64 tiles so both
-tiles stay in L1. The W8A16 model keeps its token-major boundary with the
+inside the graph. The binding transposes the caller's `(rows, I)` int8 array
+with `mx::contiguous(mx::transpose(x, {1, 0}))`, so MLX materialises the
+channels-first `(I, rows)` buffer on its own device. The bridge then only does
+one straight memcpy. The first cut did a blocked CPU transpose in the bridge.
+That cost 2.96 ms per call and erased the W8A8 speed advantage, so the work
+moved to the GPU. The W8A16 model keeps its token-major boundary with the
 in-graph transpose. That path was already proven in test T1 below, and it keeps
 the zero-copy input wrap, which int8 arrays do not support.
 
@@ -38,8 +41,9 @@ the zero-copy input wrap, which int8 arrays do not support.
 The extension now binds two primitives over the same `AneModel`:
 
 - `ane_linear(x fp16 [rows, I], model)` wraps the MLX buffer zero-copy.
-- `ane_linear_q8(x int8 [rows, I], tok fp32 [rows], model)` copies and
-  transposes into an owned int8 array and converts the scales to fp16.
+- `ane_linear_q8(x int8 [rows, I], tok fp32 [rows], model)` transposes with an
+  MLX op and memcpy-copies the materialised buffer. The caller keeps the simple
+  row-major layout.
 
 Both return fp16 `[rows, O]` written through `outputBackings`. `rows` must be
 one of the enumerated tiers. The tier choice and the padding are the caller's
@@ -63,14 +67,39 @@ script is a correctness pass with a short timing loop, not a formal benchmark.
 | T5 o 3840x3840, W8A16 / W8A8 cosine | 0.9999624 / 0.9999253 |
 | T5 fused w1w3 20480x3840, W8A16 / W8A8 cosine | 0.9999627 / 0.9999254 |
 | T5 w2 3840x10240 K-split 4, W8A16 / W8A8 cosine | 0.9999577 / 0.9999159 |
-| T4 timing, W8A16 enum tier 4608 (1920x3840) | 6.29 ms median |
-| T4 timing, W8A8 pre enum tier 4608 | 9.25 ms median |
+| T4 timing, W8A16 enum tier 4608 (1920x3840) | 6.26 ms median |
+| T4 timing, W8A8 pre enum tier 4608, GPU transpose | 5.63 ms median |
 
 Every arm is finite and above the 0.9999 gate against the fp32 reference. The
 W8A8 numbers compare against the same fp32 reference, so they include the
-per-token quantisation error, and they still pass. The W8A8 call costs 2.96 ms
-more than W8A16 at the same shape. That gap is the host transpose and copy of a
-17.7 MB int8 buffer. A formal interleaved comparison belongs to 3b-2.
+per-token quantisation error, and they still pass. The CPU-transpose build
+measured 9.25 ms for the same call. Moving the transpose to MLX's device made
+W8A8 faster than W8A16, and the formal comparison follows.
+
+## Interleaved W8A16 against W8A8, production shapes
+
+`measure_precision.py`, tier 4608, T = 4224 padded, 7 rounds, 15 calls per arm
+per round, arms interleaved within each round, timed from the shared bf16 input
+through the layer output (each arm pays its own cast or quantise work). Raw:
+`results/precision_ab.jsonl`, `results/precision_macmon.jsonl`. BENCH.lock held,
+watchdog used. Paired per-round ratios (W8A8 / W8A16, median of 7):
+
+| Layer | W8A16 ms | W8A8 ms | Ratio | Ratio spread |
+|---|---|---|---|---|
+| fused qkv 11520x3840 | 30.81 | 26.43 | 0.8603 | 0.0467 |
+| o 3840x3840 | 12.15 | 11.63 | 0.9444 | 0.0509 |
+| fused w1w3 20480x3840 | 52.23 | 43.36 | 0.8302 | 0.0105 |
+| w2 3840x10240 ksplit 4 | 32.08 | 27.87 | 0.8729 | 0.0394 |
+
+W8A8 wins at every shape, by 6 to 17 percent. The absolute values put the ANE
+at full rate: w1w3 W8A16 at tier 4608 gives 13.9 TFLOPS, and the Stage 3a
+unthrottled fixed-4224 figure was 14.4. The macmon mean reads 6.41 W because
+each round alternates ANE calls with GPU quantise work, so the ANE rail is not
+busy for every window. The peak sample is 7.98 W. The benchmark paired every
+ratio inside one round, so machine state cannot explain the ranking. Note for
+the product plan: the
+`q8 is slower than bf16` finding applies to the GPU. On the ANE the W8A8 conv
+path is genuinely faster than W8A16.
 
 ## Fail loud
 
@@ -102,6 +131,12 @@ failed-rebuild stop rule from the PRD never triggered.
   tier-6528 path works. Tiers 8320 and 16128 build the same way. The tests
   exercised only two tiers so far.
 - W8A8 needs the host quantise per call: row `amax/127` in fp32, then
-  `clip(round(x/tok))` to int8. T2 and T5 fix the numbers this must match.
-- The extra 2.96 ms per W8A8 call at tier 4608 should be re-measured with the
-  interleaved protocol before anyone cites it.
+  `clip(round(x/tok))` to int8. The transpose is the binding's job now. T2 and
+  T5 fix the numbers this must match.
+- `--ane-precision w8a8` is the faster ANE mode at every production shape.
+  Keep W8A16 available for the accuracy margin (cosine 0.99996 against 0.99992
+  to fp32) and for calls that skip quantise overhead at small row counts. The
+  `o` layer is the closest call at ratio 0.94.
+- Assembly priority items (a) to (d) are in `3B-1-ASSEMBLY.md`. V0 (column
+  concat) won at 118.8 ms per block, within 4 ms of the 115 ms target, and the
+  W8A8 gain above should close the rest inside the split block.

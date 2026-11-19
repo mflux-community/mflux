@@ -19,7 +19,8 @@ class AneLinear : public mx::Primitive {
   void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override {
     auto& x = inputs[0];
     auto& out = outputs[0];
-    const int rows = x.shape(0);
+    // W8A8 input 0 is the channels-first (I, rows) buffer built by the binding.
+    const int rows = q8_ ? x.shape(1) : x.shape(0);
     out.set_data(mx::allocator::malloc(out.nbytes()));
     auto& enc = mx::cpu::get_command_encoder(stream());
     enc.set_input_array(x);
@@ -58,7 +59,8 @@ class AneLinear : public mx::Primitive {
     return model_.get() == o.model_.get() && q8_ == o.q8_;
   }
   std::vector<mx::Shape> output_shapes(const std::vector<mx::array>& inputs) override {
-    return {{inputs[0].shape(0), model_->O}};
+    const int rows = q8_ ? inputs[0].shape(1) : inputs[0].shape(0);
+    return {{rows, model_->O}};
   }
 
  private:
@@ -87,7 +89,9 @@ NB_MODULE(_ane_linear, m) {
             std::make_shared<AneLinear>(mx::default_stream(mx::Device::cpu), model, false), {xc});
       },
       nb::arg("x"), nb::arg("model"));
-  // ane_linear_q8(x[rows, I] int8, tok[rows] float32, model) -> y[rows, O] fp16 (W8A8 pre form).
+  // ane_linear_q8(x int8 [rows, I], tok float32 [rows], model) -> y[rows, O] fp16 (W8A8 pre form).
+  // The channels-first transpose the enumerated int8 boundary requires runs as an MLX
+  // op (materialised on the MLX device), so the bridge only ever memcpy-copies.
   m.def(
       "ane_linear_q8",
       [](const mx::array& x, const mx::array& tok, std::shared_ptr<AneModel> model) {
@@ -95,11 +99,14 @@ NB_MODULE(_ane_linear, m) {
           throw std::invalid_argument("ane_linear_q8: x must be int8 [rows, in_features]");
         if (tok.dtype() != mx::float32 || tok.ndim() != 1 || tok.shape(0) != x.shape(0))
           throw std::invalid_argument("ane_linear_q8: tok must be float32 [rows]");
-        auto xc = mx::contiguous(x);
+        const int rows = x.shape(0);
+        if (model->T > 0 && rows > model->T)
+          throw std::invalid_argument("ane_linear_q8: rows exceeds the model's largest tier");
+        auto xt = mx::contiguous(mx::transpose(x, {1, 0}));  // (I, rows), contiguous int8
         auto tc = mx::contiguous(tok);
         return mx::array(
-            {x.shape(0), model->O}, mx::float16,
-            std::make_shared<AneLinear>(mx::default_stream(mx::Device::cpu), model, true), {xc, tc});
+            {rows, model->O}, mx::float16,
+            std::make_shared<AneLinear>(mx::default_stream(mx::Device::cpu), model, true), {xt, tc});
       },
       nb::arg("x"), nb::arg("tok"), nb::arg("model"));
 }
