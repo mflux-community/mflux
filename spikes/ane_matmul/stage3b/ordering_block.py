@@ -89,11 +89,12 @@ def time_block(run, warm=3):
     for _ in range(warm):
         mx.eval(run())
     ts = []
+    w0 = time.time()
     for _ in range(ITERS):
         t0 = time.perf_counter()
         mx.eval(run())
         ts.append((time.perf_counter() - t0) * 1e3)
-    return statistics.median(ts), min(ts), max(ts)
+    return statistics.median(ts), min(ts), max(ts), w0, time.time()
 
 
 def emit(record):
@@ -114,7 +115,9 @@ def main():
     def block_call(u, m_, f_, te):
         return blk(x=u, attn_mask=m_, freqs_cis=f_, t_emb=te)
 
-    # Trace the unpatched compiled baseline now, while the block is unpatched.
+    # mx.compile caches graphs by function object and shapes. Every mode that
+    # must trace a DIFFERENT graph needs its own callable, or a patched trace
+    # silently reuses the earlier graph.
     base_compiled = mx.compile(block_call)
     set_state = lambda split: (  # noqa: E731
         setattr(blk, "attention", split[0] if split else orig_attn),
@@ -131,10 +134,10 @@ def main():
 
     set_state((a_split, f_split))
     set_hack(True)
-    comp_hack_fn = mx.compile(block_call)
+    comp_hack_fn = mx.compile(lambda u, m_, f_, te: blk(x=u, attn_mask=m_, freqs_cis=f_, t_emb=te))
     mx.eval(comp_hack_fn(*args))
     set_hack(False)
-    comp_nohack_fn = mx.compile(block_call)
+    comp_nohack_fn = mx.compile(lambda u, m_, f_, te: blk(x=u, attn_mask=m_, freqs_cis=f_, t_emb=te))
     mx.eval(comp_nohack_fn(*args))
 
     modes = {
@@ -146,6 +149,7 @@ def main():
         "compiled_nohack": ("split_cn", None),
     }
     best = {k: [] for k in modes}
+    windows = {k: [] for k in modes}
     mm = subprocess.Popen(["macmon", "pipe", "-i", "1000"], stdout=open(MACMON, "w"), stderr=subprocess.DEVNULL)
     try:
         for rnd in range(ROUNDS):
@@ -163,12 +167,33 @@ def main():
                     "split_ch": lambda: comp_hack_fn(*args),
                     "split_cn": lambda: comp_nohack_fn(*args),
                 }[kind]
-                med, lo, hi = time_block(fn)
+                med, lo, hi, w0, w1 = time_block(fn)
                 best[name].append(med)
+                windows[name].append((w0, w1))
             emit(dict(phase="round", round=rnd, **{k: round(v[-1], 1) for k, v in best.items()}))
     finally:
         mm.terminate()
         set_state(None)
+
+    # ANE activity per mode, from macmon records inside each mode's timed windows.
+    # This proves which graphs actually executed an ane_linear node.
+    from datetime import datetime
+
+    mrecs = []
+    for l in open(MACMON):
+        if not l.strip():
+            continue
+        r = json.loads(l)
+        r["_ts"] = datetime.fromisoformat(r["timestamp"]).timestamp()
+        mrecs.append(r)
+
+    def ane_activity(name):
+        vals = []
+        for w0, w1 in windows[name]:
+            vals += [r["ane_power"] for r in mrecs if w0 <= r["_ts"] <= w1 and r.get("ane_power") is not None]
+        return dict(mean=round(sum(vals) / len(vals), 2), mx=round(max(vals), 2)) if vals else None
+
+    emit(dict(phase="ane_activity", **{k: ane_activity(k) for k in modes}))
 
     base_c = min(best["base_compiled"])
     base_e = min(best["base_eager"])
