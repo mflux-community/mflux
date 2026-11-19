@@ -1,0 +1,87 @@
+{
+  "test": "t1",
+  "args": {
+    "test": "t1",
+    "backend": "bridge",
+    "shares": [
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.5
+    ],
+    "repeats": 5,
+    "weight_dtype": "int8",
+    "scale_mode": "weight",
+    "w2_scale": "program",
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_wait_s": 3600
+  },
+  "weights_copied": false,
+  "swap_mb_start": 0.0,
+  "wired_gb_start": 6.65124864,
+  "t1": [
+    {
+      "share": 0.15,
+      "mpad": 512,
+      "cosine": 0.9708187766276232,
+      "relerr": 0.2398308872568418,
+      "gain_ratio": 0.9971038056751788,
+      "nonfinite": 0,
+      "max_abs_y": 0.54248046875,
+      "pass": false
+    },
+    {
+      "share": 0.2,
+      "mpad": 768,
+      "cosine": 0.9708187812232686,
+      "relerr": 0.23983066033157102,
+      "gain_ratio": 0.9971220084299912,
+      "nonfinite": 0,
+      "max_abs_y": 0.54248046875,
+      "pass": false
+    },
+    {
+      "share": 0.25,
+      "mpad": 1024,
+      "cosine": 0.9708251573914346,
+      "relerr": 0.23980524416901533,
+      "gain_ratio": 0.9970875606131657,
+      "nonfinite": 0,
+      "max_abs_y": 0.54248046875,
+      "pass": false
+    },
+    {
+      "share": 0.3,
+      "mpad": 1280,
+      "cosine": 0.9708158977197019,
+      "relerr": 0.23984342794151647,
+      "gain_ratio": 0.9970275161714773,
+      "nonfinite": 0,
+      "max_abs_y": 0.54248046875,
+      "pass": false
+    },
+    {
+      "share": 0.5,
+      "mpad": 2048,
+      "cosine": 0.9707515246583989,
+      "relerr": 0.2401036507432442,
+      "gain_ratio": 0.9970435444732705,
+      "nonfinite": 0,
+      "max_abs_y": 0.54248046875,
+      "pass": false
+    }
+  ],
+  "compute_plan": {
+    "mlp_m512_int8_weight_w2program_k1x4": "preferred devices: {'const/none': 35, 'MLNeuralEngineComputeDevice': 30}; non-ANE ops: none",
+    "mlp_m768_int8_weight_w2program_k1x4": "preferred devices: {'const/none': 35, 'MLNeuralEngineComputeDevice': 30}; non-ANE ops: none",
+    "mlp_m1024_int8_weight_w2program_k1x4": "preferred devices: {'const/none': 35, 'MLNeuralEngineComputeDevice': 30}; non-ANE ops: none",
+    "mlp_m1280_int8_weight_w2program_k1x4": "preferred devices: {'const/none': 35, 'MLNeuralEngineComputeDevice': 30}; non-ANE ops: none",
+    "mlp_m2048_int8_weight_w2program_k1x4": "preferred devices: {'const/none': 35, 'MLNeuralEngineComputeDevice': 30}; non-ANE ops: none"
+  },
+  "swap_mb_end": 0.0,
+  "wired_gb_end": 6.842630144,
+  "peak_rss_gb": 3.227353088,
+  "commit": "f4474b6e"
+}
