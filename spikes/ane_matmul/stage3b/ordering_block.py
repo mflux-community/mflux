@@ -199,8 +199,17 @@ def main():
     base_e = min(best["base_eager"])
     saved_eager = base_e - min(best["eager_hack"])
     saved_compiled = base_c - min(best["compiled_hack"])
+    # Paired analysis: compute savings within each round, then take the median ratio.
+    # Unpaired minima mix rounds measured minutes apart and distort the ratio.
+    paired = []
+    for i in range(len(best["base_eager"])):
+        se = best["base_eager"][i] - best["eager_hack"][i]
+        sc = best["base_compiled"][i] - best["compiled_hack"][i]
+        if se > 0:
+            paired.append(sc / se)
+    med_ratio = statistics.median(paired) if paired else None
     ratio = saved_compiled / saved_eager if saved_eager > 0 else None
-    verdict = "PASS" if ratio is not None and ratio >= 0.9 else "FAIL"
+    verdict = "PASS" if med_ratio is not None and med_ratio >= 0.9 else "FAIL"
     emit(
         dict(
             phase="gate",
@@ -213,6 +222,8 @@ def main():
             saved_eager_ms=round(saved_eager, 1),
             saved_compiled_ms=round(saved_compiled, 1),
             ratio=round(ratio, 3) if ratio else None,
+            paired_ratios=[round(x, 3) for x in paired],
+            median_paired_ratio=round(med_ratio, 3) if med_ratio else None,
             verdict=verdict,
         )
     )

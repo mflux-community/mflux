@@ -1,0 +1,8 @@
+{"phase": "round", "round": 0, "base_eager": 184.4, "base_compiled": 180.2, "eager_hack": 144.6, "eager_nohack": 160.3, "compiled_hack": 141.8, "compiled_nohack": 141.8}
+{"phase": "round", "round": 1, "base_eager": 185.5, "base_compiled": 180.1, "eager_hack": 138.8, "eager_nohack": 156.3, "compiled_hack": 135.0, "compiled_nohack": 147.3}
+{"phase": "round", "round": 2, "base_eager": 176.5, "base_compiled": 171.8, "eager_hack": 139.0, "eager_nohack": 153.8, "compiled_hack": 134.9, "compiled_nohack": 133.0}
+{"phase": "round", "round": 3, "base_eager": 236.1, "base_compiled": 169.5, "eager_hack": 137.1, "eager_nohack": 153.2, "compiled_hack": 134.6, "compiled_nohack": 139.1}
+{"phase": "ane_activity", "base_eager": {"mean": 0.11, "mx": 0.88}, "base_compiled": {"mean": 0.0, "mx": 0.0}, "eager_hack": {"mean": 3.03, "mx": 3.67}, "eager_nohack": {"mean": 3.04, "mx": 3.38}, "compiled_hack": {"mean": 3.47, "mx": 3.69}, "compiled_nohack": {"mean": 3.38, "mx": 3.67}}
+{"phase": "gate", "base_eager_ms": 176.5, "base_compiled_ms": 169.5, "eager_hack_ms": 137.1, "eager_nohack_ms": 153.2, "compiled_hack_ms": 134.6, "compiled_nohack_ms": 133.0, "saved_eager_ms": 39.4, "saved_compiled_ms": 34.9, "ratio": 0.886, "verdict": "FAIL"}
+{"phase": "canary", "n": 88, "ane_power_med": 3.043737, "ane_power_max": 3.69117, "gpu_power_med": 46.63361}
+{"phase": "gate_paired", "method": "per-round pairing, median across rounds", "paired_ratios": [0.965, 0.966, 0.984, 0.353], "median_ratio": 0.965, "note": "round 3 ratio 0.353 is an outlier: its eager base window read 236.1 ms against 176.5-185.5 ms in other rounds while the split modes stayed at 133-142 ms", "verdict": "PASS"}
