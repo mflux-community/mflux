@@ -179,6 +179,7 @@ def main():
     ap.add_argument("--timed", action="store_true")
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--iters", type=int, default=8)
+    ap.add_argument("--skip-cos", action="store_true", help="cos arms already recorded; go straight to timing")
     args = ap.parse_args()
     if args.timed:
         ok, _, _ = memgate()
@@ -194,7 +195,8 @@ def main():
     cache = Path("/tmp/ane3a/cache_3c")
     cache.mkdir(parents=True, exist_ok=True)
     emit(dict(phase="start", T=T, Mpad=Mpad, timed=args.timed))
-    run_correctness(blk, attn0, ff0, cache, Mpad, inp, args)
+    if not args.skip_cos:
+        run_correctness(blk, attn0, ff0, cache, Mpad, inp, args)
     if args.timed:
         run_timed(blk, attn0, ff0, cache, Mpad, inp, args)
 

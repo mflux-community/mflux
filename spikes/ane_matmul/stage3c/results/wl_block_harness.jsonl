@@ -7,3 +7,62 @@
 {"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999934, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
 {"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.9999981, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
 {"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999942, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999944, "finite": true, "cos_vs_baked_w8a8": 0.9999971}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.999994, "finite": true, "cos_vs_baked_w8a8": 0.9999965}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999936, "finite": true, "cos_vs_baked_w8a8": 0.9999959}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999932, "finite": true, "cos_vs_baked_w8a8": 0.9999954}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999927, "finite": true, "cos_vs_baked_w8a8": 0.9999947}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.999998, "finite": true, "cos_vs_baked_w8a8": 0.9999947}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "memgate", "ok": false, "free_pct": 30, "swap_mb": 7437.88}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999943, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999945, "finite": true, "cos_vs_baked_w8a8": 0.9999972}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.9999941, "finite": true, "cos_vs_baked_w8a8": 0.9999966}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999937, "finite": true, "cos_vs_baked_w8a8": 0.9999961}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999934, "finite": true, "cos_vs_baked_w8a8": 0.9999955}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999929, "finite": true, "cos_vs_baked_w8a8": 0.9999949}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.9999981, "finite": true, "cos_vs_baked_w8a8": 0.9999948}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "memgate", "ok": false, "free_pct": 25, "swap_mb": 8732.69}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999941, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999943, "finite": true, "cos_vs_baked_w8a8": 0.9999971}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.9999938, "finite": true, "cos_vs_baked_w8a8": 0.9999965}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999934, "finite": true, "cos_vs_baked_w8a8": 0.9999959}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999931, "finite": true, "cos_vs_baked_w8a8": 0.9999953}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999927, "finite": true, "cos_vs_baked_w8a8": 0.9999947}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.999998, "finite": true, "cos_vs_baked_w8a8": 0.9999946}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "memgate", "ok": false, "free_pct": 34, "swap_mb": 7136.5}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999943, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999946, "finite": true, "cos_vs_baked_w8a8": 0.9999971}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.9999942, "finite": true, "cos_vs_baked_w8a8": 0.9999966}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999938, "finite": true, "cos_vs_baked_w8a8": 0.999996}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999934, "finite": true, "cos_vs_baked_w8a8": 0.9999954}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.999993, "finite": true, "cos_vs_baked_w8a8": 0.9999948}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.9999981, "finite": true, "cos_vs_baked_w8a8": 0.9999948}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "memgate", "ok": false, "free_pct": 32, "swap_mb": 6890.0}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999945, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999948, "finite": true, "cos_vs_baked_w8a8": 0.9999972}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.9999944, "finite": true, "cos_vs_baked_w8a8": 0.9999966}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999941, "finite": true, "cos_vs_baked_w8a8": 0.9999961}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999937, "finite": true, "cos_vs_baked_w8a8": 0.9999956}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999933, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.9999981, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
+{"phase": "memgate", "ok": false, "free_pct": 27, "swap_mb": 5690.12}
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": true}
+{"phase": "memgate", "ok": true, "free_pct": 79, "swap_mb": 1160.12}
+{"phase": "round", "round": 0, "canary_ms": 55.4, "base": 155.2, "baked_w8a8": 134.4, "baked_w8a16": 127.9, "wl_0.50": 170.4, "wl_0.45": 163.9, "wl_0.40": 230.9, "wl_0.35": 159.8, "wl_0.30": 157.1}
+{"phase": "round", "round": 1, "canary_ms": 55.2, "base": 155.2, "baked_w8a8": 124.5, "baked_w8a16": 128.7, "wl_0.50": 168.8, "wl_0.45": 163.5, "wl_0.40": 171.6, "wl_0.35": 157.4, "wl_0.30": 156.3}
+{"phase": "round", "round": 2, "canary_ms": 55.2, "base": 155.4, "baked_w8a8": 124.1, "baked_w8a16": 130.6, "wl_0.50": 165.1, "wl_0.45": 169.1, "wl_0.40": 156.8, "wl_0.35": 156.5, "wl_0.30": 159.4}
+{"phase": "round", "round": 3, "canary_ms": 55.4, "base": 155.4, "baked_w8a8": 125.8, "baked_w8a16": 129.0, "wl_0.50": 165.8, "wl_0.45": 167.8, "wl_0.40": 162.9, "wl_0.35": 159.4, "wl_0.30": 150.1}
+{"phase": "round", "round": 4, "canary_ms": 55.7, "base": 155.5, "baked_w8a8": 131.1, "baked_w8a16": 125.2, "wl_0.50": 164.4, "wl_0.45": 167.6, "wl_0.40": 159.5, "wl_0.35": 158.8, "wl_0.30": 145.9}
+{"phase": "round", "round": 5, "canary_ms": 55.4, "base": 155.2, "baked_w8a8": 126.9, "baked_w8a16": 131.1, "wl_0.50": 168.5, "wl_0.45": 163.3, "wl_0.40": 157.2, "wl_0.35": 151.0, "wl_0.30": 147.9}
+{"phase": "timed_verdict", "med_ms": {"base": 155.3, "baked_w8a8": 126.3, "baked_w8a16": 128.8, "wl_0.50": 167.1, "wl_0.45": 165.7, "wl_0.40": 161.2, "wl_0.35": 158.1, "wl_0.30": 153.2}, "wl_best": 153.2, "gate_ms": 115.0}
