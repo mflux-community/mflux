@@ -59,6 +59,7 @@ void AneModel::predict(const void* x, void* out, int rows) {
     // Core ML may ignore the backing and return its own buffer; copy back if so.
     MLMultiArray* got = [res featureValueForName:@"y"].multiArrayValue;
     if (got.dataPointer != out) {
+      copybacks_.fetch_add(1, std::memory_order_relaxed);
       if (got.dataType != MLMultiArrayDataTypeFloat16 || got.shape.count != 2 || got.shape[0].intValue != rows ||
           got.shape[1].intValue != O)
         throw std::runtime_error("unexpected output type or shape");
@@ -115,6 +116,7 @@ void AneModel::predict_q8(const void* x_i8_cf, const float* tok, void* out, int 
     if (!res) throw std::runtime_error("predict_q8 failed: " + std::string(err.localizedDescription.UTF8String));
     MLMultiArray* got = [res featureValueForName:@"y"].multiArrayValue;
     if (got.dataPointer != out) {
+      copybacks_.fetch_add(1, std::memory_order_relaxed);
       if (got.dataType != MLMultiArrayDataTypeFloat16 || got.shape.count != 2 || got.shape[0].intValue != rows ||
           got.shape[1].intValue != O)
         throw std::runtime_error("unexpected q8 output type or shape");

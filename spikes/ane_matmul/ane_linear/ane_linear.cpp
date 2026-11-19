@@ -74,7 +74,8 @@ NB_MODULE(_ane_linear, m) {
       .def_ro("tokens", &AneModel::T)
       .def_ro("in_features", &AneModel::I)
       .def_ro("out_features", &AneModel::O)
-      .def("last_error", &AneModel::last_error);
+      .def("last_error", &AneModel::last_error)
+      .def("copybacks", &AneModel::copybacks);
   // ane_linear(x[rows, I] fp16, model) -> y[rows, O] fp16. rows must match a model tier.
   m.def(
       "ane_linear",
