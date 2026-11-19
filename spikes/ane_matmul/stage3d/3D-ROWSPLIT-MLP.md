@@ -510,6 +510,48 @@ real-weight runs and macOS does not release it without a reboot. The per-block 1
 §5e remains the clean timing number, and no further T4 timing work is meaningful until after a
 reboot.
 
+## 5h. Range and accuracy fix, searched in the mirror (no ANE), all 34 real blocks
+
+`range_fix_mirror.py`, post-reboot (swap 0.00 MB). 34 FFN-bearing blocks = 30 `layers` + 2
+`noise_refiner` + 2 `context_refiner`; the refiners had never been measured and they are the worst
+blocks. 5 arms × 34 blocks × g ∈ {1,2,4} = 102 rows, 120 s. Gates: max |fp32 partial sum| **and**
+max |stored fp16 value| ≤ 32752, and cosine over rows [0,2048) ≥ mflux q8 on the same block and
+activation.
+
+| arm | what changes | worst gated value | range ok | range + acc ok |
+| --- | --- | --- | --- | --- |
+| `cur` | today | inf | 15/102 | 0/102 |
+| `k` | Draw Things constant 1/sqrt(K), real scales to the epilogue | inf | 85/102 | 0/102 |
+| `hrow` | h divided by its own row max, restored in the fp32 epilogue | inf | 99/102 | 0/102 |
+| `both` | k + hrow | **5,060** | **102/102** | 0/102 |
+| `g64h` | group-64 weight scales + hrow | **5,084** | **102/102** | **101/102** |
+
+Findings:
+
+1. **a + b solves the range problem, and each alone does not.** `k` reaches inf on
+   `noise_refiner.1` because its partial sums still scale with h; `hrow` reaches inf there because
+   h, a and b are themselves stored in fp16 and exceed the ceiling before any normalisation.
+   Together they sit at 5,060 against a 32,752 gate, and the value stops growing with g.
+2. **The accuracy gate is separate, and per-row scales cannot pass it.** Every per-row arm tops out
+   at cos 0.999984 against q8's 0.999993. That is not an ANE effect: it is granularity. One scale per
+   output row is **60× coarser** than mflux q8's group_size=64, so the arm loses the gate however the
+   range is handled.
+3. **Matching q8 needs group-64 weight scales.** `g64h` clears range at 102/102 and beats q8 on
+   101/102 rows. The single miss is `noise_refiner.1` at g=4: 0.9999997 vs 0.9999999 — a 2e-7 tie,
+   not a defect.
+4. `cur` peaks at 3.6e7 on `noise_refiner.1` (553× the ceiling), so the refiners belong in every
+   future gate rather than being sampled from the main stack.
+
+Two modelling bugs in this script's first version were mine: the rowmax restore was applied inside
+the fp16 chain instead of the fp32 GPU epilogue (which turned refiner rows into inf and made a
+range-safe arm look broken), and the gate covered only matmul partial sums, not the stored fp16
+values of h and the program output. Both are fixed; the table above is the corrected run.
+
+**Not yet shown on the ANE.** These are mirror numbers. The program must carry a group scale tensor
+per weight ([out, K/64] rather than [out]) plus an h-rowmax input and its epilogue restore, and §5b
+already proved the ANE can deviate from its own graph definition. So the confirming run is the next
+step, not a formality.
+
 ## 6. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from
