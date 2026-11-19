@@ -1,0 +1,12 @@
+{"phase": "build", "seconds": 1.4}
+{"phase": "w8a16_enum", "cosine_vs_fp32": 0.9999628, "finite": true, "err": "''"}
+{"phase": "build", "seconds": 1.4}
+{"phase": "w8a16_enum", "cosine_vs_fp32": 0.9999628, "finite": true, "err": "''"}
+{"phase": "build", "seconds": 1.4}
+{"phase": "w8a16_enum", "cosine_vs_fp32": 0.9999628, "finite": true, "err": "''"}
+{"phase": "build", "seconds": 0.8}
+{"phase": "w8a16_enum", "cosine_vs_fp32": 0.9999628, "finite": true, "err": "''"}
+{"phase": "q8pre_enum", "max_rel_vs_emulation": 0.000986, "finite": true, "cos_vs_w8a16": 0.9999626, "err": "''"}
+{"phase": "fail_loud", "raised": "RuntimeError: predict failed: MultiArray Shape (5000 x 3840) was not in enumerated set of allowed shapes", "recorded": "'predict failed: MultiArray Shape (5000 x 3840) was not in enumerated set of allowed shapes'"}
+{"phase": "timing_w8a16_enum4608", "median_ms": 6.18}
+{"phase": "timing_q8pre_enum4608", "median_ms": 9.69}

@@ -1,6 +1,8 @@
 #import <CoreML/CoreML.h>
 #import <Foundation/Foundation.h>
+#include <algorithm>
 #include <stdexcept>
+#include <vector>
 #include "ane_bridge.h"
 
 struct AneModelImpl {
@@ -25,13 +27,13 @@ AneModel::AneModel(const std::string& path, int T_, int I_, int O_)
 
 AneModel::~AneModel() = default;
 
-void AneModel::predict(const void* x, void* out) {
+void AneModel::predict(const void* x, void* out, int rows) {
   @try {
   @autoreleasepool {
     NSError* err = nil;
-    NSArray<NSNumber*>* xs = @[@(T), @(I)];
+    NSArray<NSNumber*>* xs = @[@(rows), @(I)];
     NSArray<NSNumber*>* xst = @[@(I), @1];
-    NSArray<NSNumber*>* ys = @[@(T), @(O)];
+    NSArray<NSNumber*>* ys = @[@(rows), @(O)];
     NSArray<NSNumber*>* yst = @[@(O), @1];
     // Zero-copy wrappers around MLX's buffers.
     MLMultiArray* xin = [[MLMultiArray alloc] initWithDataPointer:const_cast<void*>(x)
@@ -57,14 +59,79 @@ void AneModel::predict(const void* x, void* out) {
     // Core ML may ignore the backing and return its own buffer; copy back if so.
     MLMultiArray* got = [res featureValueForName:@"y"].multiArrayValue;
     if (got.dataPointer != out) {
-      if (got.dataType != MLMultiArrayDataTypeFloat16 || got.shape.count != 2 || got.shape[0].intValue != T ||
+      if (got.dataType != MLMultiArrayDataTypeFloat16 || got.shape.count != 2 || got.shape[0].intValue != rows ||
           got.shape[1].intValue != O)
         throw std::runtime_error("unexpected output type or shape");
       const long s0 = got.strides[0].longValue, s1 = got.strides[1].longValue;
       const uint16_t* src = static_cast<const uint16_t*>(got.dataPointer);
       uint16_t* dst = static_cast<uint16_t*>(out);
-      for (long t = 0; t < T; ++t)
+      for (long t = 0; t < rows; ++t)
         for (long o = 0; o < O; ++o) dst[t * O + o] = src[t * s0 + o * s1];   // stride-aware copy
+    }
+  }
+  } @catch (NSException* e) {
+    throw std::runtime_error(std::string("ObjC exception: ") + e.name.UTF8String + ": " + e.reason.UTF8String);
+  }
+}
+
+void AneModel::predict_q8(const void* x_i8, const float* tok, void* out, int rows) {
+  @try {
+  @autoreleasepool {
+    NSError* err = nil;
+    // fp32 row scales converted once per call for the "tok" input (fp16, [1, 1, 1, rows]).
+    std::vector<_Float16> h(rows);
+    for (int r = 0; r < rows; ++r) h[r] = static_cast<_Float16>(tok[r]);
+    // Enumerated int8 inputs must arrive channels-first (1, I, 1, rows): a token-major
+    // int8 boundary fails the CoreML plan builder (stage3b/diag_q8plan.py, arms C vs D).
+    // int8 arrays cannot wrap an external pointer, so allocate owned and transpose-copy.
+    MLMultiArray* xin = [[MLMultiArray alloc] initWithShape:@[@1, @(I), @1, @(rows)]
+                                                    dataType:MLMultiArrayDataTypeInt8
+                                                       error:&err];
+    if (!xin) throw std::runtime_error("int8 input alloc failed");
+    {
+      int8_t* dst = static_cast<int8_t*>(xin.dataPointer);
+      const int8_t* src = static_cast<const int8_t*>(x_i8);
+      const int TR = 64, TC = 64;  // blocked copy keeps both tiles in L1
+      for (int i0 = 0; i0 < I; i0 += TC)
+        for (int r0 = 0; r0 < rows; r0 += TR) {
+          int i1 = std::min(i0 + TC, I), r1 = std::min(r0 + TR, rows);
+          for (int i = i0; i < i1; ++i)
+            for (int r = r0; r < r1; ++r) dst[(size_t)i * rows + r] = src[(size_t)r * I + i];
+        }
+    }
+    MLMultiArray* tin = [[MLMultiArray alloc] initWithShape:@[@1, @1, @1, @(rows)]
+                                                  dataType:MLMultiArrayDataTypeFloat16
+                                                     error:&err];
+    if (!tin) throw std::runtime_error("tok alloc failed");
+    memcpy(tin.dataPointer, h.data(), (size_t)rows * sizeof(_Float16));
+    MLMultiArray* y_wrap = [[MLMultiArray alloc] initWithDataPointer:out
+                                                             shape:@[@(rows), @(O)]
+                                                         dataType:MLMultiArrayDataTypeFloat16
+                                                          strides:@[@(O), @1]
+                                                      deallocator:nil
+                                                            error:&err];
+    if (!y_wrap) throw std::runtime_error("output wrap failed");
+    MLDictionaryFeatureProvider* in = [[MLDictionaryFeatureProvider alloc]
+        initWithDictionary:@{
+          @"x" : [MLFeatureValue featureValueWithMultiArray:xin],
+          @"tok" : [MLFeatureValue featureValueWithMultiArray:tin],
+        }
+                       error:&err];
+    if (!in) throw std::runtime_error("feature provider failed");
+    MLPredictionOptions* opts = [[MLPredictionOptions alloc] init];
+    opts.outputBackings = @{@"y" : y_wrap};
+    id<MLFeatureProvider> res = [impl_->model predictionFromFeatures:in options:opts error:&err];
+    if (!res) throw std::runtime_error("predict_q8 failed: " + std::string(err.localizedDescription.UTF8String));
+    MLMultiArray* got = [res featureValueForName:@"y"].multiArrayValue;
+    if (got.dataPointer != out) {
+      if (got.dataType != MLMultiArrayDataTypeFloat16 || got.shape.count != 2 || got.shape[0].intValue != rows ||
+          got.shape[1].intValue != O)
+        throw std::runtime_error("unexpected q8 output type or shape");
+      const long s0 = got.strides[0].longValue, s1 = got.strides[1].longValue;
+      const uint16_t* src = static_cast<const uint16_t*>(got.dataPointer);
+      uint16_t* dst = static_cast<uint16_t*>(out);
+      for (long t = 0; t < rows; ++t)
+        for (long o = 0; o < O; ++o) dst[t * O + o] = src[t * s0 + o * s1];
     }
   }
   } @catch (NSException* e) {
