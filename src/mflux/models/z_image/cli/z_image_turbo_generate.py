@@ -41,6 +41,7 @@ def build_parser() -> CommandLineParser:
     parser.add_small_text_encoder_arguments(
         help_text="Replace Z-Image-Turbo's Qwen3-4B text encoder with the distilled Qwen3-1.7B student and adapter from SearchingMan/Z-Image-Turbo-student-adapter. Downloads ~3.6 GB instead of ~8.0 GB. Text drawn in the image, attribute binding and non-English prompts come out worse than with the native encoder. See the Z-Image README."
     )
+    parser.add_ane_arguments()
     parser.add_output_arguments()
     parser.add_vae_full_precision_arguments()
     return parser
@@ -67,6 +68,12 @@ class ZImageTurboCommand:
             float32=args.float32,
             small_text_encoder=args.small_text_encoder,
             compute_precision=ComputePrecision.dtype_for(args.compute_precision),
+            ane=args.ane,
+            ane_precision=args.ane_precision,
+            ane_gpu_share=args.ane_gpu_share,
+            ane_cache=args.ane_cache,
+            dequantize_on_load=args.dequantize_on_load,
+            ane_allow_m5=args.ane_allow_m5,
             **lora_init_kwargs_from_args(args),
         )
         VAEDecodeOptions.apply(args, model)

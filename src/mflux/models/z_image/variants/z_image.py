@@ -41,6 +41,12 @@ class ZImage(nn.Module):
         float32: bool = False,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ane: bool = False,
+        ane_precision: str = "w8a16",
+        ane_gpu_share: float = 0.5,
+        ane_cache: str | None = None,
+        dequantize_on_load: bool = False,
+        ane_allow_m5: bool = False,
     ):
         super().__init__()
         ZImageInitializer.init(
@@ -54,6 +60,12 @@ class ZImage(nn.Module):
             float32=float32,
             compute_precision=compute_precision,
             small_text_encoder=small_text_encoder,
+            ane=ane,
+            ane_precision=ane_precision,
+            ane_gpu_share=ane_gpu_share,
+            ane_cache=ane_cache,
+            dequantize_on_load=dequantize_on_load,
+            ane_allow_m5=ane_allow_m5,
         )
 
     def generate_image(

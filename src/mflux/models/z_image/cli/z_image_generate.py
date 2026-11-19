@@ -48,6 +48,7 @@ def build_parser() -> CommandLineParser:
     parser.add_image_to_image_arguments()
     parser.add_pid_decode_arguments()
     parser.add_float32_arguments()
+    parser.add_ane_arguments()
     parser.add_output_arguments()
     parser.add_vae_full_precision_arguments()
     # The command's scheduler. A parser default, so --scheduler=NAME, a --config-from-conf replay
@@ -78,6 +79,12 @@ class ZImageCommand:
             model_path=args.model_path,
             float32=args.float32,
             compute_precision=ComputePrecision.dtype_for(args.compute_precision),
+            ane=args.ane,
+            ane_precision=args.ane_precision,
+            ane_gpu_share=args.ane_gpu_share,
+            ane_cache=args.ane_cache,
+            dequantize_on_load=args.dequantize_on_load,
+            ane_allow_m5=args.ane_allow_m5,
             **lora_init_kwargs_from_args(args),
         )
         VAEDecodeOptions.apply(args, model)

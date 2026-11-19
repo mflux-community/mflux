@@ -38,6 +38,12 @@ class ZImageInitializer:
         float32: bool = False,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ane: bool = False,
+        ane_precision: str = "w8a16",
+        ane_gpu_share: float = 0.5,
+        ane_cache: str | None = None,
+        dequantize_on_load: bool = False,
+        ane_allow_m5: bool = False,
     ) -> None:
         if small_text_encoder:
             ZImageInitializer.validate_small_text_encoder(model_config)
@@ -69,6 +75,41 @@ class ZImageInitializer:
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)
+        if ane:
+            ZImageInitializer._apply_ane(
+                model,
+                precision=precision,
+                float32=float32,
+                ane_precision=ane_precision,
+                ane_gpu_share=ane_gpu_share,
+                ane_cache=ane_cache,
+                dequantize_on_load=dequantize_on_load,
+                ane_allow_m5=ane_allow_m5,
+            )
+
+    @staticmethod
+    def _apply_ane(
+        model, precision, float32, ane_precision, ane_gpu_share, ane_cache, dequantize_on_load, ane_allow_m5
+    ) -> None:
+        from pathlib import Path
+
+        from mflux.models.z_image.ane import AneGate, ZImageAne
+
+        AneGate.check_or_raise(
+            bits=model.bits,
+            precision_name=precision.name,
+            float32=float32,
+            allow_m5=ane_allow_m5,
+            model_type=model.model_config.model_name,
+        )
+        if dequantize_on_load:
+            model._ane_dequantized_layers = ZImageAne.dequantize_on_load(model.transformer)
+        model._ane_patched_blocks = ZImageAne.apply(
+            model.transformer,
+            cache_dir=Path(ane_cache) if ane_cache else None,
+            precision=ane_precision,
+            gpu_share=ane_gpu_share,
+        )
 
     @staticmethod
     def supports_small_text_encoder(model_config: ModelConfig) -> bool:
