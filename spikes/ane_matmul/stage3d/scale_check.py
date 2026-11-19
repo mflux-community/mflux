@@ -37,6 +37,19 @@ print(f"reference FFN output: max|ref|={np.abs(ref).max():.4f}")
 
 bb = BridgeBackend(HERE / "cache")
 
+# Exact fp32 of the same FFN, as a second reference. T1 gates against the bf16 MLX module, so if
+# the ANE diverges from one reference and not the other, the reference is part of the measurement.
+w1f = np.array(ff.w1.weight.astype(mx.float32))
+w3f = np.array(ff.w3.weight.astype(mx.float32))
+w2f = np.array(ff.w2.weight.astype(mx.float32))
+xf32 = np.array(x_mx.astype(mx.float32))
+a32 = xf32 @ w1f.T
+# yb carries the x32 gain (program returns y/32), so this must restore it too, or the fp32 column
+# reads gain ~0.031 = 1/32 and looks like a 32x ANE error that is not there.
+ref32 = (((a32 / (1.0 + np.exp(-a32))) * (xf32 @ w3f.T) / 32.0) @ w2f.T) * 32.0
+print(f"exact fp32 FFN peak={np.abs(ref32).max():.4f}   bf16 module peak={np.abs(ref).max():.4f}")
+ref32 = ref32.reshape(-1).astype(np.float64)
+
 print(f"\n{'mode':>8} {'w2':>9} {'pair':>16} {'max|y|':>10} {'ratio':>9} {'relerr':>10} {'cos':>10}")
 for scale_mode in ("weight", "output"):
     for w2_scale in ("program", "epilogue"):
@@ -45,20 +58,18 @@ for scale_mode in ("weight", "output"):
         spec = MlpSpec(mpad=M, scale_mode=scale_mode, w2_scale=w2_scale)
         w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
         gain = w.gain.astype(np.float64)  # per-channel [D]: a mean would hide a scale bug
-        yb = np.asarray(bb.run(spec, w, x_np), dtype=np.float64).reshape(-1, DIM) * gain
+        yb = (np.asarray(bb.run(spec, w, x_np), dtype=np.float64).reshape(-1, DIM) * gain).reshape(-1)
         mirror, _ = reference_fp16(x_np, {"w1": w.w1, "w3": w.w3, "w2": w.w2}, w.scales, spec)
-        ym = mirror.astype(np.float64).reshape(-1, DIM) * gain
-        for tag, y in (("bridge vs ref", yb.reshape(-1)), ("bridge vs mirror", yb.reshape(-1))):
-            other = ref if tag.endswith("ref") else ym.reshape(-1)
+        ym = (mirror.astype(np.float64).reshape(-1, DIM) * gain).reshape(-1)
+        for tag, y, other in (
+            ("bridge vs bf16", yb, ref),
+            ("bridge vs fp32", yb, ref32),
+            ("mirror vs fp32", ym, ref32),
+            ("bf16 vs fp32", ref, ref32),
+        ):
             ratio = float(other @ y / (y @ y)) if y @ y else float("nan")
             relerr = float(np.linalg.norm(y - other) / np.linalg.norm(other))
             cos = float(other @ y / (np.linalg.norm(other) * np.linalg.norm(y)))
             print(
                 f"{scale_mode:>8} {w2_scale:>9} {tag:>16} {np.abs(y).max():>10.4f} {ratio:>9.4f} {relerr:>10.5f} {cos:>10.6f}"
             )
-        print(
-            f"{'':>8} {'':>9} {'mirror vs ref':>16} {np.abs(ym).max():>10.4f}"
-            f" {float(ref @ ym.ravel() / (ym.ravel() @ ym.ravel())):>9.4f}"
-            f" {float(np.linalg.norm(ym.ravel() - ref) / np.linalg.norm(ref)):>10.5f}"
-            f" {float(ref @ ym.ravel() / (np.linalg.norm(ref) * np.linalg.norm(ym.ravel()))):>10.6f}"
-        )
