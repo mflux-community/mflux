@@ -6,10 +6,10 @@ and the win *grows* with ladder size (1.160× @8, 1.185× @16, 1.265× @34) — 
 3c, where the block win flattened to zero at step level. So the overlap 3c said needed a native
 async primitive is reachable with a worker thread plus a GIL-released bridge call.
 It is not a GO: **T1 accuracy fails** (cos 0.99980 vs the 0.9999 gate, in both scale modes, while the
-intended math reaches 0.999967 — the shortfall is the ANE's own execution, and probes A/B rule out
-quantisation, dtype, K-chunking and every individual boundary; what remains is the magnitude of the
-weight operand at the matmul, §5c), and **T4 wired memory fails** (+4.86 GB against a +1 GB
-allowance) for a structural reason a row split cannot design away.
+intended math reaches 0.999967 — the shortfall is the ANE's own execution, and probes A/B/C rule out
+quantisation, dtype, K-chunking, activation precision and every individual boundary; the failure is
+confined to `weight` mode and depends on the weight distribution, §5d), and **T4 wired memory fails**
+(+4.86 GB against a +1 GB allowance) for a structural reason a row split cannot design away.
 
 Machine: M4 Max 36 GB, macOS 27.2.1. Worktree `~/MFlux/mflux-ane-stage3`, branch
 `experiment/zit-on-ane-stage3d` off `experiment/zit-on-ane-stage3` (`aba76b8d`); spike code
@@ -234,16 +234,19 @@ step size. No `MTLSharedEvent` primitive was needed to get overlap. Two things b
 are independent:
 
 1. **Accuracy (T1).** cos 0.99980 vs a 0.9999 gate. The host mirror of the same program reaches
-   0.999967, so the gap is ANE execution, not int8. Probes A and B (§5b, §5c) narrowed it
+   0.999967, so the gap is ANE execution, not int8. Probes A, B and C (§5b, §5c, §5d) narrowed it
    considerably: each boundary `a`/`b`/`h` is accurate on its own; `k2_chunks` 1/2/4 are identical;
    quantisation is irrelevant, because fp16 weights read 0.97127 in weight mode (same as int8) and
-   **0.95872 in output mode, which is worse than int8's 0.99980**. What remains is that the error
-   tracks the magnitude of the weight operand fed to the matmul, not its dtype and not where the
-   scale is applied. So `--weight-dtype fp16` is ruled out as a fix (it also doubles weight bytes to
-   236 MB/block), and the next experiment is a **magnitude sweep**: scale the weight operand by a
-   constant before the matmul and divide after, over 1/128, 1 and 128. If accuracy follows
-   magnitude, ship the int8 + output-scaled form, which is also the 1.7× faster mode, and the gap
-   left is 0.9998 against 0.9999.
+   **0.95872 in output mode, which is worse than int8's 0.99980**; activation precision is irrelevant
+   to seven decimals; and `output` mode holds 0.9998 for both weight sources while `weight` mode
+   swings from 0.99953 (synthetic normal init) to 0.97073 (uniform `nn.Linear` init). `--weight-dtype
+   fp16` is ruled out as a fix, and so is the magnitude sweep, because C already separated the
+   variables it was designed to test. The sharpest remaining lead is **per-row scale uniformity**:
+   the failing cell's weight rows all share max|w| = 0.01611, and the accurate cell spans
+   0.04815–0.09396. Next experiment is therefore to perturb the row maxima of a uniform-init weight
+   set and see whether `weight`-mode accuracy recovers. Until that is resolved, ship `output` mode
+   (also the 1.7× faster one) and treat the residual as 0.99981 against a 0.9999 gate — still a fail.
+   It must be re-measured on trained weights, which are neither uniform nor normal.
 2. **Memory (T4 wired +4.86 GB).** Structural as written, but fixable by a design change: have the
    **GPU also consume the int8 codes** (dequantising on GPU) instead of keeping a bf16 copy, so one
    weight representation serves both engines. That removes ~236 MB/block of duplicate residency
@@ -318,15 +321,17 @@ Three conclusions, and the first one reverses what §5b claimed before this ran:
 2. **fp16 weights are not a fix — they are worse.** In `output` mode, int8 scores 0.99980 and fp16
    scores 0.95872, a 2.8% relative error. So "use fp16 to keep accuracy" is off the table, and it
    would also double the weight bytes.
-3. **The failure tracks the magnitude of the weight operand presented to the matmul**, not its
-   dtype and not where the scale is applied:
+3. **Small-magnitude weight operands are the bad case** — but probe C (§5d) showed magnitude is not
+   the whole story:
    - int8 `output`: operand is raw codes, magnitude ~±127 → cos 0.99980 (best).
    - int8 `weight`: codes scaled by s_row inside the program, magnitude ~1e-2 → 0.97080.
    - fp16 `weight`: weights scaled by 1.0 (a no-op multiply), magnitude ~1e-2 → 0.97127.
    - fp16 `output`: same ~1e-2 operands → 0.95872.
 
    The three arms with small-magnitude weight operands all land at 0.959–0.971. The one arm with
-   large-magnitude operands is an order of magnitude better.
+   large-magnitude operands is an order of magnitude better. C then found two arms at the *same*
+   magnitude differing by 2.9 points of cosine, so magnitude orders the failure but does not explain
+   it on its own.
 
 That is a **hypothesis from four measurements, not an established mechanism** — the two small-magnitude
 arms differ from each other by more than a rounding argument explains, and probe A already showed
@@ -340,6 +345,44 @@ Probe B also required a real fix: `BridgeBackend` hard-coded int8 for the weight
 `--weight-dtype fp16` would have mislabelled fp16 buffers to Core ML. It now derives the declared
 type from `spec.weight_dtype` and stops forcing a dtype on the weight arrays.
 
+## 5d. Probe C: the activation is irrelevant, the weight distribution is not
+
+§5c attributed the failure to operand magnitude. Probe C tested the one variable that separated
+probe A (0.99954) from production (0.9707) on a graph that is otherwise the same: the data. Cells =
+{weights: synthetic normal | real `nn.Linear` bf16 init} x {activation: fp16 | bf16-rounded}, each
+compared against exact fp32 of the tensors the ANE actually sees, so activation rounding is never
+counted as ANE error. Mpad=1024, int8 weights.
+
+| weights | act | `weight` cos | relerr | `output` cos | relerr |
+| --- | --- | --- | --- | --- | --- |
+| synthetic | fp16 | 0.9995341 | 0.0305 | 0.9998457 | 0.0176 |
+| synthetic | bf16 | 0.9995340 | 0.0305 | 0.9998457 | 0.0176 |
+| real-bf16 | fp16 | **0.9707341** | 0.2402 | 0.9998125 | 0.0194 |
+| real-bf16 | bf16 | **0.9707305** | 0.2402 | 0.9998125 | 0.0194 |
+
+Three conclusions, and the first kills two open questions at once:
+
+1. **Activation precision is irrelevant.** fp16 against bf16-rounded differs in the seventh decimal
+   (0.9995341 vs 0.9995340, and 0.9707341 vs 0.9707305). This also removes the discrepancy with
+   probe A: probe A's activation was fp16 and production's was bf16, and that difference contributes
+   nothing. The weight source is the remaining variable.
+2. **The weight distribution drives the `weight`-mode failure.** Synthetic normal weights give
+   0.99953; the real module's `nn.Linear` init gives 0.97073. The likely handle is in the last row
+   of the probe's output: synthetic `w1` per-row maxima span 0.04815–0.09396, while the real ones
+   span **0.01611–0.01611** — constant to five digits, because `nn.Linear` initialises uniform on
+   `±1/sqrt(fan_in)`, so every row's maximum is essentially the same bound. Per-row scales that are
+   nearly identical are the pathological input for weight-mode scaling on the ANE. Not proven, but
+   it is the sharpest lead in the stage.
+3. **`output` mode is robust and `weight` mode is not.** Output mode holds 0.99981–0.99985 across
+   both weight sources. So §5c's magnitude story is incomplete: two arms with the same operand
+   magnitude differ by 2.9 points of cosine, which magnitude alone does not explain.
+
+**What this does not fix:** `output` mode still lands at 0.99981 against a 0.9999 gate, so **T1
+remains FAIL**. The failure is now a small residual (relerr 1.9%) rather than a 24% structural one,
+and the fast mode is also the accurate one, which is the useful outcome. Real trained weights are
+neither uniform-init nor normal, so the residual must be re-measured before any real-weight run —
+and if trained weights behave like the uniform-init cell in some layer, `weight` mode is unusable.
+
 ## 6. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from
@@ -350,3 +393,6 @@ type from `spec.weight_dtype` and stops forcing a dtype on the weight arrays.
   ~16 GB of duplicate host int8 at four shares)
 - `ce1cb694` — 128× gain fix in `output` mode; scale-sensitive assertions in test and T1; timed
   runs take the cooperative `BENCH.lock` via `s3a.BenchLock`
+- `f4010249` — probe A: graph-boundary programs and the two-reference gate (§5b)
+- `16dc9cd0` — probe B: fp16 weights (§5c); `BridgeBackend` weight-dtype fix
+- probe C (§5d) and this report update are committed together; `git log --oneline` gives the hash
