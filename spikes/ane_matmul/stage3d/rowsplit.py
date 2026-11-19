@@ -46,20 +46,38 @@ def _to_np32(w) -> np.ndarray:
 _WEIGHT_CACHE: dict[tuple, tuple] = {}
 
 
+def _fingerprint(src) -> tuple:
+    """Cheap content guard for a cache key: shape, dtype and the first element of each array.
+
+    Holding the source arrays to make id() keys safe was the wrong trade: it pinned ~590 MB per
+    block, which at 34 real blocks is ~20 GB and drove the machine into 6.3 GB of swap. A hit is
+    now verified against the arrays actually passed in, so if an id were ever recycled by a new
+    object the entry is simply recomputed. A miss is cheap; a stale hit would be silent.
+    """
+    out = []
+    for a in src:
+        shape = tuple(a.shape)
+        # .item() rather than np.asarray(...): a 0-d MLX array does not convert through numpy, and
+        # these inputs are usually bf16 mx arrays.
+        first = float(a[(0,) * len(shape)].item())
+        out.append((shape, str(getattr(a, "dtype", "?")), first))
+    return tuple(out)
+
+
 def prepare_block_weights(spec: MlpSpec, w1, w3, w2) -> BlockWeights:
     """w1,w3: [H,D]; w2: [D,H]; any array-like convertible with np.asarray(..., float32).
 
     Memoised on the source arrays and the weight-bearing spec fields. The quantised codes do not
     depend on mpad, so a share sweep would otherwise re-quantise every block per share: at 34
     blocks and 4 shares that is ~16 GB of duplicate host int8, which is swap territory on 36 GB
-    and would invalidate the very runs it is meant to time. Keyed by id() and made safe by
-    holding the source arrays alive in the cache value, so a key's id cannot be reused.
+    and would invalidate the very runs it is meant to time.
     """
-    key = (id(w1), id(w3), id(w2), spec.weight_dtype, spec.scale_mode, spec.w2_scale)
-    hit = _WEIGHT_CACHE.get(key)
-    if hit is not None:
-        return hit[0]
     src = (w1, w3, w2)
+    fp = _fingerprint(src)
+    key = (id(w1), id(w3), id(w2), spec.weight_dtype, spec.scale_mode, spec.w2_scale, spec.range_fix)
+    hit = _WEIGHT_CACHE.get(key)
+    if hit is not None and hit[1] == fp:
+        return hit[0]
     w1, w3, w2 = (_to_np32(w) for w in src)
     if spec.weight_dtype == "int8":
         (q1, s1), (q3, s3), (q2, s2) = quantize_per_row(w1), quantize_per_row(w3), quantize_per_row(w2)
@@ -67,16 +85,23 @@ def prepare_block_weights(spec: MlpSpec, w1, w3, w2) -> BlockWeights:
         q1, q3, q2 = (w.astype(np.float16) for w in (w1, w3, w2))
         s1, s3, s2 = (np.ones(w.shape[0], dtype=np.float32) for w in (w1, w3, w2))
     bw = BlockWeights(q1, q3, q2, program_scales(spec, s1, s3, s2), epilogue_gain(spec, s2))
-    _WEIGHT_CACHE[key] = (bw, src)
+    if len(_WEIGHT_CACHE) > 64:  # entries are ~118 MB; bound them across long sweeps
+        _WEIGHT_CACHE.clear()
+    _WEIGHT_CACHE[key] = (bw, fp)
     return bw
 
 
 class AneBackend:
-    """One ANE call: x [1, Mpad, D] fp16 -> y/32 [1, Mpad, D] fp16."""
+    """One ANE call: x [1, Mpad, D] fp16 -> (y/32 [1, Mpad, D] fp16, h_max or None).
+
+    The second value is the per-row max of h that the range fix divides by (spec.range_fix). It
+    must be restored in the fp32 GPU epilogue: multiplying it back inside the program overflows
+    fp16, which is the failure that made the first real-weight gate fail.
+    """
 
     weights_copied = False
 
-    def run(self, spec: MlpSpec, weights: BlockWeights, x: np.ndarray) -> np.ndarray:
+    def run(self, spec: MlpSpec, weights: BlockWeights, x: np.ndarray):
         raise NotImplementedError
 
 
@@ -111,7 +136,8 @@ class CoreMLToolsBackend(AneBackend):
             "w2": weights.w2,
             **weights.scales,
         }
-        return self._model(spec).predict(feed)["y_rows"]
+        out = self._model(spec).predict(feed)
+        return out["y_rows"], out.get("h_max_out")
 
 
 class BridgeBackend(AneBackend):
@@ -162,22 +188,25 @@ class BridgeBackend(AneBackend):
         # The weight dtype must be declared, not assumed: build_mil_program emits fp16 weight
         # inputs under --weight-dtype fp16, and wrapping those as int8 mislabels the buffer.
         w_i8 = 1 if spec.weight_dtype == "int8" else 0
+        out_names = ["y_rows"] + (["h_max_out"] if spec.range_fix else [])
+        out_shapes = [[1, M, D]] + ([[1, M, 1]] if spec.range_fix else [])
         model = self.ext.wl_fused_load(
             str(pkg),
             str(compiled),
             ["x_rows", "w1", "w3", "w2", "s1", "s3", "s2"],
             [[1, M, D], [H, D], [H, D], [D, H], [H], [H], [D]],
             [0, w_i8, w_i8, w_i8, 0, 0, 0],
-            "y_rows",
-            [1, M, D],
+            out_names,
+            out_shapes,
+            [0] * len(out_names),
         )
         # After the load, because wl_fused_load is what produces the compiled .mlmodelc.
         self.plan_reports.setdefault(spec.name, compute_plan_report(compiled))
-        # One ANE worker thread serialises calls, so one reusable output per spec is safe.
-        out = np.zeros((1, M, D), dtype=np.float16)
+        # One ANE worker thread serialises calls, so reusable outputs per spec are safe.
+        outs = [np.zeros(s, dtype=np.float16) for s in out_shapes]
         self._models[spec.name] = model
-        self._outs[spec.name] = out
-        return model, out
+        self._outs[spec.name] = outs
+        return model, outs
 
     def _ensure_surfaces(self, weights):
         """One weight surface set for every block, so the kernel wires ~118 MB once, not 34 times."""
@@ -199,7 +228,7 @@ class BridgeBackend(AneBackend):
         return self._surfaces
 
     def run(self, spec, weights, x):
-        model, out = self._prepare(spec)
+        model, outs = self._prepare(spec)
         x_in = np.ascontiguousarray(x, dtype=np.float16)
         # No dtype is forced on the weights: prepare_block_weights already produced int8 codes or
         # fp16 according to spec.weight_dtype, and the loader declares the matching type.
@@ -209,22 +238,23 @@ class BridgeBackend(AneBackend):
             # chain that cannot happen, but the cost of not relying on it is an uncontended lock.
             with self._surface_lock:
                 ins = [x_in, *self._ensure_surfaces(weights)]
-                self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], out.ctypes.data)
-            return out
-        ins = [
-            x_in,
-            np.ascontiguousarray(weights.w1),
-            np.ascontiguousarray(weights.w3),
-            np.ascontiguousarray(weights.w2),
-            np.ascontiguousarray(weights.scales["s1"], dtype=np.float16),
-            np.ascontiguousarray(weights.scales["s3"], dtype=np.float16),
-            np.ascontiguousarray(weights.scales["s2"], dtype=np.float16),
-        ]
-        self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], out.ctypes.data)
+                self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], [a.ctypes.data for a in outs])
+        else:
+            ins = [
+                x_in,
+                np.ascontiguousarray(weights.w1),
+                np.ascontiguousarray(weights.w3),
+                np.ascontiguousarray(weights.w2),
+                np.ascontiguousarray(weights.scales["s1"], dtype=np.float16),
+                np.ascontiguousarray(weights.scales["s3"], dtype=np.float16),
+                np.ascontiguousarray(weights.scales["s2"], dtype=np.float16),
+            ]
+            self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], [a.ctypes.data for a in outs])
         err = model.last_error()
         if err:
             raise RuntimeError(f"bridge predict failed: {err}")
-        return out
+        # outs[1] is h_max under the range fix; the caller restores it in fp32, outside the program.
+        return outs[0], (outs[1] if len(outs) > 1 else None)
 
 
 def compute_plan_report(model_dir: Path) -> str:
@@ -294,10 +324,16 @@ class RowSplitFFN:
         mx.async_eval(y_gpu)
 
         t2 = time.perf_counter()
-        y_np = fut.result()
+        y_np, h_max = fut.result()
         t3 = time.perf_counter()
 
-        y_ane = mx.array(np.asarray(y_np, dtype=np.float16)).astype(mx.float32) * self._gain
+        y_ane = mx.array(np.asarray(y_np, dtype=np.float16)).astype(mx.float32)
+        if h_max is not None:
+            # The range fix divides h by this per-row max inside the program. Restoring it there is
+            # what overflows fp16 (measured 5.06e5 against a 65504 ceiling), so it comes back here,
+            # in fp32, on the ANE's own rows only -- the GPU rows were never normalised.
+            y_ane = y_ane * mx.array(np.asarray(h_max, dtype=np.float32))
+        y_ane = y_ane * self._gain
         limit = float(mx.finfo(mx.float16).max)
         y_ane = mx.clip(y_ane, -limit, limit).astype(h.dtype)  # same clip as ComputePrecision.to_stream
         out = mx.concatenate([y_ane, y_gpu.astype(h.dtype)], axis=1)

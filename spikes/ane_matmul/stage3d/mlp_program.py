@@ -30,12 +30,19 @@ class MlpSpec:
     w2_scale: str = "program"  # "program" | "epilogue" (epilogue only valid with scale_mode="output")
     k13_chunks: int = 1  # K=3840 for w1/w3; set 2 if the ANE rejects/slow-paths it
     k2_chunks: int = 4  # K=10240 for w2
+    # The a+b range fix from probe item 1 (report section 5h), needed for real weights:
+    # (a) dequantise weights by a constant 1/sqrt(K) so a matmul's partial sums stop scaling with
+    #     K and the weight magnitude, and carry the real per-row scale on the output instead;
+    # (b) divide h by its own per-row max before the w2 matmul and restore that factor in the fp32
+    #     GPU epilogue. Restoring it inside the program overflows fp16, so h_max is a 2nd output.
+    # Without it, real trained weights drive partial sums to 3.6e7 against fp16's 65504 ceiling.
+    range_fix: bool = False
 
     @property
     def name(self) -> str:
         return (
             f"mlp_m{self.mpad}_{self.weight_dtype}_{self.scale_mode}_w2{self.w2_scale}"
-            f"_k{self.k13_chunks}x{self.k2_chunks}"
+            f"_k{self.k13_chunks}x{self.k2_chunks}{'_rf' if self.range_fix else ''}"
         )
 
     def validate(self) -> None:
@@ -44,6 +51,9 @@ class MlpSpec:
         assert self.w2_scale in ("program", "epilogue")
         assert not (self.w2_scale == "epilogue" and self.scale_mode == "weight"), "epilogue w2 scale needs output mode"
         assert self.dim % self.k13_chunks == 0 and self.hidden % self.k2_chunks == 0
+        # The fix is defined against the int8 code range (+-127), so it needs int8 weights.
+        assert not self.range_fix or self.weight_dtype == "int8", "range_fix needs int8 weight inputs"
+        assert not (self.range_fix and self.w2_scale == "epilogue"), "range_fix keeps the w2 scale in-program"
 
 
 # Raw int8 products reach ~127*|x|*sqrt(K); shrink x so fp16 partial sums stay far from 65504.
@@ -75,6 +85,15 @@ def program_scales(spec: MlpSpec, s1: np.ndarray, s3: np.ndarray, s2: np.ndarray
     real FFN -- and T1's cosine, being scale-invariant, scored it 0.9998 and passed it.
     """
     fold = INPUT_SHRINK if spec.scale_mode == "output" else 1.0
+    if spec.range_fix:
+        # (a) weights are dequantised by a constant 1/sqrt(K) in-program, so the real per-row scale
+        # has to arrive on the output side: s * sqrt(K) restores exactly what the constant removed.
+        sq1, sq2 = float(np.sqrt(spec.dim)), float(np.sqrt(spec.hidden))
+        return {
+            "s1": (s1 * sq1).astype(np.float16),
+            "s3": (s3 * sq1).astype(np.float16),
+            "s2": (s2 * sq2).astype(np.float16),
+        }
     return {
         "s1": (s1 * fold).astype(np.float16),
         "s3": (s3 * fold).astype(np.float16),
@@ -109,8 +128,11 @@ def build_mil_program(spec: MlpSpec):
     }
 
     def linear(x, w, scale, k_chunks, in_dim, out_dim, scale_in_program, prefix):
-        # cast() rejects int8; dequantize with a constant unit scale is the int8 -> fp16 widening (needs the iOS26 target)
-        wf = mb.dequantize(input=w, scale=np.float16(1.0), name=f"{prefix}_wf") if spec.weight_dtype == "int8" else w
+        # (a) The range fix widens int8 with 1/sqrt(K) instead of 1.0, so a raw code dot product
+        # stays near |x| rather than |x|*127*sqrt(K). cast() rejects int8, so dequantize with a
+        # constant scale is the int8 -> fp16 widening (needs the iOS26 target).
+        dq = np.float16(1.0 / np.sqrt(in_dim)) if spec.range_fix else np.float16(1.0)
+        wf = mb.dequantize(input=w, scale=dq, name=f"{prefix}_wf") if spec.weight_dtype == "int8" else w
         if spec.scale_mode == "weight" and scale_in_program:
             wf = mb.mul(x=wf, y=mb.reshape(x=scale, shape=(out_dim, 1)), name=f"{prefix}_wdeq")
         step = in_dim // k_chunks
@@ -125,7 +147,9 @@ def build_mil_program(spec: MlpSpec):
             )
             yi = mb.matmul(x=xi, y=wi, transpose_y=True, name=f"{prefix}_mm{i}")
             acc = yi if acc is None else mb.add(x=acc, y=yi, name=f"{prefix}_acc{i}")
-        if spec.scale_mode == "output" and scale_in_program:
+        # With the range fix the real scale always lands on the output: it cannot go on the weights,
+        # because the constant 1/sqrt(K) is what keeps the partial sums small.
+        if (spec.scale_mode == "output" or spec.range_fix) and scale_in_program:
             acc = mb.mul(x=acc, y=scale, name=f"{prefix}_oscale")
         return acc
 
@@ -134,14 +158,26 @@ def build_mil_program(spec: MlpSpec):
     @mb.program(input_specs=list(specs.values()), opset_version=opset)
     def prog(x_rows, w1, w3, w2, s1, s3, s2):
         x = x_rows
-        if spec.scale_mode == "output":
+        if spec.scale_mode == "output" and not spec.range_fix:
             x = mb.mul(x=x, y=np.float16(1.0 / INPUT_SHRINK), name="x_shrink")
         a = linear(x, w1, s1, spec.k13_chunks, D, H, True, "w1")
         b = linear(x, w3, s3, spec.k13_chunks, D, H, True, "w3")
         b = mb.mul(x=b, y=np.float16(1.0 / HEADROOM), name="b_headroom")
         h = mb.mul(x=mb.silu(x=a, name="w1_silu"), y=b, name="swiglu")
+        hmax = None
+        if spec.range_fix:
+            # (b) Normalise h by its own per-row max. The floor is the smallest fp16 normal, not
+            # 1e-8, which underflows to zero in fp16 and would leave a zero row as 0/0.
+            hmax = mb.reduce_max(x=mb.abs(x=h, name="h_abs"), axes=[-1], keep_dims=True, name="h_absmax")
+            hmax = mb.maximum(x=hmax, y=np.float16(6.1e-5), name="h_max")
+            h = mb.real_div(x=h, y=hmax, name="h_norm")
         y = linear(h, w2, s2, spec.k2_chunks, H, D, spec.w2_scale == "program", "w2")
-        return mb.identity(x=y, name="y_rows")
+        y = mb.identity(x=y, name="y_rows")
+        if spec.range_fix:
+            # h_max leaves as a second output on purpose: restoring it inside the program is what
+            # overflows fp16 (see the module docstring), so the fp32 GPU epilogue does it.
+            return y, mb.identity(x=hmax, name="h_max_out")
+        return y
 
     return prog, list(specs)
 
@@ -169,41 +205,57 @@ def reference_fp16(x: np.ndarray, q: dict, scales: dict, spec: MlpSpec) -> tuple
     q: {"w1","w3","w2"} int8 (or fp16 when weight_dtype="fp16"); scales: output of program_scales().
     """
     f16 = np.float16
-    stats = {}
+    stats: dict = {"max_part": {}}
 
-    def mm(a, w, chunks):
+    def mm(a, w, chunks, tag=""):
         step = a.shape[-1] // chunks
         acc = None
         for i in range(chunks):
-            part = (
+            part32 = (
                 a[..., i * step : (i + 1) * step].astype(np.float32)
                 @ w[:, i * step : (i + 1) * step].astype(np.float32).T
-            ).astype(f16)
+            )
+            # The untruncated partial sum is the fp16 range risk, so record it before the cast:
+            # the ANE clamps at the ceiling instead of producing inf, so finiteness proves nothing.
+            p = float(np.abs(part32).max())
+            stats["max_part"][tag] = max(stats["max_part"].get(tag, 0.0), p)
+            part = part32.astype(f16)
             acc = part if acc is None else (acc + part).astype(f16)
         return acc
 
-    def lin(a, w, s, chunks, scale_in_program):
+    def lin(a, w, s, chunks, scale_in_program, tag=""):
         wf = w.astype(f16)
-        if spec.scale_mode == "weight" and scale_in_program:
+        if spec.range_fix:
+            # (a) the same constant the program dequantises by; the real scale arrives on the output
+            wf = (wf * f16(1.0 / np.sqrt(a.shape[-1]))).astype(f16)
+        elif spec.scale_mode == "weight" and scale_in_program:
             wf = (wf * s.astype(f16)[:, None]).astype(f16)
-        out = mm(a, wf, chunks)
-        if spec.scale_mode == "output" and scale_in_program:
+        out = mm(a, wf, chunks, tag)
+        if (spec.scale_mode == "output" or spec.range_fix) and scale_in_program:
             out = (out * s.astype(f16)).astype(f16)
         return out
 
     xin = x.astype(f16)
-    if spec.scale_mode == "output":
+    if spec.scale_mode == "output" and not spec.range_fix:
         xin = (xin * f16(1.0 / INPUT_SHRINK)).astype(f16)
-    a = lin(xin, q["w1"], scales["s1"], spec.k13_chunks, True)
-    b = (lin(xin, q["w3"], scales["s3"], spec.k13_chunks, True) * f16(1.0 / HEADROOM)).astype(f16)
+    a = lin(xin, q["w1"], scales["s1"], spec.k13_chunks, True, "w1")
+    b = (lin(xin, q["w3"], scales["s3"], spec.k13_chunks, True, "w3") * f16(1.0 / HEADROOM)).astype(f16)
     silu = (a.astype(np.float32) / (1.0 + np.exp(-np.clip(a.astype(np.float32), -80, 80)))).astype(f16)
     h = (silu * b).astype(f16)
-    y = lin(h, q["w2"], scales["s2"], spec.k2_chunks, spec.w2_scale == "program")
+    rowmax = None
+    if spec.range_fix:
+        # (b) per-row normalisation; 6.1e-5 is fp16's smallest normal, so a zero row cannot give 0/0
+        rowmax = np.maximum(np.abs(h.astype(np.float32)).max(axis=-1, keepdims=True), float(f16(6.1e-5))).astype(f16)
+        h = (h / rowmax).astype(f16)
+    y = lin(h, q["w2"], scales["s2"], spec.k2_chunks, spec.w2_scale == "program", "w2")
     stats.update(
         max_a=float(np.abs(a).max()),
         max_h=float(np.abs(h).max()),
         max_y=float(np.abs(y).max()),
         nonfinite=int((~np.isfinite(y)).sum()),
+        max_part_over_all=max(stats["max_part"].values() or [0.0]),
+        # the caller's fp32 epilogue must multiply y by this, exactly as the bridge returns h_max_out
+        rowmax=rowmax,
     )
     return y, stats
 

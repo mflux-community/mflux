@@ -552,6 +552,60 @@ per weight ([out, K/64] rather than [out]) plus an h-rowmax input and its epilog
 already proved the ANE can deviate from its own graph definition. So the confirming run is the next
 step, not a formality.
 
+## 5i. Step 1: the a+b range fix, built into the program and measured on the ANE
+
+Implemented as `MlpSpec(range_fix=True)`, design following
+`~/zCode_26_11/drawthings-ane-research/DRAWTHINGS-ANE-FINDINGS.md` (liuliu/ccv, BSD-3-Clause);
+written from that description, no source copied.
+
+- **(a)** each weight is widened with `mb.dequantize(scale = 1/sqrt(K_in))` instead of `1.0`, and
+  the real per-row scale arrives on the matmul output as `s * sqrt(K)`. `x` is no longer shrunk.
+- **(b)** `h` is divided by its own per-row max (`abs` → `reduce_max` → `maximum(6.1e-5)` →
+  `real_div`), and that max leaves the program as a **second output** `h_max_out`, restored in the
+  fp32 GPU epilogue. It cannot be restored inside the program: that is what overflows fp16.
+- The bridge's fused call was generalised to N outputs (`set_fused(ins, outs)` /
+  `predict_fused(in_ptrs, out_ptrs)`), rebuilt, and `run()` now returns `(y, h_max)`.
+- Floor is `6.1e-5`, fp16's smallest normal: the natural `1e-8` underflows to zero in fp16 and would
+  make a zero row `0/0`.
+
+Smoke, Mpad=256 at real weight magnitudes: `h_max_out` shape (1,256,1), peak 11,448;
+**peak |y_program| = 8.88** against a 65504 ceiling; `copybacks = 0`; compute plan 32 ops on the
+NeuralEngine with **no non-ANE fallback**, so the row-max normalisation itself stays on the ANE.
+Bridge vs mirror cos **0.9999995**. In the same script the *unfixed* arm returned **finite values with
+cos 0.152 vs fp32** -- a third, independent confirmation that the ANE clamps rather than traps.
+
+T1 over **all 34 real blocks** x g in {1,2,4} = 102 rows, share 0.50, Mpad=2048, 52 s:
+
+| metric | value |
+| --- | --- |
+| range gate (peak \|y\| and \|h_max\| <= 32752) | **102/102**, worst 5,064 |
+| copybacks / nonfinite | 0 / 0 |
+| cos over ANE rows | min 0.9996898, median 0.9999133 |
+| cos over the full block (GPU rows exact) | min 0.9998495, median 0.9999580 |
+| **ANE minus mirror ('both' arm)** | min −9.5e-7, **median −7.4e-8**, max +4.6e-7 |
+| rows within 1e-5 of the mirror | **102/102** |
+
+**The fix does what it was meant to.** The ANE now reproduces its own graph on every block: the
+largest ANE-vs-mirror gap is 9.5e-7, against the 2.7e-2 (weight mode) and 2e-4 (output mode)
+deviations recorded in §5b and §5d. Those turn out to have been the saturation all along, not an
+ANE quirk, and §5b's open question is closed.
+
+The residual is **per-row int8 quantisation of the weights**, and it varies by block: worst is
+`layers.27` at 0.9996898, which the mirror scores at 0.9996900 -- identical. So no further ANE work
+will move that number; only finer scale granularity would, which is the `g64h` option Scriv dropped.
+
+Per-block spread worth keeping in mind for Step 2: the refiners are the *most* accurate
+(`noise_refiner.1` 0.9999996), the mid-stack main layers the least (`layers.24` 0.99977,
+`layers.27` 0.99969).
+
+**Memory bug found and fixed while doing this.** `prepare_block_weights` memoised by holding the
+*source* arrays alive to make its `id()` keys safe, so 34 blocks pinned ~590 MB each (~20 GB) and
+swap climbed to 6.3 GB. It now keeps a cheap content fingerprint (shape, dtype, first element) and
+verifies it on lookup, with a 64-entry bound. Re-running T1: identical accuracy, 73 s to 52 s, and
+swap flat (2970 to 2962 MB). Scope note: this leaked only where fresh numpy arrays are passed per
+block. In `bench.py` the cache held references to MLX parameters the loaded blocks already own, so it
+delayed release without duplicating memory -- the §3 and §5g wired numbers for T2/T3/T4 stand.
+
 ## 6. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from

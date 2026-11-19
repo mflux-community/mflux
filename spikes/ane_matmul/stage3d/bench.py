@@ -49,8 +49,8 @@ class MirrorBackend(AneBackend):
     weights_copied = True
 
     def run(self, spec, weights, x):
-        y, _ = reference_fp16(x, {"w1": weights.w1, "w3": weights.w3, "w2": weights.w2}, weights.scales, spec)
-        return y
+        y, stats = reference_fp16(x, {"w1": weights.w1, "w3": weights.w3, "w2": weights.w2}, weights.scales, spec)
+        return y, stats.get("rowmax")
 
 
 # ---------- system probes ----------
@@ -143,6 +143,17 @@ def make_inputs():
     return x, mask, freqs, t_emb
 
 
+def spec_for(args, m: int) -> MlpSpec:
+    """One place to build the program spec, so t1/t2/t3/t4 cannot drift apart."""
+    return MlpSpec(
+        mpad=m,
+        weight_dtype=args.weight_dtype,
+        scale_mode=args.scale_mode,
+        w2_scale=args.w2_scale,
+        range_fix=args.range_fix,
+    )
+
+
 def make_backend(name: str, cache: Path, shared_surfaces: bool = False) -> AneBackend:
     return {
         "coremltools": lambda: CoreMLToolsBackend(cache),
@@ -228,10 +239,14 @@ def t1(args, backend):
     rows = []
     for share in args.shares:
         m, _ = plan_split(SEQ, share)
-        spec = MlpSpec(mpad=m, weight_dtype=args.weight_dtype, scale_mode=args.scale_mode, w2_scale=args.w2_scale)
+        spec = spec_for(args, m)
         w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
         ref = ff(x[:, :m]).astype(mx.float32)
-        y = np.asarray(backend.run(spec, w, np.array(x[:, :m].astype(mx.float16))), dtype=np.float32) * w.gain
+        y_prog, h_max = backend.run(spec, w, np.array(x[:, :m].astype(mx.float16)))
+        y = np.asarray(y_prog, dtype=np.float32)
+        if h_max is not None:  # the range fix restores h's row max in fp32, never inside the program
+            y = y * np.asarray(h_max, dtype=np.float32)
+        y = y * w.gain
         r = np.array(ref).ravel().astype(np.float64)
         yv = y.astype(np.float64).ravel()
         c = float(r @ yv / (np.linalg.norm(r) * np.linalg.norm(yv)))
@@ -267,7 +282,7 @@ def t2(args, backend):
     arms = {"gpu_only": lambda: mlp_chain(ffs, norms, x)}
     for share in args.shares:
         m, _ = plan_split(SEQ, share)
-        spec = MlpSpec(mpad=m, weight_dtype=args.weight_dtype, scale_mode=args.scale_mode, w2_scale=args.w2_scale)
+        spec = spec_for(args, m)
         sffs = [
             RowSplitFFN(f, backend, spec, prepare_block_weights(spec, f.w1.weight, f.w3.weight, f.w2.weight), sink)
             for f in ffs
@@ -287,7 +302,7 @@ def t3_t4(args, backend, ladder):
         arms = {"gpu_only": lambda n=n: chain(refiners + main[:n], x, mask, freqs, t_emb)}
         for share in args.shares:
             m, _ = plan_split(SEQ, share)
-            spec = MlpSpec(mpad=m, weight_dtype=args.weight_dtype, scale_mode=args.scale_mode, w2_scale=args.w2_scale)
+            spec = spec_for(args, m)
             sb = split_blocks(main[:n], backend, spec, sink)
             arms[f"share_{share}_m{m}"] = lambda sb=sb, n=n: chain(refiners + sb, x, mask, freqs, t_emb)
         chain(refiners + main[:n], x, mask, freqs, t_emb)  # warm-up
@@ -304,6 +319,13 @@ def main():
     ap.add_argument("--weight-dtype", default="int8", choices=["int8", "fp16"])
     ap.add_argument("--scale-mode", default="weight", choices=["weight", "output"])
     ap.add_argument("--w2-scale", default="program", choices=["program", "epilogue"])
+    ap.add_argument(
+        "--range-fix",
+        action="store_true",
+        help="the a+b fix from report section 5h: 1/sqrt(K) dequantise constant plus per-row h"
+        " normalisation restored in the fp32 epilogue. Needed for real trained weights, whose"
+        " partial sums otherwise hit 3.6e7 against fp16's 65504 ceiling.",
+    )
     ap.add_argument("--cache", default=str(Path(__file__).parent / "cache"))
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
     ap.add_argument("--lock-wait-s", type=int, default=3600, help="how long to wait for BENCH.lock on timed runs")

@@ -48,6 +48,42 @@ def test_mirror_matches_fp32(scale_mode, w2_scale):
     assert _relerr(out, ref) < 0.05, f"gain wrong: relerr {_relerr(out, ref):.4f} for {scale_mode}/{w2_scale}"
 
 
+def test_range_fix_matches_fp32():
+    """The a+b fix must be numerically equivalent to the plain arms once h_max is restored."""
+    spec = MlpSpec(mpad=M, dim=D, hidden=H, scale_mode="output", k13_chunks=1, k2_chunks=4, range_fix=True)
+    x, w1, w3, w2 = _case()
+    (q1, s1), (q3, s3), (q2, s2) = quantize_per_row(w1), quantize_per_row(w3), quantize_per_row(w2)
+    y, stats = reference_fp16(x, {"w1": q1, "w3": q3, "w2": q2}, program_scales(spec, s1, s3, s2), spec)
+    out = y.astype(np.float32) * stats["rowmax"].astype(np.float32) * epilogue_gain(spec, s2)
+    ref = reference_fp32(x, w1, w3, w2)
+    assert stats["nonfinite"] == 0
+    assert _cos(out, ref) > 0.999
+    assert _relerr(out, ref) < 0.05
+
+
+def test_range_fix_bounds_partial_sums_where_output_mode_does_not():
+    """The regression this exists for: real-weight magnitudes push partial sums past fp16.
+
+    Weights at the std trained models actually carry (~0.17, not nn.Linear init's 0.02), with a
+    loud activation. Without the fix the w2 partial sums exceed the fp16 ceiling and clamp; with it
+    they stay well under. Checked on magnitude, because the ANE clamps rather than trapping, so a
+    saturated program still looks finite.
+    """
+    r = np.random.default_rng(2)
+    # Loud enough that the unfixed w2 sums (|h| * 127 * sqrt(H/4)) clear 65504 even at test dims.
+    x = r.standard_normal((1, M, D)).astype(np.float32) * 16
+    w1, w3 = (r.standard_normal((H, D)).astype(np.float32) * 0.17 for _ in range(2))
+    w2 = r.standard_normal((D, H)).astype(np.float32) * 0.17
+    (q1, s1), (q3, s3), (q2, s2) = quantize_per_row(w1), quantize_per_row(w3), quantize_per_row(w2)
+    peaks = {}
+    for rf in (False, True):
+        spec = MlpSpec(mpad=M, dim=D, hidden=H, scale_mode="output", k13_chunks=1, k2_chunks=4, range_fix=rf)
+        _, stats = reference_fp16(x, {"w1": q1, "w3": q3, "w2": q2}, program_scales(spec, s1, s3, s2), spec)
+        peaks[rf] = stats["max_part_over_all"]
+    assert peaks[False] > 65504, f"expected the unfixed arm to saturate here, got {peaks[False]:.0f}"
+    assert peaks[True] <= 0.5 * 65504, f"range fix failed: {peaks[True]:.0f}"
+
+
 def test_headroom_prevents_overflow():
     spec = MlpSpec(mpad=M, dim=D, hidden=H, k2_chunks=4)
     r = np.random.default_rng(1)

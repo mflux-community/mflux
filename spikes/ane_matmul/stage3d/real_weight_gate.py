@@ -112,7 +112,9 @@ for i in BLOCKS:
         ref_np = np.array(ref.astype(mx.float32))
 
         x_np = np.array(xin.astype(mx.float16))
-        y_ane = np.asarray(bb.run(spec, bw, x_np[:, :M]), dtype=np.float32) * bw.gain
+        y_prog, h_max = bb.run(spec, bw, x_np[:, :M])
+        assert h_max is None, "this run predates the range fix; it gates the pre-fix program"
+        y_ane = np.asarray(y_prog, dtype=np.float32) * bw.gain
         y_gpu = np.array(ff(xin[:, M:]).astype(mx.float32))
         y_split = np.concatenate([y_ane, y_gpu], axis=1)
 

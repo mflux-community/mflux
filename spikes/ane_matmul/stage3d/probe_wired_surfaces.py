@@ -84,8 +84,9 @@ def load(spec):
         ["x_rows", "w1", "w3", "w2", "s1", "s3", "s2"],
         [[1, M, DIM], [HIDDEN, DIM], [HIDDEN, DIM], [DIM, HIDDEN], [HIDDEN], [HIDDEN], [DIM]],
         [0, 1, 1, 1, 0, 0, 0],
-        "y_rows",
-        [1, M, DIM],
+        ["y_rows"],
+        [[1, M, DIM]],
+        [0],
     )
 
 
@@ -103,10 +104,10 @@ for k in SIZES:
         model = load(spec)
     ins = [x, q1, q3, q2, sc["s1"], sc["s3"], sc["s2"]]
     ptrs = [a.ctypes.data for a in ins]
-    ext.wl_fused_predict(model, ptrs, out.ctypes.data)
-    ext.wl_fused_predict(model, ptrs, out.ctypes.data)  # second call wires this surface set
+    ext.wl_fused_predict(model, ptrs, [out.ctypes.data])
+    ext.wl_fused_predict(model, ptrs, [out.ctypes.data])  # second call wires this surface set
     t0 = time.perf_counter()
-    ext.wl_fused_predict(model, ptrs, out.ctypes.data)
+    ext.wl_fused_predict(model, ptrs, [out.ctypes.data])
     ms = (time.perf_counter() - t0) * 1e3
     host_gb += 3 * HIDDEN * DIM  # int8 bytes per set
     w = wired_gb()
@@ -136,7 +137,7 @@ for i in range(len(SIZES) * 3):
     copies.append((time.perf_counter() - t0) * 1e3)
     ins = [x, *surfaces]
     t1 = time.perf_counter()
-    ext.wl_fused_predict(model2, [a.ctypes.data for a in ins], out.ctypes.data)
+    ext.wl_fused_predict(model2, [a.ctypes.data for a in ins], [out.ctypes.data])
     predicts.append((time.perf_counter() - t1) * 1e3)
     w = wired_gb()
     w0 = w if w0 is None else w0

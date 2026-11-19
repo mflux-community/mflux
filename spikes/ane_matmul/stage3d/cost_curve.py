@@ -65,7 +65,7 @@ for mode in ("weight", "output"):
         ts = []
         for _ in range(REPS):
             t0 = time.perf_counter()
-            y = bb.run(spec, w, x)
+            y, _h_max = bb.run(spec, w, x)  # pre-range-fix arms, so h_max is None
             ts.append((time.perf_counter() - t0) * 1e3)
             float(y[0, 0, 0])
         med = statistics.median(ts)

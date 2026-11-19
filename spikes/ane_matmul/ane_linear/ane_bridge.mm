@@ -309,19 +309,46 @@ static NSArray<NSNumber*>* row_major_strides(const std::vector<int64_t>& shape) 
   return st;
 }
 
-void WLModel::set_fused(const std::vector<WLTensor>& ins, const std::string& out_name,
-                        const std::vector<int64_t>& out_shape) {
-  fused_ins_ = ins;
-  fused_out_name_ = out_name;
-  fused_out_shape_ = out_shape;
+// Copy a returned MLMultiArray into a caller buffer, honouring whatever strides Core ML chose.
+static void copy_strided(MLMultiArray* got, void* dst) {
+  const int rank = (int)got.shape.count;
+  std::vector<long> gs(rank), es(rank);
+  long total = 1;
+  for (int i = rank - 1; i >= 0; --i) {
+    gs[i] = total;  // row-major destination
+    total *= got.shape[i].longValue;
+  }
+  for (int i = 0; i < rank; ++i) es[i] = got.strides[i].longValue;
+  const uint16_t* src = static_cast<const uint16_t*>(got.dataPointer);
+  uint16_t* d = static_cast<uint16_t*>(dst);
+  std::vector<int> idx(rank, 0);
+  for (long n = 0; n < total; ++n) {  // odometer, in case Core ML returns permuted strides
+    long so = 0, dd = 0;
+    for (int i = 0; i < rank; ++i) {
+      so += (long)idx[i] * es[i];
+      dd += (long)idx[i] * gs[i];
+    }
+    d[dd] = src[so];
+    for (int i = rank - 1; i >= 0; --i) {
+      if (++idx[i] < got.shape[i].intValue) break;
+      idx[i] = 0;
+    }
+  }
 }
 
-void WLModel::predict_fused(const std::vector<const void*>& in_ptrs, void* out) {
+void WLModel::set_fused(const std::vector<WLTensor>& ins, const std::vector<WLTensor>& outs) {
+  fused_ins_ = ins;
+  fused_outs_ = outs;
+}
+
+void WLModel::predict_fused(const std::vector<const void*>& in_ptrs, const std::vector<void*>& out_ptrs) {
   @try {
   @autoreleasepool {
     NSError* err = nil;
     if (in_ptrs.size() != fused_ins_.size())
       throw std::runtime_error("wl fused: input count mismatch");
+    if (out_ptrs.size() != fused_outs_.size())
+      throw std::runtime_error("wl fused: output count mismatch");
     NSMutableDictionary* d = [NSMutableDictionary dictionary];
     for (size_t k = 0; k < fused_ins_.size(); ++k) {
       const WLTensor& t = fused_ins_[k];
@@ -337,49 +364,38 @@ void WLModel::predict_fused(const std::vector<const void*>& in_ptrs, void* out) 
                                  (err.localizedDescription ? err.localizedDescription.UTF8String : "?"));
       d[[NSString stringWithUTF8String:t.name.c_str()]] = [MLFeatureValue featureValueWithMultiArray:a];
     }
-    MLMultiArray* ya = [[MLMultiArray alloc] initWithDataPointer:out
-                                                           shape:shape_array(fused_out_shape_)
-                                                        dataType:MLMultiArrayDataTypeFloat16
-                                                         strides:row_major_strides(fused_out_shape_)
-                                                     deallocator:nil
-                                                           error:&err];
-    if (!ya)
-      throw std::runtime_error(std::string("wl fused output wrap failed: ") +
-                               (err.localizedDescription ? err.localizedDescription.UTF8String : "?"));
-    NSString* on = [NSString stringWithUTF8String:fused_out_name_.c_str()];
+    NSMutableDictionary* backings = [NSMutableDictionary dictionary];
+    std::vector<NSString*> out_names;
+    for (size_t j = 0; j < fused_outs_.size(); ++j) {
+      const WLTensor& t = fused_outs_[j];
+      NSString* nm = [NSString stringWithUTF8String:t.name.c_str()];
+      out_names.push_back(nm);
+      MLMultiArray* ya = [[MLMultiArray alloc] initWithDataPointer:out_ptrs[j]
+                                                             shape:shape_array(t.shape)
+                                                          dataType:(t.int8 ? MLMultiArrayDataTypeInt8
+                                                                             : MLMultiArrayDataTypeFloat16)
+                                                           strides:row_major_strides(t.shape)
+                                                       deallocator:nil
+                                                             error:&err];
+      if (!ya)
+        throw std::runtime_error(std::string("wl fused output wrap failed: ") + t.name + ": " +
+                                 (err.localizedDescription ? err.localizedDescription.UTF8String : "?"));
+      backings[nm] = ya;
+    }
     MLDictionaryFeatureProvider* in = [[MLDictionaryFeatureProvider alloc] initWithDictionary:d error:&err];
     if (!in) throw std::runtime_error("wl fused provider failed");
     MLPredictionOptions* opts = [[MLPredictionOptions alloc] init];
-    opts.outputBackings = @{on : ya};
+    opts.outputBackings = backings;
     id<MLFeatureProvider> res = [impl_->model predictionFromFeatures:in options:opts error:&err];
     if (!res)
       throw std::runtime_error("wl fused predict failed: " +
                                std::string(err.localizedDescription.UTF8String));
-    MLMultiArray* got = [res featureValueForName:on].multiArrayValue;
-    if (got.dataPointer != out) {  // backing ignored: the caller would read a stale buffer
-      copybacks_.fetch_add(1, std::memory_order_relaxed);
-      const int rank = (int)got.shape.count;
-      std::vector<long> gs(rank), es(rank);
-      long total = 1;
-      for (int i = rank - 1; i >= 0; --i) {
-        gs[i] = total;
-        total *= got.shape[i].longValue;
-      }
-      for (int i = 0; i < rank; ++i) es[i] = got.strides[i].longValue;
-      const uint16_t* src = static_cast<const uint16_t*>(got.dataPointer);
-      uint16_t* dst = static_cast<uint16_t*>(out);
-      std::vector<int> idx(rank, 0);
-      for (long n = 0; n < total; ++n) {  // odometer, in case Core ML returns permuted strides
-        long so = 0, dd = 0;
-        for (int i = 0; i < rank; ++i) {
-          so += (long)idx[i] * es[i];
-          dd += (long)idx[i] * gs[i];
-        }
-        dst[dd] = src[so];
-        for (int i = rank - 1; i >= 0; --i) {
-          if (++idx[i] < got.shape[i].intValue) break;
-          idx[i] = 0;
-        }
+    for (size_t j = 0; j < fused_outs_.size(); ++j) {
+      MLMultiArray* got = [res featureValueForName:out_names[j]].multiArrayValue;
+      if (!got) throw std::runtime_error(std::string("wl fused: no output named ") + fused_outs_[j].name);
+      if (got.dataPointer != out_ptrs[j]) {  // backing ignored: the caller would read a stale buffer
+        copybacks_.fetch_add(1, std::memory_order_relaxed);
+        copy_strided(got, out_ptrs[j]);
       }
     }
   }

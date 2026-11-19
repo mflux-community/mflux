@@ -58,7 +58,9 @@ for scale_mode in ("weight", "output"):
         spec = MlpSpec(mpad=M, scale_mode=scale_mode, w2_scale=w2_scale)
         w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
         gain = w.gain.astype(np.float64)  # per-channel [D]: a mean would hide a scale bug
-        yb = (np.asarray(bb.run(spec, w, x_np), dtype=np.float64).reshape(-1, DIM) * gain).reshape(-1)
+        y_prog, h_max = bb.run(spec, w, x_np)
+        assert h_max is None, "this script measures the pre-range-fix program"
+        yb = (np.asarray(y_prog, dtype=np.float64).reshape(-1, DIM) * gain).reshape(-1)
         mirror, _ = reference_fp16(x_np, {"w1": w.w1, "w3": w.w3, "w2": w.w2}, w.scales, spec)
         ym = (mirror.astype(np.float64).reshape(-1, DIM) * gain).reshape(-1)
         for tag, y, other in (

@@ -73,8 +73,9 @@ model = ext.wl_fused_load(
     ["x_rows", "w1", "w3", "w2", "s1", "s3", "s2"],
     [[1, 2048, DIM], [HIDDEN, DIM], [HIDDEN, DIM], [DIM, HIDDEN], [HIDDEN], [HIDDEN], [DIM]],
     [0, 1, 1, 1, 0, 0, 0],
-    "y_rows",
-    [1, 2048, DIM],
+    ["y_rows"],
+    [[1, 2048, DIM]],
+    [0],
 )
 out = np.zeros((1, 2048, DIM), dtype=np.float16)
 ptrs = [
@@ -97,9 +98,9 @@ print("\nmacmon keys:", Power().keys())
 
 with Power() as p:
     base = len(p.samples)
-    burst("warm", lambda: ext.wl_fused_predict(model, ptrs, out.ctypes.data), 3)
+    burst("warm", lambda: ext.wl_fused_predict(model, ptrs, [out.ctypes.data]), 3)
     gap = len(p.samples)
-    burst("fused MLP M=2048", lambda: ext.wl_fused_predict(model, ptrs, out.ctypes.data), 25)
+    burst("fused MLP M=2048", lambda: ext.wl_fused_predict(model, ptrs, [out.ctypes.data]), 25)
     end = len(p.samples)
 
 print("\ncopybacks:", model.copybacks())

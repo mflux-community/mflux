@@ -352,23 +352,30 @@ NB_MODULE(_ane_linear, m) {
       "wl_fused_load",
       [](const std::string& path, const std::string& compiled_dir, const std::vector<std::string>& names,
          const std::vector<std::vector<int64_t>>& shapes, const std::vector<int>& int8s,
-         const std::string& out_name, const std::vector<int64_t>& out_shape) {
+         const std::vector<std::string>& out_names, const std::vector<std::vector<int64_t>>& out_shapes,
+         const std::vector<int>& out_int8s) {
         auto model = std::make_shared<WLModel>(path, compiled_dir, 0, 0, 0);
-        std::vector<WLTensor> ins;
+        std::vector<WLTensor> ins, outs;
         for (size_t k = 0; k < names.size(); ++k)
           ins.push_back(WLTensor{names[k], shapes[k], int8s[k] != 0});
-        model->set_fused(ins, out_name, out_shape);
+        for (size_t j = 0; j < out_names.size(); ++j)
+          outs.push_back(WLTensor{out_names[j], out_shapes[j], out_int8s[j] != 0});
+        model->set_fused(ins, outs);
         return model;
       },
       nb::arg("path"), nb::arg("compiled_dir"), nb::arg("names"), nb::arg("shapes"), nb::arg("int8s"),
-      nb::arg("out_name"), nb::arg("out_shape"));
+      nb::arg("out_names"), nb::arg("out_shapes"), nb::arg("out_int8s"));
   m.def(
       "wl_fused_predict",
-      [](std::shared_ptr<WLModel> model, const std::vector<uintptr_t>& in_ptrs, uintptr_t out) {
+      [](std::shared_ptr<WLModel> model, const std::vector<uintptr_t>& in_ptrs,
+         const std::vector<uintptr_t>& out_ptrs) {
         std::vector<const void*> p;
+        std::vector<void*> o;
         p.reserve(in_ptrs.size());
+        o.reserve(out_ptrs.size());
         for (uintptr_t v : in_ptrs) p.push_back(reinterpret_cast<const void*>(v));
-        model->predict_fused(p, reinterpret_cast<void*>(out));
+        for (uintptr_t v : out_ptrs) o.push_back(reinterpret_cast<void*>(v));
+        model->predict_fused(p, o);
       },
-      nb::arg("model"), nb::arg("in_ptrs"), nb::arg("out"), nb::call_guard<nb::gil_scoped_release>());
+      nb::arg("model"), nb::arg("in_ptrs"), nb::arg("out_ptrs"), nb::call_guard<nb::gil_scoped_release>());
 }

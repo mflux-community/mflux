@@ -80,11 +80,12 @@ class WLModel {
   ~WLModel();
   // x: int8 contiguous [K, Mpad] (tokens last); w: int8 [N, K]; out: fp16 [N, Mpad].
   void predict(const void* x, const void* w, void* out);
-  // Fused form (3d): register the program's inputs and its output name/shape once, then call
-  // with the payload pointers. in_ptrs is parallel to the vector passed to set_fused.
-  void set_fused(const std::vector<WLTensor>& ins, const std::string& out_name,
-                 const std::vector<int64_t>& out_shape);
-  void predict_fused(const std::vector<const void*>& in_ptrs, void* out);
+  // Fused form (3d): register the program's inputs and outputs once, then call with the payload
+  // pointers. in_ptrs parallels the inputs passed to set_fused, out_ptrs parallels the outputs.
+  // >= 1 output is supported: the a+b range fix returns the SwiGLU row max as a second output so
+  // the fp32 GPU epilogue can restore it -- multiplying it back inside the program overflows fp16.
+  void set_fused(const std::vector<WLTensor>& ins, const std::vector<WLTensor>& outs);
+  void predict_fused(const std::vector<const void*>& in_ptrs, const std::vector<void*>& out_ptrs);
   int Mpad, N, K;
   std::string last_error() {
     std::lock_guard<std::mutex> g(mu_);
@@ -105,7 +106,6 @@ class WLModel {
   std::string error_;
   std::atomic<long> copybacks_{0};
   std::vector<WLTensor> fused_ins_;
-  std::string fused_out_name_;
-  std::vector<int64_t> fused_out_shape_;
+  std::vector<WLTensor> fused_outs_;
   std::unique_ptr<AneModelImpl> impl_;
 };

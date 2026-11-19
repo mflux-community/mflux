@@ -181,10 +181,10 @@ def run(model, names, shapes, int8s, cols, feed, tag):
 
         shutil.rmtree(pkg)
     model.save(str(pkg))
-    mc = ext.wl_fused_load(str(pkg), str(COMPILED / tag), names, shapes, int8s, "y_rows", [1, M, cols])
+    mc = ext.wl_fused_load(str(pkg), str(COMPILED / tag), names, shapes, int8s, ["y_rows"], [[1, M, cols]], [0])
     out = np.zeros((1, M, cols), dtype=np.float16)
     ins = [np.ascontiguousarray(feed[n]) for n in names]
-    ext.wl_fused_predict(mc, [a.ctypes.data for a in ins], out.ctypes.data)
+    ext.wl_fused_predict(mc, [a.ctypes.data for a in ins], [out.ctypes.data])
     if e := mc.last_error():
         raise RuntimeError(e)
     cb = mc.copybacks()
