@@ -143,10 +143,10 @@ def make_inputs():
     return x, mask, freqs, t_emb
 
 
-def make_backend(name: str, cache: Path) -> AneBackend:
+def make_backend(name: str, cache: Path, shared_surfaces: bool = False) -> AneBackend:
     return {
         "coremltools": lambda: CoreMLToolsBackend(cache),
-        "bridge": lambda: BridgeBackend(cache),
+        "bridge": lambda: BridgeBackend(cache, shared_surfaces=shared_surfaces),
         "mirror": MirrorBackend,
     }[name]()
 
@@ -307,6 +307,14 @@ def main():
     ap.add_argument("--cache", default=str(Path(__file__).parent / "cache"))
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
     ap.add_argument("--lock-wait-s", type=int, default=3600, help="how long to wait for BENCH.lock on timed runs")
+    ap.add_argument(
+        "--weight-surfaces",
+        choices=["per-block", "shared"],
+        default="per-block",
+        help="per-block wraps each block's own weight buffers (zero copy, but the kernel wires ~118 MB"
+        " per block); shared keeps ONE surface set and blits weights in per call (~5.1 ms), which holds"
+        " wired memory flat. The blit runs inside the timed region, so shared timings include it.",
+    )
     args = ap.parse_args()
 
     # Timed runs take the cooperative BENCH.lock that stages 3a-3c already use, so two agents
@@ -321,7 +329,7 @@ def main():
     else:
         gate = contextlib.nullcontext()
 
-    backend = make_backend(args.backend, Path(args.cache))
+    backend = make_backend(args.backend, Path(args.cache), shared_surfaces=args.weight_surfaces == "shared")
     if timed and backend.weights_copied:
         print(
             "WARNING: backend copies weights per call (or is not the ANE): timings are NOT gate-valid", file=sys.stderr

@@ -470,6 +470,46 @@ and 0.99980 through the ANE against q8's 0.99993, so the ANE still loses the gat
 §5f establishes is *why* the worst rows are as bad as they are, and that a headroom change would
 recover the saturated cases rather than needing an ANE rewrite.
 
+## 5g. Item 2: the shared weight surface does NOT fix wired memory (my hypothesis was wrong)
+
+Step 1 (`probe_wired_surfaces.py`) measured how the kernel charges for weight buffers, one program,
+synthetic weights, Mpad=2048:
+
+| arm | k | wired Δ | host int8 GB | ms/call |
+| --- | --- | --- | --- | --- |
+| distinct surfaces | 1 → 34 | **+0.57 GB** | 0.66 | 45.7 |
+| one reused surface | 18 weight sets | +0.17 GB | 0.15 (plus 0.12 copy) | 47.1, of which **5.1 copy** |
+
+So there is no per-model wiring multiple on this path — wired rises roughly **1:1 with the int8
+bytes actually passed**. That explained T4's +4.86 GB arithmetically (34 blocks × 118 MB ≈ 4.0 GB)
+and suggested a shared surface would fix it. I implemented `--weight-surfaces shared` (one surface
+set, weights blitted in per call, serialized by a lock because each `RowSplitFFN` owns its own worker
+thread), verified it produces **bit-identical** output to per-block, and re-ran T4.
+
+Step 2 result — the fix does not work as implemented:
+
+| T4 run | swap during run | wired Δ | 34-block speedup |
+| --- | --- | --- | --- |
+| per-block (`ce1cb694`) | 0.25 → 0.25 MB | +4.86 GB | 1.2649× |
+| shared (`e323e8ac`) | 1160 → **4221 MB** | **+6.09 GB** | 1.1913× |
+
+**Why it failed, stated plainly:** step 1 only measured the cost of *passing* 34 distinct buffers.
+It did not test whether the 34 per-block int8 copies stop existing — and they do not.
+`prepare_block_weights` still allocates 34 × 118 MB and `RowSplitFFN` still holds them, so the shared
+surface added a 35th copy plus a 5.1 ms per-call memcpy and saved nothing. I got the cost without the
+benefit. The probe was a valid measurement of a narrower question than the conclusion I drew from it.
+
+The real fix is therefore the one §5 item 2 already names: **do not hold two representations**. Have
+the GPU read the int8 codes (dequantising on GPU) so one set of weight bytes serves both engines.
+That removes ~236 MB/block of bf16 residency rather than adding another copy.
+
+**Timing caveat:** the shared run is contaminated. Swap grew ~3 GB during it, which per the
+stage's own discipline invalidates timings, and one rung discarded a run. So 1.1913× is **not** a
+shared-versus-per-block speed comparison; the machine had accumulated swap from earlier
+real-weight runs and macOS does not release it without a reboot. The per-block 1.2649× from
+§5e remains the clean timing number, and no further T4 timing work is meaningful until after a
+reboot.
+
 ## 6. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from

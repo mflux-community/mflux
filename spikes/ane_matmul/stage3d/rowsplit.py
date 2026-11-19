@@ -10,6 +10,7 @@ Everything except the FFN stays as in ZImageTransformerBlock. Flow per block:
 
 from __future__ import annotations
 
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -126,11 +127,16 @@ class BridgeBackend(AneBackend):
     would not even be measured.
     """
 
-    def __init__(self, cache_dir: str | Path, compiled_dir: str | Path | None = None):
+    def __init__(self, cache_dir: str | Path, compiled_dir: str | Path | None = None, shared_surfaces: bool = False):
         import sys
 
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # False (default) wraps each block's own host weight buffers, which is zero-copy but makes
+        # the kernel wire those bytes: probe_wired_surfaces measured wired growth ~1:1 with the int8
+        # weight bytes, so 34 blocks cost ~4 GB. True keeps ONE surface set per shape and blits the
+        # block's weights in per call: wired stays flat, at ~5.1 ms/call of memcpy.
+        self.shared_surfaces = shared_surfaces
         # Durable compile cache, never /tmp: macOS deletes /tmp and the compiled .mlmodelc is
         # the slow part to rebuild (the rule stage 3c learned, cf. aneprobe-tmp-cache memory).
         self.compiled_root = Path(compiled_dir or (Path.home() / "Library/Caches/mflux/ane_wl3d"))
@@ -141,6 +147,8 @@ class BridgeBackend(AneBackend):
         self.ext = ext
         self._models: dict[str, object] = {}
         self._outs: dict[str, np.ndarray] = {}
+        self._surfaces: list[np.ndarray] | None = None
+        self._surface_lock = threading.Lock()
         self.plan_reports: dict[str, str] = {}
 
     def _prepare(self, spec: MlpSpec):
@@ -171,12 +179,40 @@ class BridgeBackend(AneBackend):
         self._outs[spec.name] = out
         return model, out
 
+    def _ensure_surfaces(self, weights):
+        """One weight surface set for every block, so the kernel wires ~118 MB once, not 34 times."""
+        if self._surfaces is None:
+            self._surfaces = [
+                np.empty_like(weights.w1),
+                np.empty_like(weights.w3),
+                np.empty_like(weights.w2),
+                np.empty_like(weights.scales["s1"]),
+                np.empty_like(weights.scales["s3"]),
+                np.empty_like(weights.scales["s2"]),
+            ]
+        for dst, src in zip(
+            self._surfaces,
+            (weights.w1, weights.w3, weights.w2, weights.scales["s1"], weights.scales["s3"], weights.scales["s2"]),
+            strict=True,
+        ):
+            np.copyto(dst, src)
+        return self._surfaces
+
     def run(self, spec, weights, x):
         model, out = self._prepare(spec)
+        x_in = np.ascontiguousarray(x, dtype=np.float16)
         # No dtype is forced on the weights: prepare_block_weights already produced int8 codes or
         # fp16 according to spec.weight_dtype, and the loader declares the matching type.
+        if self.shared_surfaces:
+            # One surface set is shared by every block, and each RowSplitFFN owns its own worker
+            # thread, so a second block could blit over the first one's weights mid-call. Inside a
+            # chain that cannot happen, but the cost of not relying on it is an uncontended lock.
+            with self._surface_lock:
+                ins = [x_in, *self._ensure_surfaces(weights)]
+                self.ext.wl_fused_predict(model, [a.ctypes.data for a in ins], out.ctypes.data)
+            return out
         ins = [
-            np.ascontiguousarray(x, dtype=np.float16),
+            x_in,
             np.ascontiguousarray(weights.w1),
             np.ascontiguousarray(weights.w3),
             np.ascontiguousarray(weights.w2),
