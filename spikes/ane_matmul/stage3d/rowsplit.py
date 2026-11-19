@@ -151,12 +151,15 @@ class BridgeBackend(AneBackend):
         if not pkg.exists():
             convert_to_mlpackage(spec, str(self.cache_dir))
         compiled = self.compiled_root / spec.name
+        # The weight dtype must be declared, not assumed: build_mil_program emits fp16 weight
+        # inputs under --weight-dtype fp16, and wrapping those as int8 mislabels the buffer.
+        w_i8 = 1 if spec.weight_dtype == "int8" else 0
         model = self.ext.wl_fused_load(
             str(pkg),
             str(compiled),
             ["x_rows", "w1", "w3", "w2", "s1", "s3", "s2"],
             [[1, M, D], [H, D], [H, D], [D, H], [H], [H], [D]],
-            [0, 1, 1, 1, 0, 0, 0],
+            [0, w_i8, w_i8, w_i8, 0, 0, 0],
             "y_rows",
             [1, M, D],
         )
@@ -170,11 +173,13 @@ class BridgeBackend(AneBackend):
 
     def run(self, spec, weights, x):
         model, out = self._prepare(spec)
+        # No dtype is forced on the weights: prepare_block_weights already produced int8 codes or
+        # fp16 according to spec.weight_dtype, and the loader declares the matching type.
         ins = [
             np.ascontiguousarray(x, dtype=np.float16),
-            np.ascontiguousarray(weights.w1, dtype=np.int8),
-            np.ascontiguousarray(weights.w3, dtype=np.int8),
-            np.ascontiguousarray(weights.w2, dtype=np.int8),
+            np.ascontiguousarray(weights.w1),
+            np.ascontiguousarray(weights.w3),
+            np.ascontiguousarray(weights.w2),
             np.ascontiguousarray(weights.scales["s1"], dtype=np.float16),
             np.ascontiguousarray(weights.scales["s3"], dtype=np.float16),
             np.ascontiguousarray(weights.scales["s2"], dtype=np.float16),

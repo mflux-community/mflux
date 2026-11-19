@@ -1,0 +1,87 @@
+{
+  "test": "t1",
+  "args": {
+    "test": "t1",
+    "backend": "bridge",
+    "shares": [
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.5
+    ],
+    "repeats": 5,
+    "weight_dtype": "fp16",
+    "scale_mode": "output",
+    "w2_scale": "program",
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_wait_s": 3600
+  },
+  "weights_copied": false,
+  "swap_mb_start": 0.25,
+  "wired_gb_start": 3.597205504,
+  "t1": [
+    {
+      "share": 0.15,
+      "mpad": 512,
+      "cosine": 0.9587168010039762,
+      "relerr": 0.28448379678261826,
+      "gain_ratio": 0.9914141133607771,
+      "nonfinite": 0,
+      "max_abs_y": 0.5185546875,
+      "pass": false
+    },
+    {
+      "share": 0.2,
+      "mpad": 768,
+      "cosine": 0.9587236368711601,
+      "relerr": 0.2844562867275712,
+      "gain_ratio": 0.9915727552681806,
+      "nonfinite": 0,
+      "max_abs_y": 0.5185546875,
+      "pass": false
+    },
+    {
+      "share": 0.25,
+      "mpad": 1024,
+      "cosine": 0.9587394980231625,
+      "relerr": 0.2844038348888606,
+      "gain_ratio": 0.9915367615513854,
+      "nonfinite": 0,
+      "max_abs_y": 0.5185546875,
+      "pass": false
+    },
+    {
+      "share": 0.3,
+      "mpad": 1280,
+      "cosine": 0.9587211732401695,
+      "relerr": 0.2844646880461281,
+      "gain_ratio": 0.9915692223107984,
+      "nonfinite": 0,
+      "max_abs_y": 0.521484375,
+      "pass": false
+    },
+    {
+      "share": 0.5,
+      "mpad": 2048,
+      "cosine": 0.9586050270959824,
+      "relerr": 0.284854073357309,
+      "gain_ratio": 0.9916317249573059,
+      "nonfinite": 0,
+      "max_abs_y": 0.521484375,
+      "pass": false
+    }
+  ],
+  "compute_plan": {
+    "mlp_m512_fp16_output_w2program_k1x4": "preferred devices: {'const/none': 30, 'MLNeuralEngineComputeDevice': 25}; non-ANE ops: none",
+    "mlp_m768_fp16_output_w2program_k1x4": "preferred devices: {'const/none': 30, 'MLNeuralEngineComputeDevice': 25}; non-ANE ops: none",
+    "mlp_m1024_fp16_output_w2program_k1x4": "preferred devices: {'const/none': 30, 'MLNeuralEngineComputeDevice': 25}; non-ANE ops: none",
+    "mlp_m1280_fp16_output_w2program_k1x4": "preferred devices: {'const/none': 30, 'MLNeuralEngineComputeDevice': 25}; non-ANE ops: none",
+    "mlp_m2048_fp16_output_w2program_k1x4": "preferred devices: {'const/none': 30, 'MLNeuralEngineComputeDevice': 25}; non-ANE ops: none"
+  },
+  "swap_mb_end": 0.25,
+  "wired_gb_end": 5.542559744,
+  "peak_rss_gb": 3.470327808,
+  "commit": "f4010249"
+}

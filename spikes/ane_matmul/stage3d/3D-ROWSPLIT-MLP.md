@@ -5,9 +5,11 @@ but two gates fail.** A row-split MLP inside a real chained step is **1.265× fa
 and the win *grows* with ladder size (1.160× @8, 1.185× @16, 1.265× @34) — the opposite of Stage
 3c, where the block win flattened to zero at step level. So the overlap 3c said needed a native
 async primitive is reachable with a worker thread plus a GIL-released bridge call.
-It is not a GO: **T1 accuracy fails** (cos 0.99980 vs the 0.9999 gate, in both scale modes, with the
-intended math at 0.999967 — the shortfall is the ANE's own execution), and **T4 wired memory fails**
-(+4.86 GB against a +1 GB allowance) for a structural reason a row split cannot design away.
+It is not a GO: **T1 accuracy fails** (cos 0.99980 vs the 0.9999 gate, in both scale modes, while the
+intended math reaches 0.999967 — the shortfall is the ANE's own execution, and probes A/B rule out
+quantisation, dtype, K-chunking and every individual boundary; what remains is the magnitude of the
+weight operand at the matmul, §5c), and **T4 wired memory fails** (+4.86 GB against a +1 GB
+allowance) for a structural reason a row split cannot design away.
 
 Machine: M4 Max 36 GB, macOS 27.2.1. Worktree `~/MFlux/mflux-ane-stage3`, branch
 `experiment/zit-on-ane-stage3d` off `experiment/zit-on-ane-stage3` (`aba76b8d`); spike code
@@ -232,13 +234,16 @@ step size. No `MTLSharedEvent` primitive was needed to get overlap. Two things b
 are independent:
 
 1. **Accuracy (T1).** cos 0.99980 vs a 0.9999 gate. The host mirror of the same program reaches
-   0.999967, so the gap is ANE execution, not int8. Cheapest discriminating experiment: T1 with
-   `--weight-dtype fp16`, which removes quantisation entirely — one run, and it separates "the ANE
-   mishandles this graph shape" from "quantisation interacts badly with the ANE". Cost if chosen:
-   fp16 weights double the weight bytes to 236 MB/block (~8 GB host) and would likely raise the
-   fixed ~8.9 ms/call, so it is a speed-for-accuracy trade, not a free fix. The 24% deviation in
-   `weight` mode also deserves one focused probe with `a`, `b` and `h` returned as extra outputs —
-   that pinpoints where the ANE diverges, and it is the single most informative unrun measurement.
+   0.999967, so the gap is ANE execution, not int8. Probes A and B (§5b, §5c) narrowed it
+   considerably: each boundary `a`/`b`/`h` is accurate on its own; `k2_chunks` 1/2/4 are identical;
+   quantisation is irrelevant, because fp16 weights read 0.97127 in weight mode (same as int8) and
+   **0.95872 in output mode, which is worse than int8's 0.99980**. What remains is that the error
+   tracks the magnitude of the weight operand fed to the matmul, not its dtype and not where the
+   scale is applied. So `--weight-dtype fp16` is ruled out as a fix (it also doubles weight bytes to
+   236 MB/block), and the next experiment is a **magnitude sweep**: scale the weight operand by a
+   constant before the matmul and divide after, over 1/128, 1 and 128. If accuracy follows
+   magnitude, ship the int8 + output-scaled form, which is also the 1.7× faster mode, and the gap
+   left is 0.9998 against 0.9999.
 2. **Memory (T4 wired +4.86 GB).** Structural as written, but fixable by a design change: have the
    **GPU also consume the int8 codes** (dequantising on GPU) instead of keeping a bf16 copy, so one
    weight representation serves both engines. That removes ~236 MB/block of duplicate residency
@@ -251,6 +256,89 @@ are independent:
    harness alone costs ~6 GB of wired memory at 34 blocks.
 
 A follow-up spike should answer 1 and 2 before any step-level integration work.
+
+## 5b. Probe A: where inside the graph the ANE diverges (commit `f4010249`)
+
+T1 fails, but §1 alone cannot say whether int8 quantisation or ANE execution causes it. Probe A
+runs each graph boundary as its own single-output program through the bridge, and compares the
+production output against both the bf16 MLX module (what T1 gates on) and exact fp32.
+
+| boundary | cos vs exact fp32 |
+| --- | --- |
+| `a` = xW1ᵀ | 0.999963 |
+| `b` = xW3ᵀ (returned as b/32) | 0.999962 |
+| `h` = silu(a)·b/32 | 0.999889 |
+| `y` = hW2ᵀ, k2_chunks = 1 / 2 / 4 | 0.999535 / 0.999535 / 0.999535 |
+
+Four suspects are cleared, with `copybacks=0` throughout:
+
+- **SiLU and the SwiGLU multiply are accurate.** The whole front half of the graph is fine on the ANE.
+- **The 4-way K accumulation is not the cause.** 1, 2 and 4 chunks agree to the last digit.
+- **T1's bf16 reference is not the cause.** bf16 module vs exact fp32 = cos 0.999990, relerr 0.0044.
+- **Scale is not the cause.** Weight mode reads gain 0.9969 — the 128× bug is gone.
+
+The failure is therefore in the ANE executing the graph, and it depends on where the per-row scale
+is applied. Measured against exact fp32 with the corrected reference:
+
+| mode | bridge vs fp32 | relerr | mirror vs fp32 | bf16 vs fp32 |
+| --- | --- | --- | --- | --- |
+| `weight` | **cos 0.970739**, gain 0.9969 | 0.2402 | cos 0.999977, 0.0069 | cos 0.999990, 0.0044 |
+| `output` | **cos 0.999812**, gain 1.0008 | 0.0194 | cos 0.999977, 0.0069 | cos 0.999990, 0.0044 |
+
+The host mirror of the same graph and the same weights reaches 0.999977. The ANE on the same
+program lands at 0.9708 (`weight`) or 0.99981 (`output`). So the int8 representation is not the
+blocker, and probe B (next section) removes it from the suspect list outright.
+
+One result I could not reconcile, recorded rather than explained: probe A's own `y` arm reaches cos
+0.99954 in weight mode, while the production graph reaches 0.9707 against the same kind of
+reference. The op sequences look operationally identical, so the remaining variable is the data —
+probe A uses synthetic normal weights and an fp16 activation, the production path uses bf16
+initialised module weights and a bf16-quantised activation. Not established.
+
+Probe A also found a Core ML constraint worth recording: a program must consume every input it
+declares. Returning `a` while still declaring `w3` makes coremltools insert a placeholder
+`identity` on the int8 weight, and compilation fails with "Param 'x' has incorrect type for
+operator 'identity'". Any future boundary-splitting probe must declare only what it uses.
+
+## 5c. Probe B: quantisation is not the cause either
+
+B was meant to separate quantisation from graph execution by re-running T1 with
+`--weight-dtype fp16`, where the weights enter as fp16 and no quantisation happens at all. Result
+(5 shares, Mpad 512–2048, `gain_ratio` near 1 and `nonfinite` 0 in every row):
+
+| weights | `weight` mode cos | `output` mode cos |
+| --- | --- | --- |
+| int8 | 0.97080 | **0.99980** |
+| fp16, no quantisation | 0.97127 | 0.95872 |
+
+Three conclusions, and the first one reverses what §5b claimed before this ran:
+
+1. **Quantisation is exonerated.** Weight mode reads 0.9713 with exact fp16 weights against 0.9708
+   with int8. The int8 codes are not producing the error.
+2. **fp16 weights are not a fix — they are worse.** In `output` mode, int8 scores 0.99980 and fp16
+   scores 0.95872, a 2.8% relative error. So "use fp16 to keep accuracy" is off the table, and it
+   would also double the weight bytes.
+3. **The failure tracks the magnitude of the weight operand presented to the matmul**, not its
+   dtype and not where the scale is applied:
+   - int8 `output`: operand is raw codes, magnitude ~±127 → cos 0.99980 (best).
+   - int8 `weight`: codes scaled by s_row inside the program, magnitude ~1e-2 → 0.97080.
+   - fp16 `weight`: weights scaled by 1.0 (a no-op multiply), magnitude ~1e-2 → 0.97127.
+   - fp16 `output`: same ~1e-2 operands → 0.95872.
+
+   The three arms with small-magnitude weight operands all land at 0.959–0.971. The one arm with
+   large-magnitude operands is an order of magnitude better.
+
+That is a **hypothesis from four measurements, not an established mechanism** — the two small-magnitude
+arms differ from each other by more than a rounding argument explains, and probe A already showed
+this probe's own `y` arm disagreeing with production. The confirming experiment is cheap and does
+not need another dtype: scale the weight operand by a constant before the matmul and divide after,
+sweeping the constant over 1/128, 1 and 128. If accuracy tracks magnitude rather than dtype, the
+row-split MLP should ship the `int8` + `output`-scaled form (which is also the 1.7× faster mode) and
+the accuracy gap left is 0.9998 against a 0.9999 gate.
+
+Probe B also required a real fix: `BridgeBackend` hard-coded int8 for the weight inputs, so
+`--weight-dtype fp16` would have mislabelled fp16 buffers to Core ML. It now derives the declared
+type from `spec.weight_dtype` and stops forcing a dtype on the weight arrays.
 
 ## 6. Commits
 
