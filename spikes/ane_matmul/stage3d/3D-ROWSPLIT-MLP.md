@@ -430,6 +430,46 @@ numpy mirror over real weights — if the mirror reproduces the failure, it is g
 headroom change could fix it; if the mirror stays accurate, it is ANE execution and no graph tweak
 will.
 
+## 5f. The mechanism: the program saturates fp16 on real weights, with no ANE involved
+
+`probe_real_range.py` runs the **numpy mirror only** — no Core ML, no ANE — over real weights, and
+prints the magnitude of each `w2` chunk partial sum against the fp16 ceiling of 65504. Blocks 0, 1, 5
+at g=1 and every block at g=4:
+
+| blk | g | max\|a\| | max\|h\| | max w2 chunk | chunk inf | mirror inf | mirror cos |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 1 | 121.1 | 316.2 | **65504.0** | 425 | 209,330 | **nan** |
+| 0 | 4 | 484.2 | 5060.0 | 65504.0 | 14,726,287 | 7,099,040 | nan |
+| 1 | 1 | 66.4 | 123.4 | 65344.0 | 5 | 34,636 | nan |
+| 5 | 1 | 61.1 | 138.6 | 65504.0 | 64 | 132,219 | nan |
+| 15 | 1 | 78.5 | 87.4 | 25,840.0 | 0 | 0 | 0.9999144 |
+| 29 | 1 | 69.9 | 84.2 | 18,976.0 | 0 | 0 | 0.9998002 |
+
+**So this is graph range design, not an ANE quirk.** The mirror overflows in pure numpy: real `h`
+reaches 300–5000, the `w2` matmul multiplies it by raw ±127 int8 codes, and a 2560-term partial sum
+lands on the fp16 ceiling. `FLOAT16_HEADROOM = 32` is inherited from the bf16 GPU path, where it only
+has to protect a bf16 accumulator; in fp16 it is one to two orders of magnitude too small. Blocks 15
+and 29 at g=1 stay under the ceiling and are accurate, which is the control: the failure tracks
+\|h\|, not block index.
+
+Two consequences that matter beyond this stage:
+
+1. **The ANE clamps instead of trapping.** The gate in §5e reported `nonfinite: 0` for every one of
+   its 90 rows, because Core ML returns values pinned at the fp16 ceiling rather than inf or NaN. So
+   the "no inf/NaN" condition in the original T1 gate is not evidence of range safety — a saturated
+   program passes it. The mirror, which is honest arithmetic, returns `nan` for exactly the rows the
+   ANE reported as clean-but-wrong. Any future gate must check output magnitude against the fp16
+   ceiling, not only finiteness.
+2. **The 128× bug from §5c was the same class of error**, and C's magnitude lead was groping at this.
+   The real fix is the one §5c's `INPUT_SHRINK` was reaching for: shrink `h` before the `w2` matmul
+   and fold that factor into `s2`, sized so `max|h| × 127 × sqrt(k_chunk)` stays well below 65504.
+   At the observed `h` of 5060 that means a factor near 4096, not 32.
+
+This does **not** overturn §5e's verdict. Even the clean blocks (15 and 29 at g=1) reach only 0.99991
+and 0.99980 through the ANE against q8's 0.99993, so the ANE still loses the gate on every row. What
+§5f establishes is *why* the worst rows are as bad as they are, and that a headroom change would
+recover the saturated cases rather than needing an ANE rewrite.
+
 ## 6. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from

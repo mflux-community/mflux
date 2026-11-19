@@ -57,7 +57,7 @@ base = mx.random.normal((1, S, DIM), key=mx.random.key(0))
 spec = MlpSpec(mpad=M, scale_mode="output")
 
 print(
-    f"{'blk':>4} {'g':>3} | {'max|a|':>9} {'max|h|':>9} {'max w2 chunk':>13} {'mirror inf':>11} "
+    f"{'blk':>4} {'g':>3} | {'max|a|':>9} {'max|h|':>9} {'max w2 chunk':>13} {'chunk inf':>10} {'mirror inf':>11} "
     f"{'mirror cos':>11} {'fp16 cap':>9}"
 )
 for i in (0, 1, 5, 15, 29):
@@ -87,23 +87,27 @@ for i in (0, 1, 5, 15, 29):
         b = (xq @ (q3.astype(np.float32) * 1.0).T).astype(np.float16) * sc["s3"]
         h = (a / (1.0 + np.exp(-a.astype(np.float32))) * (b / HEADROOM)).astype(np.float16)
         step = HIDDEN // spec.k2_chunks
-        chunk_peak = 0.0
+        chunk_peak, chunk_inf = 0.0, 0
         for k in range(spec.k2_chunks):
+            # h is (1, Mpad, HIDDEN): the K chunks run along axis 2. Slicing axis 1 here would cut
+            # rows, and with step=2560 > Mpad=2048 it returns empty arrays that fake a low peak.
             part = (
-                h[:, k * step : (k + 1) * step].astype(np.float32)
+                h[:, :, k * step : (k + 1) * step].astype(np.float32)
                 @ q2[:, k * step : (k + 1) * step].astype(np.float32).T
-            )
-            chunk_peak = max(chunk_peak, float(np.abs(part.astype(np.float16)).max()))
+            ).astype(np.float16)
+            chunk_peak = max(chunk_peak, float(np.abs(part[np.isfinite(part)]).max(initial=0.0)))
+            chunk_inf += int((~np.isfinite(part)).sum())
 
         y, stats = reference_fp16(xh, {"w1": q1, "w3": q3, "w2": q2}, sc, spec)
         y_restore = np.asarray(y, dtype=np.float32) * 32.0
+        ref_m = ref[:M]  # the program only runs rows [0, M); comparing against all S rows is a shape error
         cos = float(
-            (ref.ravel().astype(np.float64) @ y_restore.ravel().astype(np.float64))
-            / (np.linalg.norm(ref) * np.linalg.norm(y_restore))
+            (ref_m.ravel().astype(np.float64) @ y_restore.ravel().astype(np.float64))
+            / (np.linalg.norm(ref_m) * np.linalg.norm(y_restore))
         )
         print(
             f"{i:>4} {g:>3.0f} | {np.abs(a).max():>9.1f} {np.abs(h).max():>9.1f} {chunk_peak:>13.1f} "
-            f"{int((~np.isfinite(y)).sum()):>11} {cos:>11.7f} {65504.0:>9.0f}"
+            f"{chunk_inf:>10} {int((~np.isfinite(y)).sum()):>11} {cos:>11.7f} {65504.0:>9.0f}"
         )
     del ff, ref
 
