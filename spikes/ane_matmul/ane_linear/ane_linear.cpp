@@ -144,6 +144,51 @@ class AneMulti : public mx::Primitive {
   int n_in_;
 };
 
+// Weightless program primitive (Stage 3c). Inputs: xt int8 (K, Mpad)
+// contiguous tokens-last, wt int8 (N, K). Output: fp16 (N, Mpad) raw dot/K;
+// the real scales land in the MLX epilogue. Buffers wrap zero-copy.
+// Design follows ~/zCode_26_11/drawthings-ane-research/DRAWTHINGS-ANE-FINDINGS.md
+// (liuliu/ccv, BSD-3-Clause); written from that description, no source copied.
+class WLLinear : public mx::Primitive {
+ public:
+  WLLinear(mx::Stream s, std::shared_ptr<WLModel> m) : mx::Primitive(s), model_(std::move(m)) {}
+
+  void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override {
+    auto& out = outputs[0];
+    out.set_data(mx::allocator::malloc(out.nbytes()));
+    auto& enc = mx::cpu::get_command_encoder(stream());
+    enc.set_input_array(inputs[0]);
+    enc.set_input_array(inputs[1]);
+    enc.set_output_array(out);
+    auto model = model_;
+    enc.dispatch([model, xp = inputs[0].data<void>(), wp = inputs[1].data<void>(),
+                  op = out.data<void>()]() {
+      try {
+        model->predict(xp, wp, op);
+        model->clear_error();
+      } catch (const std::exception& e) {
+        model->set_error(e.what());
+        auto* h = static_cast<uint16_t*>(op);
+        std::fill(h, h + (size_t)model->N * model->Mpad, uint16_t(0x7E00));
+        throw;
+      }
+    });
+  }
+  void eval_gpu(const std::vector<mx::array>&, std::vector<mx::array>&) override {
+    throw std::runtime_error("wl_linear must run on the CPU stream");
+  }
+  const char* name() const override { return "WLLinear"; }
+  bool is_equivalent(const mx::Primitive& other) const override {
+    return model_.get() == static_cast<const WLLinear&>(other).model_.get();
+  }
+  std::vector<mx::Shape> output_shapes(const std::vector<mx::array>&) override {
+    return {{model_->N, model_->Mpad}};
+  }
+
+ private:
+  std::shared_ptr<WLModel> model_;
+};
+
 NB_MODULE(_ane_linear, m) {
   nb::class_<AneModel>(m, "AneModel")   // held by shared_ptr: no GIL needed when MLX frees it
       .def(nb::init<const std::string&, int, int, int>(), nb::arg("path"), nb::arg("tokens"), nb::arg("in_features"), nb::arg("out_features"))
@@ -272,4 +317,28 @@ NB_MODULE(_ane_linear, m) {
         return out;
       },
       nb::arg("xs"), nb::arg("toks"), nb::arg("model"), nb::arg("out_cols"));
+
+  nb::class_<WLModel>(m, "WLModel")
+      .def(nb::init<const std::string&, const std::string&, int, int, int>(),
+           nb::arg("path"), nb::arg("compiled_dir"), nb::arg("mpad"), nb::arg("n"), nb::arg("k"))
+      .def_ro("mpad", &WLModel::Mpad)
+      .def_ro("n", &WLModel::N)
+      .def_ro("k", &WLModel::K)
+      .def("last_error", &WLModel::last_error)
+      .def("copybacks", &WLModel::copybacks);
+  // wl_linear(xt int8 (K, Mpad), wt int8 (N, K), model) -> y fp16 (N, Mpad), values = dot/K.
+  m.def(
+      "wl_linear",
+      [](const mx::array& xt, const mx::array& wt, std::shared_ptr<WLModel> model) {
+        if (xt.dtype() != mx::int8 || xt.ndim() != 2 || xt.shape(1) != model->Mpad || xt.shape(0) != model->K)
+          throw std::invalid_argument("wl_linear: xt must be int8 [K, Mpad]");
+        if (wt.dtype() != mx::int8 || wt.ndim() != 2 || wt.shape(0) != model->N || wt.shape(1) != model->K)
+          throw std::invalid_argument("wl_linear: wt must be int8 [N, K]");
+        auto x = mx::contiguous(xt);
+        auto w = mx::contiguous(wt);
+        return mx::array(
+            {model->N, model->Mpad}, mx::float16,
+            std::make_shared<WLLinear>(mx::default_stream(mx::Device::cpu), model), {x, w});
+      },
+      nb::arg("xt"), nb::arg("wt"), nb::arg("model"));
 }

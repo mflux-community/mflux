@@ -217,3 +217,76 @@ void AneModel::predict_q8(const void* x_i8_cf, const float* tok, void* out, int 
     throw std::runtime_error(std::string("ObjC exception: ") + e.name.UTF8String + ": " + e.reason.UTF8String);
   }
 }
+
+// ---- WLModel: weightless programs (Stage 3c) ----
+// Design follows ~/zCode_26_11/drawthings-ane-research/DRAWTHINGS-ANE-FINDINGS.md
+// (liuliu/ccv, BSD-3-Clause); written from that description, no source copied.
+
+WLModel::WLModel(const std::string& path, const std::string& compiled_dir, int Mpad_, int N_, int K_)
+    : Mpad(Mpad_), N(N_), K(K_), impl_(new AneModelImpl) {
+  @autoreleasepool {
+    NSError* err = nil;
+    NSURL* url = nil;
+    NSString* cached = [NSString stringWithUTF8String:compiled_dir.c_str()];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:[cached stringByAppendingPathComponent:@"model.mil"]]) {
+      url = [NSURL fileURLWithPath:cached];  // persistent compile cache hit
+    } else {
+      NSURL* src = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+      url = [MLModel compileModelAtURL:src error:&err];
+      if (!url) throw std::runtime_error("wl compile failed: " + std::string(err.localizedDescription.UTF8String));
+      if (compiled_dir.size()) {
+        [[NSFileManager defaultManager] removeItemAtURL:[NSURL fileURLWithPath:cached] error:nil];
+        [[NSFileManager defaultManager] copyItemAtURL:url toURL:[NSURL fileURLWithPath:cached] error:&err];
+        if (!err) url = [NSURL fileURLWithPath:cached];  // load from the fresh copy
+      }
+    }
+    MLModelConfiguration* cfg = [[MLModelConfiguration alloc] init];
+    cfg.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
+    impl_->model = [MLModel modelWithContentsOfURL:url configuration:cfg error:&err];
+    if (!impl_->model) throw std::runtime_error("wl load failed: " + std::string(err.localizedDescription.UTF8String));
+  }
+}
+
+WLModel::~WLModel() = default;
+
+void WLModel::predict(const void* x, const void* w, void* out) {
+  @try {
+  @autoreleasepool {
+    NSError* err = nil;
+    MLMultiArray* xa = [[MLMultiArray alloc] initWithDataPointer:const_cast<void*>(x)
+                                                shape:@[@1, @1, @(K), @(Mpad)]
+                                             dataType:MLMultiArrayDataTypeInt8
+                                              strides:@[@(K * Mpad), @(K * Mpad), @(Mpad), @1]
+                                          deallocator:nil error:&err];
+    if (!xa) throw std::runtime_error("wl x wrap failed: " + std::string(err.localizedDescription.UTF8String));
+    MLMultiArray* wa = [[MLMultiArray alloc] initWithDataPointer:const_cast<void*>(w)
+                                                shape:@[@1, @1, @(N), @(K)]
+                                             dataType:MLMultiArrayDataTypeInt8
+                                              strides:@[@(N * K), @(N * K), @(K), @1]
+                                          deallocator:nil error:&err];
+    if (!wa) throw std::runtime_error("wl w wrap failed: " + std::string(err.localizedDescription.UTF8String));
+    MLMultiArray* ya = [[MLMultiArray alloc] initWithDataPointer:out
+                                                shape:@[@1, @1, @(N), @(Mpad)]
+                                             dataType:MLMultiArrayDataTypeFloat16
+                                              strides:@[@(N * Mpad), @(N * Mpad), @(Mpad), @1]
+                                          deallocator:nil error:&err];
+    if (!ya) throw std::runtime_error("wl y wrap failed: " + std::string(err.localizedDescription.UTF8String));
+    MLDictionaryFeatureProvider* in = [[MLDictionaryFeatureProvider alloc] initWithDictionary:@{
+      @"x" : [MLFeatureValue featureValueWithMultiArray:xa],
+      @"w" : [MLFeatureValue featureValueWithMultiArray:wa],
+    } error:&err];
+    if (!in) throw std::runtime_error("wl provider failed: " + std::string(err.localizedDescription.UTF8String));
+    MLPredictionOptions* opts = [[MLPredictionOptions alloc] init];
+    opts.outputBackings = @{@"y" : ya};
+    id<MLFeatureProvider> res = [impl_->model predictionFromFeatures:in options:opts error:&err];
+    if (!res) throw std::runtime_error("wl predict failed: " + std::string(err.localizedDescription.UTF8String));
+    MLMultiArray* got = [res featureValueForName:@"y"].multiArrayValue;
+    if (got.dataPointer != out) {  // backing ignored: copy back so the epilogue sees the values
+      copybacks_.fetch_add(1, std::memory_order_relaxed);
+      memcpy(out, got.dataPointer, (size_t)N * Mpad * 2);
+    }
+  }
+  } @catch (NSException* e) {
+    throw std::runtime_error(std::string("ObjC exception: ") + e.name.UTF8String + ": " + e.reason.UTF8String);
+  }
+}

@@ -56,3 +56,39 @@ class AneModel {
   std::vector<int> in_Is_, in_int8_;
   std::unique_ptr<AneModelImpl> impl_;
 };
+
+// Weightless program model (Stage 3c): one program per (Mpad, N, K), int8
+// weights and activations as graph inputs, constant 1/sqrt(K) dequantise
+// inside, real scales applied in the MLX epilogue. Design follows
+// ~/zCode_26_11/drawthings-ane-research/DRAWTHINGS-ANE-FINDINGS.md
+// (liuliu/ccv, BSD-3-Clause); written from that description, no source copied.
+// All buffers wrap MLX memory zero-copy, including int8.
+class WLModel {
+ public:
+  // path: .mlpackage. compiled_dir: optional persistent .mlmodelc cache,
+  // created on first load and reused after.
+  WLModel(const std::string& path, const std::string& compiled_dir, int Mpad, int N, int K);
+  ~WLModel();
+  // x: int8 contiguous [K, Mpad] (tokens last); w: int8 [N, K]; out: fp16 [N, Mpad].
+  void predict(const void* x, const void* w, void* out);
+  int Mpad, N, K;
+  std::string last_error() {
+    std::lock_guard<std::mutex> g(mu_);
+    return error_;
+  }
+  void clear_error() {
+    std::lock_guard<std::mutex> g(mu_);
+    error_.clear();
+  }
+  void set_error(const std::string& e) {
+    std::lock_guard<std::mutex> g(mu_);
+    error_ = e;
+  }
+  long copybacks() const { return copybacks_.load(); }
+
+ private:
+  std::mutex mu_;
+  std::string error_;
+  std::atomic<long> copybacks_{0};
+  std::unique_ptr<AneModelImpl> impl_;
+};

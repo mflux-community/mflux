@@ -240,6 +240,9 @@ class FeedForwardSplit(nn.Module):
         self.w2.order_hack = v
 
     def __call__(self, x):
+        # Fixed 2026-11-19: the old code pre-scaled h3 by 1/32 but SplitLinear._scale
+        # only restored the ANE columns, leaving the w2 GPU columns 32x small. The
+        # headroom now lives entirely inside w2 (pre-scale + restore on its own ANE
+        # columns), matching production FeedForward under bfloat16 stream.
         h1, h3 = self.w13(x)
-        hidden = nn.silu(h1) * (h3 * (1.0 / W2_HEADROOM))
-        return self.w2(hidden)
+        return self.w2(nn.silu(h1) * h3)

@@ -1,0 +1,9 @@
+{"phase": "start", "T": 4128, "Mpad": 4352, "timed": false}
+{"phase": "cos", "arm": "baked w8a8", "cos_vs_base": 0.9999946, "finite": true}
+{"phase": "cos", "arm": "weightless 0.50", "cos_vs_base": 0.9999948, "finite": true, "cos_vs_baked_w8a8": 0.9999973}
+{"phase": "cos", "arm": "weightless 0.45", "cos_vs_base": 0.9999945, "finite": true, "cos_vs_baked_w8a8": 0.9999967}
+{"phase": "cos", "arm": "weightless 0.40", "cos_vs_base": 0.9999941, "finite": true, "cos_vs_baked_w8a8": 0.9999962}
+{"phase": "cos", "arm": "weightless 0.35", "cos_vs_base": 0.9999937, "finite": true, "cos_vs_baked_w8a8": 0.9999957}
+{"phase": "cos", "arm": "weightless 0.30", "cos_vs_base": 0.9999934, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
+{"phase": "cos", "arm": "baked w8a16", "cos_vs_base": 0.9999981, "finite": true, "cos_vs_baked_w8a8": 0.9999951}
+{"phase": "cos_verdict", "pass_": true, "n": 5}
