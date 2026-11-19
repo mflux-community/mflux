@@ -1,0 +1,8 @@
+{"phase": "base", "eager_base_s": 5.163172999999915, "eager_all": [5.202429707999727, 5.163172999999915, 5.179842332999215], "compiled_base_s": 5.140903083000012, "compiled_all": [5.200883290999627, 5.315113583000311, 5.140903083000012]}
+{"phase": "split_build", "build_s": 9.5}
+{"phase": "split", "config": "eager_hack", "step_s": 5.327039708000484, "all": [6.043340000000171, 5.327039708000484, 5.328989499999807], "base_s": 5.163172999999915, "saved_s": -0.1638667080005689}
+{"phase": "split", "config": "eager_nohack", "step_s": 5.231129792000502, "all": [5.231129792000502, 5.267759207999916, 5.322243583000272], "base_s": 5.163172999999915, "saved_s": -0.06795679200058657}
+{"phase": "split", "config": "compiled_hack", "step_s": 5.261725874999684, "all": [5.332341416999952, 5.2848384159997295, 5.261725874999684], "base_s": 5.140903083000012, "saved_s": -0.12082279199967161}
+{"phase": "split", "config": "compiled_nohack", "step_s": 5.121288084000298, "all": [5.121288084000298, 5.1262643340005525, 5.614603832999819], "base_s": 5.140903083000012, "saved_s": 0.019614998999713862}
+{"phase": "gate", "eager_saved_s": -0.164, "compiled_saved_s": -0.121, "ratio": null, "verdict": "FAIL", "nohack_eager_saved": -0.068, "nohack_compiled_saved": 0.02}
+{"phase": "canary", "n": 278, "ane_power_med": 0.001694, "ane_power_max": 0.28486}

@@ -87,13 +87,13 @@ class SplitLinear(_AneMixin, nn.Module):
             y = mx.matmul(xp[:T], self.wg.T.astype(xp.dtype))
             return y.astype(x.dtype).reshape(*shp[:-1], self.wg.shape[0])
         xa, ya = self._launch_ane(xp)
-        parts = []
+        parts = [ya.astype(xp.dtype)]
         gx = self._gpu_input(xp, xa)
         if self.wg is not None:
-            parts.append(mx.matmul(gx, self.wg.T.astype(xp.dtype)).astype(mx.float32))
-        y = mx.concatenate([ya.astype(mx.float32)] + parts, axis=-1) if parts else ya.astype(mx.float32)
+            parts.append(mx.matmul(gx, self.wg.T.astype(xp.dtype)))
+        y = mx.concatenate(parts, axis=-1)
         if self._scale is not None:
-            y = y * self._scale
+            y = y * self._scale.astype(y.dtype)
         return y[:T].astype(x.dtype).reshape(*shp[:-1], self.oa + (0 if self.wg is None else self.wg.shape[0]))
 
 
@@ -135,16 +135,15 @@ class FusedSplit(_AneMixin, nn.Module):
         xa, ya = (None, None)
         if self.ane is not None:
             xa, ya = self._launch_ane(xp)
-            ya = ya.astype(mx.float32)
         outs = []
         for i, w in enumerate(self.gpu_w):
             parts = []
             a = self.a_p[i]
             if a > 0:
-                parts.append(ya[:, self.offs[i] : self.offs[i] + a])
+                parts.append(ya[:, self.offs[i] : self.offs[i] + a].astype(xp.dtype))
             if w is not None:
                 gx = self._gpu_input(xp, xa)
-                parts.append(mx.matmul(gx, w.T.astype(xp.dtype)).astype(mx.float32))
+                parts.append(mx.matmul(gx, w.T.astype(xp.dtype)))
             yf = parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=-1)
             outs.append(yf[:T].astype(x.dtype).reshape(*shp[:-1], a + (0 if w is None else w.shape[0])))
         return outs
