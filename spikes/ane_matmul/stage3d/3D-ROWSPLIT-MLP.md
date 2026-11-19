@@ -1,15 +1,17 @@
 # Stage 3d — row-split fused MLP on the ANE
 
-**Verdict: BORDERLINE — the timing premise is validated for the first time in this line of work,
-but two gates fail.** A row-split MLP inside a real chained step is **1.265× faster** at 34 blocks,
-and the win *grows* with ladder size (1.160× @8, 1.185× @16, 1.265× @34) — the opposite of Stage
-3c, where the block win flattened to zero at step level. So the overlap 3c said needed a native
-async primitive is reachable with a worker thread plus a GIL-released bridge call.
-It is not a GO: **T1 accuracy fails** (cos 0.99980 vs the 0.9999 gate, in both scale modes, while the
-intended math reaches 0.999967 — the shortfall is the ANE's own execution, and probes A/B/C rule out
-quantisation, dtype, K-chunking, activation precision and every individual boundary; the failure is
-confined to `weight` mode and depends on the weight distribution, §5d), and **T4 wired memory fails**
-(+4.86 GB against a +1 GB allowance) for a structural reason a row split cannot design away.
+**Verdict: NO-GO on real weights.** The gate Scriv set — ANE output mode ≥ mflux GPU q8, per block,
+trained Z-Image-Turbo weights — fails in **0 of 90 rows**: ANE full-block cosine min **0.7753**,
+median 0.9929, against q8 min 0.99992, median 0.99996 (§5e). Every number in §1–§5d was measured on
+synthetic **init-magnitude** weights (std 0.016); the real FFN weights are std **0.17** with outputs
+up to **2.6e6**, so §1–§5d stand as a graph and timing study, not as a shipping result.
+
+The timing premise did survive testing, and that is a real finding: a row-split MLP inside a chained
+step is **1.265× faster** at 34 blocks and the win *grows* with ladder size (1.160× @8, 1.185× @16,
+1.265× @34) — the opposite of Stage 3c, where the block win flattened to zero at step level. So the
+overlap 3c said needed a native async primitive is reachable with a worker thread plus a GIL-released
+bridge call. It is moot for shipping, because the accuracy cost of running the MLP on the ANE is an
+order of magnitude above the GPU q8 path already in mflux.
 
 Machine: M4 Max 36 GB, macOS 27.2.1. Worktree `~/MFlux/mflux-ane-stage3`, branch
 `experiment/zit-on-ane-stage3d` off `experiment/zit-on-ane-stage3` (`aba76b8d`); spike code
@@ -382,6 +384,51 @@ remains FAIL**. The failure is now a small residual (relerr 1.9%) rather than a 
 and the fast mode is also the accurate one, which is the useful outcome. Real trained weights are
 neither uniform-init nor normal, so the residual must be re-measured before any real-weight run —
 and if trained weights behave like the uniform-init cell in some layer, `weight` mode is unusable.
+
+## 5e. Real-weight gate: ANE output mode vs mflux GPU q8 (the decisive measurement)
+
+New gate, set by Scriv: **ANE output mode ≥ GPU q8**, per block, on trained weights. Weights come
+from `Tongyi-MAI/Z-Image-Turbo` — its transformer ships as **F32** across three shards totalling
+22.9 GB, so `real_weight_gate.py` reads three tensors per block through the safetensors index instead
+of loading 23 GB. Reference is mflux's production path: the F32 checkpoint cast to bf16, run through
+the real `FeedForward` (which shrinks the w3 branch by 32 and restores it in `to_stream`).
+
+Arms per block, same input: the row-split ANE at share 0.50 (rows `[0,2048)` in the fused int8
+program, `[2048,4224)` on GPU bf16) against `to_quantized(group_size=64, bits=8)`. Activation is
+`ffn_norm1(N(0,1)) * g` for g ∈ {1,2,4}, standing in for `1 + scale_mlp`; real modulation needs the
+text encoder and a denoising step, which this stage does not run, so g is a range, not a prediction.
+
+30 blocks × 3 g = 90 rows, 92 s, no nonfinite anywhere:
+
+| metric | ANE split | GPU q8 |
+| --- | --- | --- |
+| full-block cos | min **0.7753**, median 0.9929 | min 0.99992, median 0.99996 |
+| owned-rows cos | min 0.7063, median 0.9865 | min 0.99992, median 0.99996 |
+| ANE ≥ q8 | **0 of 90 rows**, on both bases | — |
+
+Sample rows (block, g, ANE cos vs q8 cos): 0/1 0.9855 vs 0.99999; 0/2 0.8928 vs 0.99999; 0/4
+**0.7921** vs 0.99999; 22/1 0.99989 vs 0.99992 (closest, still q8).
+
+**Why the synthetic work mislead us.** Real FFN weights are std **0.17** with per-row maxima spread
+w1 4.13–17.49 and w2 5.57–24.59, and real block outputs reach **2.6e6**. The synthetic probes used
+init-magnitude weights (std 0.016) whose outputs peaked near 0.5. So every synthetic accuracy number
+in §5b–§5d was measured in a regime roughly 10× smaller in weight magnitude and ~10^6–10^7× smaller
+in output magnitude than production. In `output` mode the w2 matmul multiplies **unscaled h** by raw
+±127 int8 codes, so its fp16 partial sums scale with the real activation magnitude and approach the
+65504 fp16 ceiling — a failure mode the synthetic data could not reach. The error also grows with g
+(block 0: 0.985 → 0.893 → 0.792), which is the signature of a range problem rather than a rounding
+problem, and early blocks are far worse than late ones.
+
+**Two of my earlier leads die here, and both died for the reason Scriv predicted.** The §5d
+"near-identical per-row scales" lead was an artifact of `nn.Linear` uniform init: real weights are
+the *most* spread of the three sets measured. And §5c's magnitude-of-weight-operand story is at best
+partial once real magnitudes enter.
+
+Not yet separated, and the one question worth another run: how much of the 0.9929 median is the
+program's range design versus the ANE executing it. `probe_real_range.py` answers that by running the
+numpy mirror over real weights — if the mirror reproduces the failure, it is graph design and a
+headroom change could fix it; if the mirror stays accurate, it is ANE execution and no graph tweak
+will.
 
 ## 6. Commits
 
