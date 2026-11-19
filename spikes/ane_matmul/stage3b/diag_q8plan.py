@@ -121,8 +121,29 @@ def build_c(enum=False):
 
 
 def build_d():
-    """Current failing production design: token-major int8 + EnumeratedShapes + 1-D tok."""
-    return AM.build_enum_q8pre(WQ, SC, ksplit=1, tiers=TIERS)
+    """Arm D: the token-major int8 + EnumeratedShapes boundary that fails the plan builder.
+
+    Built locally, not via AM.build_enum_q8pre: that builder now produces the FIXED
+    channels-first boundary, so the shipped diagnosis must keep its own copy of the
+    original failing graph.
+    """
+    tsym = get_new_symbol("tdt")
+
+    @mb.program(
+        input_specs=[mb.TensorSpec((tsym, I), dtype=types.int8), mb.TensorSpec((tsym,), dtype=types.fp16)],
+        opset_version=TARGET,
+    )
+    def prog(x, tok):
+        xcf = mb.reshape(x=mb.transpose(x=x, perm=[1, 0]), shape=[1, I, 1, -1])
+        xd = mb.dequantize(input=xcf, scale=np.float16(1.0))
+        wf = mb.constexpr_blockwise_shift_scale(data=WS, scale=S4, offset=None)
+        acc = mb.conv(x=xd, weight=wf, pad_type="valid")
+        y2 = mb.transpose(x=mb.reshape(x=acc, shape=[O_ANE, -1]), perm=[1, 0])
+        return mb.mul(x=y2, y=mb.expand_dims(x=tok, axes=[1]), name="y")
+
+    xt = ct.TensorType(name="x", shape=ct.EnumeratedShapes(shapes=[[t, I] for t in TIERS], default=[TIERS[0], I]))
+    tt = ct.TensorType(name="tok", shape=ct.EnumeratedShapes(shapes=[[t] for t in TIERS], default=[TIERS[0]]))
+    return prog, [xt, tt]
 
 
 def main():
