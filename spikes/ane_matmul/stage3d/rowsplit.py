@@ -368,8 +368,18 @@ class RowSplitBlock:
 
 
 def patch_transformer(transformer, backend: AneBackend, spec: MlpSpec, stats: CallStats):
-    """Swap every main layer for a RowSplitBlock (real-weights path; ask before running with real weights)."""
-    for i, layer in enumerate(transformer.layers):
+    """Swap every main layer's FFN for a RowSplitFFN. Real weights: ask before running.
+
+    Replaces the attribute rather than wrapping the block, because ZImageTransformerBlock calls
+    `self.feed_forward(self.ffn_norm1(x) * scale_mlp)` with one positional argument: the attribute
+    swap inherits the block's real forward, so the generation path cannot drift from
+    transformer_block.py the way a re-implementation would. Refiners are left untouched -- the
+    split is sized for the main sequence.
+
+    Returns the number of patched layers; one ANE worker thread is created per patched block.
+    """
+    for layer in transformer.layers:
         ff = layer.feed_forward
         w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
-        transformer.layers[i] = RowSplitBlock(layer, RowSplitFFN(ff, backend, spec, w, stats))
+        layer.feed_forward = RowSplitFFN(ff, backend, spec, w, stats)
+    return len(transformer.layers)
