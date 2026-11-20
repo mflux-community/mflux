@@ -7,7 +7,8 @@ Take every number and hash from tool output, never from memory.
 
 - Worktree: `/Users/ianscrivener/MFlux/mflux-ane-stage3`
 - Branch: `experiment/zit-on-ane-stage3d`
-- HEAD: `52b4b0dd` — *3d step 2 prep: --ane-mlp wiring ... weight-free smoke test*
+- HEAD: whatever commit added this file — `git log --oneline -1`. The last substantive commits are
+  `3f549884` (Step 1, accepted) and `52b4b0dd` (Step 2 wiring + smoke test).
 - Tree was clean at the time of writing. Verify: `git status --short` (empty = clean)
 - Nothing has been pushed. **Ask Scriv before any `git push`. First question to ask: "Do we run
   CodeRabbit locally first?"**
