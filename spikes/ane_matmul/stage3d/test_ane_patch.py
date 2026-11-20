@@ -178,3 +178,108 @@ def test_generate_wrapper_exposes_the_flag_and_parses(monkeypatch):
     assert args.ane_seq == 4224  # 1024x1024 token count the split is sized for
     assert args.ane_backend == "bridge"
     assert hasattr(args, "output"), "the wrapper saves via the CLI's own --output field"
+
+
+class _FakeProgram:
+    """Stands in for the bridge's wl_fused: consumes the ANE rows, returns the two outputs."""
+
+    def __init__(self, proj, host_read=True):
+        self.proj = proj
+        self.host_read = host_read
+        self.seen_shapes = []
+        self.seen_x = None
+
+    def wl_fused(self, x, w1, w3, w2, s1, s3, s2, model):
+        self.seen_shapes.append((tuple(x.shape), x.dtype))
+        # Reading a traced array from the host is illegal under mx.compile, which is the whole point
+        # of the primitive form, so the compile test turns this bookkeeping off.
+        if self.host_read:
+            self.seen_x = np.array(x)  # float16, exactly what the program received
+        # y_rows is [1, mpad, dim] -- the FFN ends at dim -- and h_max_out is [1, mpad, 1].
+        y = (x.astype(mx.float32) @ mx.array(self.proj)).astype(mx.float16)
+        h_max = mx.array(np.full((1, x.shape[1], 1), 4.0, dtype=np.float16))
+        return y, h_max
+
+
+def _primitive_ffn(monkeypatch, proj, host_read=True):
+    from mlp_program import MlpSpec
+    from rowsplit import BlockWeights, PrimitiveSplitFFN
+
+    calls = []
+    real_split = mx.split
+
+    def spy(array, indices, axis=None):
+        calls.append((list(indices), axis))
+        return real_split(array, indices, axis)
+
+    # The fork must be one op. Slicing twice on the GPU stream leaves the cross-stream fence after
+    # the GPU share, which measured 56-58% overlap against 100% for the split.
+    monkeypatch.setattr(mx, "split", spy)
+
+    gain = np.arange(1, DIM + 1, dtype=np.float32) / DIM
+    w = BlockWeights(
+        w1=np.zeros((HID, DIM), dtype=np.int8),
+        w3=np.zeros((HID, DIM), dtype=np.int8),
+        w2=np.zeros((DIM, HID), dtype=np.int8),
+        scales={"s1": np.ones(HID), "s3": np.ones(HID), "s2": np.ones(DIM)},
+        gain=gain,
+    )
+    spec = MlpSpec(mpad=MPAD, dim=DIM, hidden=HID, scale_mode="output", k13_chunks=1, k2_chunks=4, range_fix=True)
+    ext = _FakeProgram(proj, host_read)
+    ffn = PrimitiveSplitFFN(FeedForward(DIM, HID), ext, object(), spec, w)
+    return ffn, ext, gain, calls
+
+
+def test_primitive_form_forks_once_and_feeds_the_program_the_ane_rows(monkeypatch):
+    ffn, ext, _gain, calls = _primitive_ffn(monkeypatch, np.zeros((DIM, DIM), np.float32))
+    h = _h()
+    mx.eval(ffn(h))
+    assert calls == [([MPAD], 1)], f"expected one mx.split on axis 1, got {calls}"
+    assert ext.seen_shapes == [((1, MPAD, DIM), mx.float16)]
+
+
+def test_mx_split_rows_are_bitwise_the_slice(monkeypatch):
+    # The fork changes the rows' layout, so pin that it does not change their values.
+    h = _h()
+    _hA, hB = mx.split(h, [MPAD], axis=1)
+    mx.eval(hB)
+    got = np.array(hB.astype(mx.float32))  # numpy has no bfloat16, so widen first
+    assert np.array_equal(got, np.array(h[:, MPAD:].astype(mx.float32)))
+
+
+def test_primitive_form_gpu_rows_match_the_unpatched_ffn(monkeypatch):
+    ffn, _ext, _gain, _calls = _primitive_ffn(monkeypatch, np.zeros((DIM, DIM), np.float32))
+    ff = ffn.ff
+    h = _h()
+    out = ffn(h)
+    mx.eval(out)
+    ref_gpu = ff(h[:, MPAD:])
+    mx.eval(ref_gpu)
+    got = np.array(out[:, MPAD:].astype(mx.float32))
+    want = np.array(ref_gpu.astype(mx.float32))
+    # Not bitwise: split hands the FFN a contiguous input where the slice gave a strided view, and
+    # MLX picks a different matmul tiling for each, so the fp32 accumulators land 1 bf16 ulp apart.
+    assert np.allclose(got, want, rtol=1e-2, atol=1e-3)
+
+
+def test_primitive_form_restores_h_max_then_gain_in_float32(monkeypatch):
+    proj = (np.random.default_rng(7).standard_normal((DIM, DIM)) * DIM**-0.5).astype(np.float32)
+    ffn, ext, gain, _calls = _primitive_ffn(monkeypatch, proj)
+    h = _h()
+    out = ffn(h)
+    mx.eval(out)
+    expected = (ext.seen_x.astype(np.float64) @ proj.astype(np.float64)) * 4.0 * gain.astype(np.float64)
+    got = np.array(out[:, :MPAD].astype(mx.float32)).astype(np.float64)
+    # out is cast back to h.dtype (bf16), so the comparison is at bf16 resolution
+    assert np.allclose(got, expected, rtol=1e-2, atol=1e-2)
+    assert np.isfinite(got).all()
+
+
+def test_primitive_form_survives_mx_compile(monkeypatch):
+    proj = (np.random.default_rng(9).standard_normal((DIM, DIM)) * DIM**-0.5).astype(np.float32)
+    ffn, _ext, _gain, _calls = _primitive_ffn(monkeypatch, proj, host_read=False)
+    h = _h()
+    out = mx.compile(ffn)(h)
+    mx.eval(out)
+    assert out.shape == h.shape
+    assert np.isfinite(np.array(out.astype(mx.float32))).all()
