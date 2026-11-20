@@ -57,7 +57,9 @@ def test_op_level_q_k_match(length):
     wq = mx.random.uniform(0.5, 1.5, (HEAD_DIM,)).astype(mx.bfloat16)
     wk = mx.random.uniform(0.5, 1.5, (HEAD_DIM,)).astype(mx.bfloat16)
     f = _freqs(length)
-    got = fused_qk_norm_rope(q, k, wq, wk, f[..., 0], f[..., 1], HEADS, HEAD_DIM, eps=1e-5)
+    got = fused_qk_norm_rope(
+        q, k, wq, wk, f[..., 0], f[..., 1], HEADS, HEAD_DIM, eps=1e-5, disable_env=ZImageAttention.DISABLE_FUSED_ENV
+    )
     assert got is not None
     for x, w, g in ((q, wq, got[0]), (k, wk, got[1])):
         n = mx.fast.rms_norm(x.reshape(1, length, HEADS, HEAD_DIM), w, 1e-5)
