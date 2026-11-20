@@ -32,7 +32,9 @@ from rowsplit import (  # noqa: E402
     AneBackend,
     BridgeBackend,
     CallStats,
+    CompiledSplitBlock,
     CoreMLToolsBackend,
+    PrimitiveSplitFFN,
     RowSplitBlock,
     RowSplitFFN,
     prepare_block_weights,
@@ -162,12 +164,25 @@ def make_backend(name: str, cache: Path, shared_surfaces: bool = False) -> AneBa
     }[name]()
 
 
-def split_blocks(blocks, backend, spec, stats_sink):
+def make_split_ffn(mode, ff, backend, spec, sink):
+    """threaded = the host-sync path that times the phases; primitive = the form generation uses."""
+    w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
+    if mode == "primitive":
+        if not hasattr(backend, "ext"):
+            raise ValueError("--patch-mode primitive needs --backend bridge; mirror/coremltools have no ext")
+        model, _outs = backend._prepare(spec)  # caches the program and its output buffers
+        return PrimitiveSplitFFN(ff, backend.ext, model, spec, w)
+    return RowSplitFFN(ff, backend, spec, w, sink)
+
+
+def split_blocks(blocks, backend, spec, stats_sink, mode="threaded"):
     out = []
     for b in blocks:
         ff = b.feed_forward
-        w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
-        out.append(RowSplitBlock(b, RowSplitFFN(ff, backend, spec, w, stats_sink)))
+        split = make_split_ffn(mode, ff, backend, spec, stats_sink)
+        # threaded wraps (leaves the block alone); primitive swaps per call so the block's own
+        # forward stays the thing under test and the gpu_only arm keeps its untouched FFN
+        out.append(CompiledSplitBlock(b, split) if mode == "primitive" else RowSplitBlock(b, split))
     return out
 
 
@@ -283,10 +298,7 @@ def t2(args, backend):
     for share in args.shares:
         m, _ = plan_split(SEQ, share)
         spec = spec_for(args, m)
-        sffs = [
-            RowSplitFFN(f, backend, spec, prepare_block_weights(spec, f.w1.weight, f.w3.weight, f.w2.weight), sink)
-            for f in ffs
-        ]
+        sffs = [make_split_ffn(args.patch_mode, f, backend, spec, sink) for f in ffs]
         arms[f"share_{share}_m{m}"] = lambda s=sffs: mlp_chain(s, norms, x)
     mlp_chain(ffs, norms, x)  # warm-up
     return {"t2": interleave(arms, args.repeats), "per_call_ms": sink.summary_ms()}
@@ -303,7 +315,7 @@ def t3_t4(args, backend, ladder):
         for share in args.shares:
             m, _ = plan_split(SEQ, share)
             spec = spec_for(args, m)
-            sb = split_blocks(main[:n], backend, spec, sink)
+            sb = split_blocks(main[:n], backend, spec, sink, args.patch_mode)
             arms[f"share_{share}_m{m}"] = lambda sb=sb, n=n: chain(refiners + sb, x, mask, freqs, t_emb)
         chain(refiners + main[:n], x, mask, freqs, t_emb)  # warm-up
         out[f"blocks_{n}"] = {"arms": interleave(arms, args.repeats), "per_call_ms": sink.summary_ms()}
@@ -336,6 +348,14 @@ def main():
         help="per-block wraps each block's own weight buffers (zero copy, but the kernel wires ~118 MB"
         " per block); shared keeps ONE surface set and blits weights in per call (~5.1 ms), which holds"
         " wired memory flat. The blit runs inside the timed region, so shared timings include it.",
+    )
+    ap.add_argument(
+        "--patch-mode",
+        choices=["threaded", "primitive"],
+        default="threaded",
+        help="threaded = the host-sync path, which times the phases and produced the T2-T4 numbers. "
+        "primitive = the MLX primitive that generation actually uses, with MLX doing the scheduling. "
+        "They are not interchangeable: only primitive can run inside mx.compile.",
     )
     args = ap.parse_args()
 

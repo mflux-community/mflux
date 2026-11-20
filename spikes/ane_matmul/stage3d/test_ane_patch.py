@@ -102,6 +102,43 @@ def test_unpatch_restores_the_original_modules_not_fresh_ones():
         assert layer.feed_forward is orig
 
 
+def test_compiled_wrapper_restores_the_ffn_so_the_baseline_stays_clean():
+    """bench's gpu_only arm closes over the same blocks, so a leaked swap would give it the ANE."""
+    from rowsplit import CompiledSplitBlock
+
+    class Block:
+        def __init__(self, ff):
+            self.feed_forward = ff
+
+        def __call__(self, x):
+            self.seen = self.feed_forward
+            return x
+
+    original = object()
+    split = object()
+    block = Block(original)
+    out = CompiledSplitBlock(block, split)("h")
+
+    assert block.seen is split, "the split FFN was not installed for the call"
+    assert block.feed_forward is original, "the swap leaked into the baseline"
+    assert out == "h"
+
+
+def test_compiled_wrapper_restores_even_when_the_block_raises():
+    from rowsplit import CompiledSplitBlock
+
+    class Boom:
+        feed_forward = "original"
+
+        def __call__(self, *a, **k):
+            raise RuntimeError("block failed")
+
+    block = Boom()
+    with pytest.raises(RuntimeError):
+        CompiledSplitBlock(block, "split")(1)
+    assert block.feed_forward == "original", "an exception must not leave the split installed"
+
+
 def test_range_fix_switch_reaches_the_spec():
     assert ane_patch.spec_for(0.5, SEQ, dim=DIM, hidden=HID).range_fix is True
     assert ane_patch.spec_for(0.5, SEQ, range_fix=False, dim=DIM, hidden=HID).range_fix is False

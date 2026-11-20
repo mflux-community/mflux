@@ -354,6 +354,27 @@ class RowSplitFFN:
         return out
 
 
+class CompiledSplitBlock:
+    """Runs the real block with its feed_forward swapped for the primitive split, for one call only.
+
+    bench's gpu_only arm closes over the same block objects, so a permanent in-place patch would give
+    the baseline the ANE too and quietly destroy the comparison. Swapping per call keeps the arms
+    independent, and the block's own forward still comes from transformer_block.py, so nothing here
+    re-implements it the way RowSplitBlock does.
+    """
+
+    def __init__(self, block, split_ffn):
+        self.block, self.split = block, split_ffn
+
+    def __call__(self, *args, **kwargs):
+        orig = self.block.feed_forward
+        self.block.feed_forward = self.split
+        try:
+            return self.block(*args, **kwargs)
+        finally:
+            self.block.feed_forward = orig
+
+
 class RowSplitBlock:
     """Wraps a ZImageTransformerBlock; the FFN is a RowSplitFFN, everything else is unchanged."""
 
