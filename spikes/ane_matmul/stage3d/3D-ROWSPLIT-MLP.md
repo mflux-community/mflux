@@ -721,3 +721,134 @@ Two corrections to claims made in §7:
 - `3f549884` — **Step 1: the a+b range fix in the program and bridge, confirmed on the ANE (§5i)**
 - `52b4b0dd` — Step 2 wiring: `--ane-mlp`, `generate_ane.py`, `ane_patch.py`, weight-free smoke test
 - `bdde23a2`, `653077d9` — `RESUME.md`, `image_metrics.py`, and the grid helper
+
+## 9. Plan A — capturing the overlap inside `mx.compile`: CLOSED, no shippable gain
+
+**Verdict: the row split cannot be made to overlap through an MLX primitive on MLX 0.32.4. The
+shippable path measures 0.97–1.07× against the GPU at every form and setting tried; the threaded path
+measures 1.17–1.20× and is illegal under `mx.compile`. The prize is real (~1.25× block-level) and the
+entire gap is *when MLX starts the Core ML task*.**
+
+### 9a. What the prize is worth (`probe_split_premise.py`, `d0822fa7`)
+
+One synthetic block at real dims, `mx.compile`, median of 20, no ANE call:
+
+| quantity | ms |
+| --- | --- |
+| `ff` at all 4224 rows | 86.22 |
+| `ff` at the 2176 GPU rows | 44.02 |
+| staging cast to fp16 (2048 rows) | 0.22 |
+| fp32 epilogue restore | 0.67 |
+| ANE predict (measured separately) | ~52 |
+
+The GPU share really halves (48.9% saved) and the split adds only 0.89 ms of GPU work. Perfect overlap
+is therefore **1.63× on the FFN, ~1.25× on the block** — which is what the threaded path achieves.
+Nothing is wrong with the shapes, the split arithmetic, or the ANE's speed.
+
+### 9b. The delay, measured (`probe_timeline.py`, `863cdf7b`, `47cd7e18`)
+
+`WLFused` now records eval_cpu entry, dispatched-task start, input-ready after `wait()`, and predict
+start/end; `wl_mark` is an availability token on its **own** CPU stream (a mark queued behind a 52 ms
+predict reports the predict's end, not the GPU's). 8 blocks, `mx.compile`, nice 0, timed half:
+
+| form / setting | eval→task ms | predict ms | period ms | prim/gpu | thrd/gpu |
+| --- | --- | --- | --- | --- | --- |
+| baseline | 96.5 | 53.9 | 162.3 | 0.9975 | 1.2001 |
+| `MLX_METAL_FAST_SYNCH=1` | 84.8 | 54.4 | 162.6 | 1.0128 | 1.1496 |
+| `MLX_MAX_OPS_PER_BUFFER=1` + FS1 | **29.7** | 51.9 | 157.9 | 1.0369 | 1.1369 |
+| `=4` + FS1 | 81.6 | 48.6 | 152.9 | 1.0519 | 1.1676 |
+| `=16` + FS1 | 83.1 | 55.2 | 161.5 | 1.0107 | 1.2027 |
+| CPU-stream staging + reused surface, base | 95.9 | 58.8 | 168.6 | 0.9659 | 1.1688 |
+| CPU-stream staging + reused surface, ops=1 | 29.9 | 48.6 | 154.7 | 1.0746 | 1.2044 |
+| per-dispatch `notify_new_task`, base | 95.7 | 55.9 | 164.8 | 0.9976 | 1.1802 |
+| per-dispatch `notify_new_task`, ops=1 | 30.5 | 51.0 | 156.7 | 1.0539 | 1.1888 |
+
+In-task `wait()` is **0.0 ms in every row**: the inputs are already available when the task runs, so
+the loss is in *starting* the task, not in the data. Example rows (baseline, compiled, ms from first
+eval):
+
+| blk | eval_cpu | task start | in-ready | predict start | predict end | predict ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| 8 | 1308.5 | 1408.0 | 1408.0 | 1408.0 | 1462.6 | 54.6 |
+| 9 | 1474.5 | 1571.2 | 1571.2 | 1571.2 | 1622.9 | 51.7 |
+| 10 | 1635.0 | 1732.3 | 1732.3 | 1732.3 | 1786.7 | 54.5 |
+| 11 | 1799.0 | 1895.4 | 1895.4 | 1895.4 | 1948.1 | 52.7 |
+
+Threaded predict median 53.2 ms against the primitive's 52–57 ms, so this is **not ANE contention**.
+Caveat: the availability marks are themselves CPU-stream tasks with the same late-start behaviour, so
+they bound the GPU queue drain, not the share's start; the trustworthy columns are eval→task, wait,
+predict and the wall times.
+
+### 9c. Paired rung 34, nice 0, same boot
+
+| build | path | gpu_only ms | ANE ms | ratio | swap | discarded |
+| --- | --- | --- | --- | --- | --- | --- |
+| dedicated stream | primitive | 5883.7 | 5897.3 | 0.9977 | 595 → 892 MB | 1 |
+| dedicated stream | threaded | 5871.3 | 4882.3 | **1.2026** | 892 → 892 MB | 0 |
+| + fence/lifetime/QoS | primitive | 5907.2 | 6028.5 | 0.9799 | 676 → 2676 MB | 0 |
+| + fence/lifetime/QoS | threaded | 5894.5 | 4920.0 | **1.1981** | 2676 → 2660 MB | 0 |
+
+Baselines agree to 0.2% within each pair. ANE power over the fenced pair: 110 of 293 samples >0.05 W,
+median **1.93 W**, max 2.56 W — the silicon works, the wall clock does not move. The primitive row of
+the second pair grew swap between repeats, so it is partly contaminated; it agrees with the first
+pair. Both pairs record commit `b1a9a201` because the C++ fence work was not yet committed when they
+ran — the JSON's commit field lags the `.so` build.
+
+### 9d. A2 — primitive fidelity PASS, and Step 1's accuracy figure corrected
+
+`real_primitive_gate.py` (`47cd7e18`) runs the **real primitive under `mx.compile`** on all 34 real
+FFN-bearing blocks × g{1,2,4} = 102 rows. Until this existed, nothing had checked the primitive's own
+numbers: `t1` and `real_t1` call `backend.run` with numpy inputs and bypass `WLFused` entirely.
+
+- primitive-vs-pointer cosine gap **1.4e-6**; `d_pointer` max 130432 against output scale 7.24e7, i.e.
+  exactly bf16 rounding (256, 1024, 4092 at those magnitudes)
+- 0 non-finite, **1 Python thread**, `copybacks=0`, 102 rows in 55 s → **fidelity PASS**
+- **Correction to Step 1:** ~0.99998 was an **fp32** figure. At the bf16 resolution generation uses,
+  the split is min **0.9996898** (`layers.27`, g=1), median 0.9999133, and only **60/102** rows clear
+  0.9999. The pointer path scores 0.9996884 on the same row, so this is the split's accuracy, not a
+  primitive defect.
+
+Two real defects were found and fixed on the way (`47cd7e18`): `array::data<T>()` is pointer
+arithmetic with **no synchronisation**, and `cpu::CommandEncoder::set_input_array`/`set_output_array`
+are **no-ops** in 0.32.4, so the primitive held no input lifetime either. Now: `add_temporary` on
+every input, `wait()` inside the dispatched task before reading, QoS `USER_INTERACTIVE` on that task
+and on the threaded path's predict so the two are comparable.
+
+### 9e. Hypotheses tested and falsified
+
+1. **Dedicated CPU stream** (`32372c5b`) — no overlap; the stream was never the serialiser.
+2. **Fork ordering** (`4ad0ba78`, `b1a9a201`) — the external review's tape-order hazard was real in
+   the stand-in (GPU-stream slice 55.6–58.3% overlap vs `mx.split` 100.7%, CPU-stream slice 100.0%,
+   staging + `mx.depends` 100.3%; handoff 93 µs → 13 µs with `MLX_METAL_FAST_SYNCH=1`), and my form had
+   both hazards (GPU slice+cast at the head of the ANE branch, join before the GPU share). Fixing them
+   changed nothing at step level: 0.9977×.
+3. **CPU-stream staging into one reused host surface** (`f7c7e414`) — blit 0.23–0.71 ms, wiring
+   bounded, bitwise-correct, **same delay** as GPU-side staging (29.9 vs 29.7 ms).
+4. **Command-buffer granularity** — `ops=1` cuts the delay 3.2× (96.5 → 29.7 ms) but the ratio only
+   goes 0.9975 → 1.0369. `ops=4` has a *worse* delay and a *better* ratio, so delay and speed are not
+   correlated across settings; the threaded arm swings 1.137–1.204 over the same runs, i.e. ~5% noise.
+5. **Scheduler notification** — `cpu/encoder.h:13` sets `DISPATCHES_PER_TASK = 10` and `dispatch()`
+   calls `notify_new_task` only every 10th op, so a once-per-block primitive is mostly unnotified.
+   Notifying every dispatch (with a matching completion so `n_active_tasks_` stays balanced) changed
+   **nothing**: 95.7 / 30.5 ms. Reverted; `scheduler()` is exported, so the test was valid.
+
+Also corrected: every timed run before this point was **nice 5**, because `watchdog.sh` runs `"$@" &`
+and zsh sets `BG_NICE` by default — not the launcher, as first reported. `unsetopt BG_NICE` fixes it,
+and timed JSONs now record `nice`. Re-measuring at nice 0 moved threaded 1.2547× → 1.2026×, so
+niceness was not the confound either.
+
+### 9f. What is left, and why it is not worth more budget
+
+The one untried form is the mailbox's option 2: compile in two halves per block with
+`mx.async_eval(fork_outputs)` between them to force a commit boundary. It targets the same
+command-buffer mechanism that `MLX_MAX_OPS_PER_BUFFER=1` already probed directly, and that probe cut
+the delay 3× without buying speed. A design that starts the ANE at ~30 ms is worth ~1.04×; only a
+start at ~0 ms is worth ~1.25×, and no lever tried moves it below 29.7 ms.
+
+**Recommendation: keep the lane closed.** The correctness work stands on its own (fence, lifetime,
+QoS, bounded wiring, A2 gate) and should be kept if any ANE primitive is ever revisited. The
+`--ane-mlp` generation path should not be advertised as a speedup.
+
+Commits: `32372c5b` dedicated stream · `63815ab3` record niceness · `4ad0ba78` one-op fork ·
+`b1a9a201` watchdog `BG_NICE` + `mx.depends` · `47cd7e18` fence/lifetime/QoS + timeline + A2 ·
+`863cdf7b` tagged probe · `d0822fa7` premise · `f7c7e414` CPU staging + reused surface.

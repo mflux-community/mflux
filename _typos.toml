@@ -6,9 +6,9 @@
 extend-exclude = [".cursor/skills/asd-ste100/"]
 
 [default]
-# f16ba7bf = a git object hash cited as provenance in spikes/ane_matmul; typos reads the "ba"
-# inside it as a typo for "by"/"be". Exact identifier only, so no real word is un-checked.
-extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs", "RGBa", "f16ba7bf"]
+# f16ba7bf, 4ad0ba78 = git object hashes cited as provenance in spikes/ane_matmul; typos reads the
+# "ba" inside them as a typo for "by"/"be". Exact identifiers only, so no real word is un-checked.
+extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs", "RGBa", "f16ba7bf", "4ad0ba78"]
 
 # False positives typos would otherwise "fix" (destructively, incl. file renames):
 # hed = Holistically-nested Edge Detection model; thre1/thre2 = upstream openpose

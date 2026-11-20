@@ -1,19 +1,50 @@
-# Stage 3d — RESUME (start here after the reboot)
+# Stage 3d — RESUME
 
-This file exists because a reboot ends the session. Everything needed to run Steps 2 and 3 is here.
+## CLOSED 2026-11-20: no shippable gain. Do not run Steps 2b or 3.
+
+**Verdict: the row split does not overlap through an MLX primitive on MLX 0.32.4.** Shippable path
+0.97–1.07× against the GPU across every form and env setting; threaded path 1.17–1.20× but illegal
+under `mx.compile`. Full write-up: report **§9** (`3D-ROWSPLIT-MLP.md`).
+
+The prize is real and quantified: `ff` at 4224 rows 86.22 ms vs 44.02 ms at the 2176 GPU rows, staging
++ epilogue 0.89 ms, ANE predict ~52 ms ⇒ ~1.25× block-level if the ANE starts at ~0 ms. It starts at
+**96.5 ms** (baseline) or **29.7 ms** (best setting, `MLX_MAX_OPS_PER_BUFFER=1` + `MLX_METAL_FAST_SYNCH=1`),
+and in-task `wait()` is 0.0 ms — the data is ready, the *task start* is late. Five hypotheses were
+tested and falsified: dedicated stream, fork ordering, CPU-stream staging into a reused host surface,
+command-buffer granularity, and per-dispatch `notify_new_task`. Nothing moved the delay below 29.7 ms.
+
+Accuracy, corrected: A2 (`real_primitive_gate.py`) passes primitive fidelity on all 34 real blocks ×
+3 gains (cosine gap 1.4e-6 vs the pointer API, 0 non-finite, 1 thread, 0 copybacks). But Step 1's
+~0.99998 was an **fp32** figure — at the bf16 resolution generation uses the split is min **0.99969**
+(`layers.27`) and only **60/102** rows clear 0.9999. The pointer path scores the same.
+
+Keep if any ANE primitive is revisited: the fence (`wait()` inside the task), `add_temporary` input
+lifetimes, QoS `USER_INTERACTIVE`, the reused host staging surface, `wl_timeline`/`wl_mark`, and the
+A2 gate. Do not advertise `--ane-mlp` as a speedup.
+
+Only untried lever: compile in two halves per block with `mx.async_eval` between them (mailbox inbox
+option 2). It targets the same commit-boundary mechanism `ops=1` already probed, which cut the delay
+3× without buying speed — so it is not worth more budget without a new idea.
+
+Everything below is **history**: the state and instructions as they stood before Plan A. The Step 2b/3
+image commands are superseded by the closure above and were never run.
+
+---
+
+This file exists because a reboot ends the session.
 Take every number and hash from tool output, never from memory.
 
-## Where things stand
+## Where things stand (historical)
 
 - Worktree: `/Users/ianscrivener/MFlux/mflux-ane-stage3`
 - Branch: `experiment/zit-on-ane-stage3d`
-- HEAD: whatever commit added this file — `git log --oneline -1`. The last substantive commits are
-  `3f549884` (Step 1, accepted) and `52b4b0dd` (Step 2 wiring + smoke test).
-- Tree was clean at the time of writing. Verify: `git status --short` (empty = clean)
+- HEAD: `git log --oneline -1`. Plan A ended at `f7c7e414`; before it, `3f549884` (Step 1, accepted)
+  and `52b4b0dd` (Step 2 wiring + smoke test).
 - Nothing has been pushed. **Ask Scriv before any `git push`. First question to ask: "Do we run
   CodeRabbit locally first?"**
-- Report (already written through Step 1): `spikes/ane_matmul/stage3d/3D-ROWSPLIT-MLP.md`
+- Report: `spikes/ane_matmul/stage3d/3D-ROWSPLIT-MLP.md` (§9 is the closing verdict)
 - PRDs: `spikes/ane_matmul/PRD-stage3d.md`, `PRD-stage3d-finish.md`
+- Reports go to `spikes/ane_matmul/MAILBOX/outbox.md`, not chat (inbox instruction).
 
 | commit | what |
 | --- | --- |
