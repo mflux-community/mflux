@@ -58,6 +58,20 @@ class TestQwen21VaeStrips:
         assert mx.abs(strips - full).max().item() < 1e-4
 
 
+@pytest.mark.fast
+@pytest.mark.parametrize("vae_type", [QwenImage21VAE, Qwen21VAE])
+def test_deeper_vae_decode_keeps_the_full_strip_context(vae_type):
+    with mx.stream(mx.cpu):
+        mx.random.seed(0)
+        vae = vae_type(
+            {"is_residual": True, "patch_size": None, "base_dim": 8, "decoder_base_dim": 8, "num_res_blocks": 4}
+        )
+        latents = mx.random.normal((1, 64, 1, 64, 3))
+        strips = vae.decode(latents)
+        vae.decode_mode = VAEBlockDecoder.FULL_PRECISION
+        assert mx.array_equal(strips, vae.decode(latents))
+
+
 def test_qwen_clis_describe_the_tiling_flags_and_the_decode_precision():
     from mflux.models.qwen21.cli import qwen21_controlnet_generate, qwen21_edit_generate, qwen21_generate
 

@@ -65,17 +65,10 @@ class Decoder(nn.Module):
     # near it, and the decoder can run on strips of rows with context rows above and below each strip.
     # The decode has two passes. Pass 1 runs the first STRIP_FROM up blocks (low resolution, many channels) on
     # strips of LOW_ROWS latent rows and gives their full output. Pass 2 runs the remaining blocks and the head on
-    # strips of that output. The context rows of each pass cover the measured reach of the blocks in that pass,
-    # so the pixels agree with the full-image decode up to float rounding. Only one strip of each pass is in
-    # memory at a time.
+    # strips of that output. Each pass keeps enough context for its blocks, so the pixels agree with a full
+    # decode up to float rounding. Only the active strip retains its context rows.
     STRIP_FROM = 2
     LOW_ROWS = 16
-    # Context rows for pass 1, by the number of blocks in it. Measured reach of up_blocks[:k] in latent rows:
-    # k=1 7.0, k=2 10.5, k=3 12.3.
-    LOW_HALO = (0, 8, 12, 14, 16)
-    # Context rows for pass 2, by its first block k. Measured reach of up_blocks[k:] and the head, in rows of the
-    # input of block k: 13.6, 13.1, 12.3, 10.5, 7.0.
-    HALO = (16, 16, 16, 12, 8)
     # Pass 2 strip height: the largest power of two from 16 to 64 with rows * width <= STRIP_BUDGET (width of the
     # input of block STRIP_FROM). This keeps the memory of one strip about constant, and narrow images use fewer
     # strips: 64 rows at 1024 px wide, 32 at 2048 px, 16 at 2400-2752 px.
@@ -88,13 +81,11 @@ class Decoder(nn.Module):
         # rows are axis 2 in the NCHW layout (text_mode), axis 1 in NHWC
         axis = 2 if self.text_mode else 1
         first = Decoder.STRIP_FROM
-        scale_low = 2 ** sum(block.upsampler is not None for block in self.up_blocks[:first])
-        x = Decoder._in_strips(
-            x, lambda v: self._blocks(v, 0, first), Decoder.LOW_ROWS, Decoder.LOW_HALO[first], scale_low, axis
-        )
+        halo_low, scale_low = Decoder._strip_geometry(self.up_blocks[:first], halo=0)
+        x = Decoder._in_strips(x, lambda v: self._blocks(v, 0, first), Decoder.LOW_ROWS, halo_low, scale_low, axis)
         rows = Decoder.strip_rows(x.shape[axis + 1])
-        scale_high = 2 ** sum(block.upsampler is not None for block in self.up_blocks[first:])
-        return Decoder._in_strips(x, lambda v: self._up(v, first), rows, Decoder.HALO[first], scale_high, axis)
+        halo_high, scale_high = Decoder._strip_geometry(self.up_blocks[first:], halo=1)
+        return Decoder._in_strips(x, lambda v: self._up(v, first), rows, halo_high, scale_high, axis)
 
     @staticmethod
     def strip_rows(width: int) -> int:
@@ -102,6 +93,18 @@ class Decoder(nn.Module):
         while rows > 16 and rows * width > Decoder.STRIP_BUDGET:
             rows //= 2
         return rows
+
+    @staticmethod
+    def _strip_geometry(blocks: list[UpBlock], halo: int) -> tuple[int, int]:
+        scale = 1
+        for block in reversed(blocks):
+            if block.upsampler is not None:
+                # A 3x3 convolution follows nearest-neighbor doubling. Budget one extra input row.
+                halo = (halo + 1) // 2 + 1
+                scale *= 2
+            halo += 2 * len(block.resnets)  # two 3x3 convolutions per residual block
+        # Keep the original aligned halos for the default block layout.
+        return (halo + 3) // 4 * 4, scale
 
     @staticmethod
     def _in_strips(x: mx.array, fn, rows: int, halo: int, scale: int, axis: int) -> mx.array:
@@ -114,7 +117,9 @@ class Decoder(nn.Module):
         for top in range(0, height, rows):
             bottom = min(height, top + rows)
             a, b = max(0, top - halo), min(height, bottom + halo)
-            strip = fn(x[lead + (slice(a, b),)])[lead + (slice((top - a) * scale, (bottom - a) * scale),)]
+            # A slice would keep the whole decoded strip's allocation, including both halos.
+            crop = mx.arange((top - a) * scale, (bottom - a) * scale)
+            strip = mx.take(fn(x[lead + (slice(a, b),)]), crop, axis=axis)
             mx.eval(strip)
             strips.append(strip)
         return mx.concatenate(strips, axis=axis)
