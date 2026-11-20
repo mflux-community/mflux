@@ -4,7 +4,9 @@ import mflux.models.moss_image.model.moss_image_scheduler  # noqa: F401 - regist
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
+from mflux.models.common.ssd_stream.streamer import Streamer
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
@@ -29,6 +31,7 @@ class MOSSImageInitializer:
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         bake_lora: bool = False,
+        ssd_stream: bool = False,
     ) -> None:
         path = PrequantizedResolution.weights_root(
             model_config,
@@ -48,6 +51,8 @@ class MOSSImageInitializer:
         # it. Evaluating them here held the text encoder, transformer and VAE at once, so --low-ram
         # could only free the text encoder after that peak (#948).
         del weights
+        if ssd_stream:
+            MOSSImageInitializer._apply_ssd_stream(model, path)
         mx.clear_cache()
 
     @staticmethod
@@ -105,3 +110,13 @@ class MOSSImageInitializer:
             bake_lora=bake_lora,
             dense_weights=weights.dense_component("transformer"),
         )
+
+    @staticmethod
+    def _apply_ssd_stream(model, path: str) -> None:
+        layout = PrequantizedResolution.layout(MOSSImageWeightDefinition)
+        root = PathResolution.resolve(
+            path=path, patterns=layout["upstream_patterns"], saved_subdirs=layout["saved_subdirs"]
+        )
+        Streamer(cycle=False).wrap(model.text_encoder.layers, root / "text_encoder", "layers.")
+        Streamer(cycle=True).wrap(model.transformer.layers, root / "transformer", "layers.")
+        model.vae.decode_mode = Flux2VAE.DECODE_LOW_MEMORY
