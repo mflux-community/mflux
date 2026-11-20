@@ -21,7 +21,8 @@ from mlp_program import MlpSpec, plan_split  # noqa: E402
 from rowsplit import (  # noqa: E402
     BridgeBackend,
     CallStats,
-    patch_transformer as _patch_transformer,  # noqa: E402
+    patch_transformer as _patch_transformer,
+    patch_transformer_compilable,
 )
 
 DEFAULT_CACHE = SPIKE / "cache"
@@ -52,12 +53,18 @@ def patch_model(
     cache_dir: Path | None = None,
     shared_surfaces: bool = False,
     stats: CallStats | None = None,
+    mode: str = "compiled",
 ):
     """Replace every main-block FFN with the row-split ANE path. Refiners stay on the GPU.
 
     seq_len is the token count the split is sized for; the wrapper asserts at call time that the
     real sequence is longer than Mpad, so a wrong guess fails loudly instead of silently putting
     every row on one engine.
+
+    mode="compiled" uses the wl_fused MLX primitive and is the only form that works under mflux's
+    mx.compile-wrapped denoise step. mode="bench" uses the threading backend with per-phase timing,
+    which is what the standalone benches need and what produced the T2-T4 numbers -- it raises inside
+    a compiled graph, so never use it for generation.
     """
     spec = spec_for(share, seq_len, range_fix=range_fix)
     backend = make_backend(backend_name, cache_dir, shared_surfaces)
@@ -65,12 +72,18 @@ def patch_model(
     # unreachable from the caller, and an image time cannot be attributed to a share. The compute
     # plan lives on the backend and fills in lazily, so it is read after generation, not here.
     stats = stats or CallStats()
-    n = _patch_transformer(model.transformer, backend, spec, stats)
+    if mode == "compiled":
+        n = patch_transformer_compilable(model.transformer, backend, spec)
+    elif mode == "bench":
+        n = _patch_transformer(model.transformer, backend, spec, stats)
+    else:
+        raise ValueError(f"unknown patch mode {mode!r}")
     return {
         "spec": spec.name,
         "mpad": spec.mpad,
         "share": share,
         "seq_len_sized_for": seq_len,
+        "patch_mode": mode,
         "patched_blocks": n,
         "range_fix": range_fix,
         "backend": backend_name,

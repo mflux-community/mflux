@@ -86,3 +86,47 @@ try:
     )
 except Exception as exc:  # noqa: BLE001 -- this test exists to report the failure verbatim
     print(f"mx.compile: FAILED {type(exc).__name__}: {str(exc)[:300]}")
+
+# 3. the wired row split itself, patched the way generation does it and run under mx.compile.
+#    The pointer form cannot reach this state at all, which is what killed the first real run.
+from rowsplit import patch_transformer_compilable  # noqa: E402
+
+from mflux.models.z_image.model.z_image_transformer.feed_forward import FeedForward  # noqa: E402
+
+ff = FeedForward(D, H)
+ff.w1.weight, ff.w3.weight, ff.w2.weight = (mx.array(w).astype(mx.bfloat16) for w in (w1, w3, w2))
+mx.eval(ff.parameters())
+
+
+class TinyTransformer:
+    def __init__(self, ff):
+        self.layers = [type("L", (), {"feed_forward": ff})()]
+
+
+seq = 512
+xin = mx.array(rng.normal(0, 1.0, (1, seq, D)).astype(np.float32)).astype(mx.bfloat16)
+mx.eval(xin)
+y_plain = np.array(ff(xin).astype(mx.float32))
+
+tt = TinyTransformer(ff)
+n = patch_transformer_compilable(tt, bb, spec)
+y_eager = np.array(tt.layers[0].feed_forward(xin).astype(mx.float32))
+
+
+def split_compiled(h):
+    return tt.layers[0].feed_forward(h)
+
+
+try:
+    y_compiled = np.array(mx.compile(split_compiled)(xin).astype(mx.float32))
+    print(f"\nrow split patched via primitive: {n} block(s)")
+    for tag, got in (("eager", y_eager), ("compiled", y_compiled)):
+        a, b = got.astype(np.float64).ravel(), y_plain.astype(np.float64).ravel()
+        cos = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+        rel = float(np.linalg.norm(a - b) / np.linalg.norm(b))
+        print(
+            f"  {tag:>9} vs plain bf16: cos={cos:.7f} relerr={rel:.5f} "
+            f"nonfinite={int((~np.isfinite(got)).sum())} shape={got.shape}"
+        )
+except Exception as exc:  # noqa: BLE001 -- reported verbatim, same reason as above
+    print(f"\nrow split under mx.compile: FAILED {type(exc).__name__}: {str(exc)[:300]}")

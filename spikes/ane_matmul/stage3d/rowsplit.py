@@ -375,8 +375,63 @@ class RowSplitBlock:
         return x + gate_mlp * b.ffn_norm2(ffn_out)
 
 
+class PrimitiveSplitFFN:
+    """Row split that is legal inside mx.compile: calls the wl_fused primitive, never the host.
+
+    RowSplitFFN exists for the standalone benches, which time the phases by synchronising. That is
+    fatal in mflux's denoise step, which runs under mx.compile, so generation uses this form: pure
+    MLX ops, so MLX schedules the ANE call itself.
+
+    The rowmax restore is done in float32 on purpose. In fp16 it overflows -- real h_max reaches 5064
+    and the restored product hit 5.06e5 against a 65504 ceiling, which is the original bug.
+    """
+
+    def __init__(self, ff, ext, model, spec: MlpSpec, weights: BlockWeights):
+        import mlx.core as mx
+
+        self.ff, self.ext, self.model, self.spec = ff, ext, model, spec
+        self._mxw = [
+            mx.array(weights.w1),
+            mx.array(weights.w3),
+            mx.array(weights.w2),
+            mx.array(weights.scales["s1"]),
+            mx.array(weights.scales["s3"]),
+            mx.array(weights.scales["s2"]),
+        ]
+        self._gain = mx.array(weights.gain)  # fp32 per-channel
+
+    def __call__(self, h):
+        import mlx.core as mx
+
+        m = self.spec.mpad
+        assert h.shape[0] == 1 and h.shape[1] > m, "row split needs batch 1 and S > Mpad"
+        y, h_max = self.ext.wl_fused(h[:, :m].astype(mx.float16), *self._mxw, self.model)
+        y_ane = y.astype(mx.float32) * h_max.astype(mx.float32) * self._gain
+        y_gpu = self.ff(h[:, m:])
+        return mx.concatenate([y_ane.astype(h.dtype), y_gpu.astype(h.dtype)], axis=1)
+
+
+def patch_transformer_compilable(transformer, backend: BridgeBackend, spec: MlpSpec):
+    """Swap each main block's FFN for the primitive form. Returns the number patched.
+
+    Attribute swap, same reason as patch_transformer: the block's own forward stays in play, so this
+    cannot drift from transformer_block.py. No worker threads are created, because nothing waits on
+    a host result.
+    """
+    ext = backend.ext
+    for layer in transformer.layers:
+        ff = layer.feed_forward
+        w = prepare_block_weights(spec, ff.w1.weight, ff.w3.weight, ff.w2.weight)
+        model, _outs = backend._prepare(spec)
+        layer.feed_forward = PrimitiveSplitFFN(ff, ext, model, spec, w)
+    return len(transformer.layers)
+
+
 def patch_transformer(transformer, backend: AneBackend, spec: MlpSpec, stats: CallStats):
     """Swap every main layer's FFN for a RowSplitFFN. Real weights: ask before running.
+
+    Use this for the standalone benches, which time the phases and therefore must synchronise. Use
+    patch_transformer_compilable for generation, where mflux wraps the step in mx.compile.
 
     Replaces the attribute rather than wrapping the block, because ZImageTransformerBlock calls
     `self.feed_forward(self.ffn_norm1(x) * scale_mlp)` with one positional argument: the attribute
