@@ -56,7 +56,7 @@ def load_real_blocks(n_refiners: int, n_main: int):
     wmap = json.loads((snap / "diffusion_pytorch_model.safetensors.index.json").read_text())["weight_map"]
     names = [f"noise_refiner.{i}" for i in range(n_refiners)] + [f"layers.{i}" for i in range(n_main)]
     blocks = {n: ZImageTransformerBlock(DIM, N_HEADS) for n in names}
-    for shard in sorted({v for k, v in wmap.items() if k.split(".")[0] + "." + k.split(".")[1] in blocks}):
+    for shard in sorted({v for k, v in wmap.items() if ".".join(k.split(".")[:2]) in blocks}):
         weights = mx.load(str(snap / shard))
         for name, blk in blocks.items():
             pairs = [
