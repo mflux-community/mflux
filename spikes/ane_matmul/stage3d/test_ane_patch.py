@@ -206,15 +206,15 @@ def _primitive_ffn(monkeypatch, proj, host_read=True):
     from rowsplit import BlockWeights, PrimitiveSplitFFN
 
     calls = []
-    real_split = mx.split
+    real_depends = mx.depends
 
-    def spy(array, indices, axis=None):
-        calls.append((list(indices), axis))
-        return real_split(array, indices, axis)
+    def spy(inputs, dependencies):
+        calls.append((len(inputs), len(dependencies)))
+        return real_depends(inputs, dependencies)
 
-    # The fork must be one op. Slicing twice on the GPU stream leaves the cross-stream fence after
-    # the GPU share, which measured 56-58% overlap against 100% for the split.
-    monkeypatch.setattr(mx, "split", spy)
+    # The GPU share must depend on the ANE branch's staging kernel, so the cross-stream fence is
+    # encoded before the share instead of after it: 56-58% overlap without the edge, 100% with it.
+    monkeypatch.setattr(mx, "depends", spy)
 
     gain = np.arange(1, DIM + 1, dtype=np.float32) / DIM
     w = BlockWeights(
@@ -230,18 +230,19 @@ def _primitive_ffn(monkeypatch, proj, host_read=True):
     return ffn, ext, gain, calls
 
 
-def test_primitive_form_forks_once_and_feeds_the_program_the_ane_rows(monkeypatch):
+def test_primitive_form_orders_the_gpu_share_after_the_ane_staging_kernel(monkeypatch):
     ffn, ext, _gain, calls = _primitive_ffn(monkeypatch, np.zeros((DIM, DIM), np.float32))
     h = _h()
     mx.eval(ffn(h))
-    assert calls == [([MPAD], 1)], f"expected one mx.split on axis 1, got {calls}"
+    assert calls == [(1, 1)], f"expected one depends edge from the staging kernel, got {calls}"
     assert ext.seen_shapes == [((1, MPAD, DIM), mx.float16)]
 
 
-def test_mx_split_rows_are_bitwise_the_slice(monkeypatch):
-    # The fork changes the rows' layout, so pin that it does not change their values.
+def test_mx_depends_preserves_the_rows(monkeypatch):
+    # The ordering edge must not change the values the GPU share sees.
     h = _h()
-    _hA, hB = mx.split(h, [MPAD], axis=1)
+    staging = h[:, :MPAD].astype(mx.float16)
+    hB = mx.depends([h[:, MPAD:]], [staging])[0]
     mx.eval(hB)
     got = np.array(hB.astype(mx.float32))  # numpy has no bfloat16, so widen first
     assert np.array_equal(got, np.array(h[:, MPAD:].astype(mx.float32)))
@@ -257,8 +258,8 @@ def test_primitive_form_gpu_rows_match_the_unpatched_ffn(monkeypatch):
     mx.eval(ref_gpu)
     got = np.array(out[:, MPAD:].astype(mx.float32))
     want = np.array(ref_gpu.astype(mx.float32))
-    # Not bitwise: split hands the FFN a contiguous input where the slice gave a strided view, and
-    # MLX picks a different matmul tiling for each, so the fp32 accumulators land 1 bf16 ulp apart.
+    # Not bitwise: the ordering edge can hand the FFN a contiguous input where the slice gave a
+    # strided view, and MLX picks a different matmul tiling, so accumulators land 1 bf16 ulp apart.
     assert np.allclose(got, want, rtol=1e-2, atol=1e-3)
 
 

@@ -396,18 +396,6 @@ class RowSplitBlock:
         return x + gate_mlp * b.ffn_norm2(ffn_out)
 
 
-_cpu_stream_holder = []
-
-
-def _cpu_stream():
-    """One dedicated CPU stream, shared by every patched block."""
-    if not _cpu_stream_holder:
-        import mlx.core as mx
-
-        _cpu_stream_holder.append(mx.new_stream(mx.cpu))
-    return _cpu_stream_holder[0]
-
-
 class PrimitiveSplitFFN:
     """Row split that is legal inside mx.compile: calls the wl_fused primitive, never the host.
 
@@ -438,13 +426,12 @@ class PrimitiveSplitFFN:
 
         m = self.spec.mpad
         assert h.shape[0] == 1 and h.shape[1] > m, "row split needs batch 1 and S > Mpad"
-        # One fork op, and no GPU op that only the ANE branch reads. mx.split gives both branches as
-        # siblings, so the cross-stream fence sits at the head of the block. A slice-then-cast on the
-        # GPU stream is a second op that only the ANE branch consumes and gets encoded after the GPU
-        # share: measured 56-58% overlap against 100% for the split.
-        h_ane, h_gpu = mx.split(h, [m], axis=1)
-        with mx.stream(_cpu_stream()):
-            h_ane = h_ane.astype(mx.float16)
+        # The ANE branch's staging kernel must be encoded before the GPU share, or MLX puts the
+        # cross-stream fence after it: 56-58% overlap against 100% for an ordered fork. depends()
+        # orders them while keeping the cast on the GPU. Casting on a CPU stream instead hands Core
+        # ML a host buffer, which wires ~31 MB per block and paged 2.1 GB at rung 34.
+        h_ane = h[:, :m].astype(mx.float16)
+        h_gpu = mx.depends([h[:, m:]], [h_ane])[0]
         y, h_max = self.ext.wl_fused(h_ane, *self._mxw, self.model)
         y_gpu = self.ff(h_gpu)  # enqueue the GPU share before the join, or the join stalls it
         y_ane = y.astype(mx.float32) * h_max.astype(mx.float32) * self._gain
