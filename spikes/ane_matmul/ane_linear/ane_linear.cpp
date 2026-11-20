@@ -1,10 +1,17 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <mutex>
+#include <pthread.h>
+#include <string>
+#include <tuple>
+#include <vector>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 #include "mlx/mlx.h"
 #include "mlx/backend/cpu/encoder.h"
@@ -13,6 +20,32 @@
 
 namespace mx = mlx::core;
 namespace nb = nanobind;
+
+namespace {
+// Where the ANE call sits inside a block, in ms from the first timestamp taken in this process.
+// -1 means the phase does not exist for that path (the threaded path has no eval/task phase).
+struct TLRow {
+  std::string tag;
+  double eval, task, ready, pstart, pend;
+};
+std::mutex g_tl_mu;
+std::vector<TLRow> g_tl;
+
+double now_ms() {
+  static const auto epoch = std::chrono::steady_clock::now();
+  return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - epoch).count();
+}
+
+void tl_push(const TLRow& r) {
+  std::lock_guard<std::mutex> lk(g_tl_mu);
+  g_tl.push_back(r);
+}
+
+// The ANE task competes with MLX's own workers; default QoS let it be descheduled behind them.
+void ane_qos() {
+  pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+}
+}  // namespace
 
 class AneLinear : public mx::Primitive {
  public:
@@ -199,6 +232,13 @@ static mx::Stream ane_stream() {
   return s;
 }
 
+// Marks must not share the ANE's stream: tasks on one stream run in order, so a mark queued behind
+// a 52 ms predict reports the predict's end, not the GPU's.
+static mx::Stream mark_stream() {
+  static mx::Stream s = mx::new_stream(mx::Device::cpu);
+  return s;
+}
+
 // Stage 3d: the fused SwiGLU MLP as an MLX primitive, so it can live inside mx.compile.
 // The pointer API (wl_fused_predict) synchronises in Python, which MLX forbids during a graph
 // transformation -- the first real generation run died with "[eval] Attempting to eval an array
@@ -209,25 +249,41 @@ class WLFused : public mx::Primitive {
   WLFused(mx::Stream s, std::shared_ptr<WLModel> m) : mx::Primitive(s), model_(std::move(m)) {}
 
   void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override {
+    const double t_eval = now_ms();
     for (auto& o : outputs) o.set_data(mx::allocator::malloc(o.nbytes()));
     auto& enc = mx::cpu::get_command_encoder(stream());
-    for (const auto& in : inputs) enc.set_input_array(in);
-    for (auto& o : outputs) enc.set_output_array(o);
+    // set_input_array/set_output_array are no-ops in MLX 0.32.4. add_temporary is what keeps a
+    // buffer alive until the scheduled tasks that read it finish, and this task reads raw pointers
+    // after eval_cpu has returned.
+    for (const auto& in : inputs) enc.add_temporary(in);
     auto model = model_;
-    std::vector<const void*> in_ptrs;
-    for (const auto& in : inputs) in_ptrs.push_back(in.data<void>());
+    std::vector<mx::array> ins = inputs;  // held for wait() inside the task
     std::vector<void*> out_ptrs;
     std::vector<size_t> out_elems;
     for (auto& o : outputs) {
       out_ptrs.push_back(o.data<void>());
       out_elems.push_back(o.data_size());
     }
-    enc.dispatch([model, in_ptrs = std::move(in_ptrs), out_ptrs = std::move(out_ptrs),
-                  out_elems = std::move(out_elems)]() {
+    enc.dispatch([model, ins = std::move(ins), out_ptrs = std::move(out_ptrs),
+                  out_elems = std::move(out_elems), t_eval]() mutable {
+      ane_qos();
+      const double t_task = now_ms();
+      // data<T>() is pointer arithmetic with no synchronisation, so fence here on the worker
+      // rather than letting the scheduler thread block the whole graph.
+      for (auto& a : ins) a.wait();
+      const double t_ready = now_ms();
+      std::vector<const void*> in_ptrs;
+      in_ptrs.reserve(ins.size());
+      for (const auto& a : ins) in_ptrs.push_back(a.data<void>());
+      TLRow row{"primitive", t_eval, t_task, t_ready, now_ms(), -1.0};
       try {
         model->predict_fused(in_ptrs, out_ptrs);
         model->clear_error();
+        row.pend = now_ms();
+        tl_push(row);
       } catch (const std::exception& e) {
+        row.pend = now_ms();
+        tl_push(row);
         model->set_error(e.what());
         // Fill with fp16 NaN so a failed call reads as broken instead of as a plausible result.
         for (size_t j = 0; j < out_ptrs.size(); ++j) {
@@ -256,6 +312,47 @@ class WLFused : public mx::Primitive {
 
  private:
   std::shared_ptr<WLModel> model_;
+};
+
+// Diagnostic only: an identity-shaped token that records when its input became available. Placed
+// after the GPU share it timestamps the share's completion as the CPU stream sees it, which is the
+// quantity that decides whether the ANE call overlapped it. The id keeps mx.compile from folding
+// two marks with the same tag into one node.
+class WLMark : public mx::Primitive {
+ public:
+  WLMark(mx::Stream s, std::string tag, int id) : mx::Primitive(s), tag_(std::move(tag)), id_(id) {}
+
+  void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override {
+    const double t_eval = now_ms();
+    for (auto& o : outputs) {
+      o.set_data(mx::allocator::malloc(o.nbytes()));
+      *o.data<int32_t>() = 0;
+    }
+    auto& enc = mx::cpu::get_command_encoder(stream());
+    for (const auto& in : inputs) enc.add_temporary(in);
+    auto in = inputs[0];
+    auto tag = tag_;
+    enc.dispatch([in, tag, t_eval]() mutable {
+      ane_qos();
+      const double t_task = now_ms();
+      in.wait();
+      const double t_ready = now_ms();
+      tl_push(TLRow{tag, t_eval, t_task, t_ready, t_ready, t_ready});
+    });
+  }
+  void eval_gpu(const std::vector<mx::array>&, std::vector<mx::array>&) override {
+    throw std::runtime_error("wl_mark must run on the CPU stream");
+  }
+  const char* name() const override { return "WLMark"; }
+  bool is_equivalent(const mx::Primitive& other) const override {
+    const auto& o = static_cast<const WLMark&>(other);
+    return tag_ == o.tag_ && id_ == o.id_;
+  }
+  std::vector<mx::Shape> output_shapes(const std::vector<mx::array>&) override { return {{1}}; }
+
+ private:
+  std::string tag_;
+  int id_;
 };
 
 NB_MODULE(_ane_linear, m) {
@@ -443,7 +540,11 @@ NB_MODULE(_ane_linear, m) {
         o.reserve(out_ptrs.size());
         for (uintptr_t v : in_ptrs) p.push_back(reinterpret_cast<const void*>(v));
         for (uintptr_t v : out_ptrs) o.push_back(reinterpret_cast<void*>(v));
+        // Same QoS as the primitive's task, so the two paths' predict durations are comparable.
+        ane_qos();
+        const double t0 = now_ms();
         model->predict_fused(p, o);
+        tl_push(TLRow{"threaded", -1.0, -1.0, -1.0, t0, now_ms()});
       },
       nb::arg("model"), nb::arg("in_ptrs"), nb::arg("out_ptrs"), nb::call_guard<nb::gil_scoped_release>());
   // Graph form: wl_fused(x, w1, w3, w2, s1, s3, s2, model) -> [y_rows, h_max_out] fp16 arrays.
@@ -468,4 +569,24 @@ NB_MODULE(_ane_linear, m) {
       },
       nb::arg("x"), nb::arg("w1"), nb::arg("w3"), nb::arg("w2"), nb::arg("s1"), nb::arg("s3"), nb::arg("s2"),
       nb::arg("model"));
+  // Diagnostic timeline: (tag, eval_cpu entry, task start, input ready, predict start, predict end)
+  // in ms from the first timestamp taken in this process. -1 marks a phase the path does not have.
+  m.def("wl_timeline", []() {
+    std::lock_guard<std::mutex> lk(g_tl_mu);
+    std::vector<std::tuple<std::string, double, double, double, double, double>> out;
+    out.reserve(g_tl.size());
+    for (const auto& r : g_tl) out.emplace_back(r.tag, r.eval, r.task, r.ready, r.pstart, r.pend);
+    return out;
+  });
+  m.def("wl_timeline_reset", []() {
+    std::lock_guard<std::mutex> lk(g_tl_mu);
+    g_tl.clear();
+  });
+  m.def(
+      "wl_mark",
+      [](const std::string& tag, const mx::array& a) {
+        static int counter = 0;
+        return mx::array({1}, mx::int32, std::make_shared<WLMark>(mark_stream(), tag, counter++), {a});
+      },
+      nb::arg("tag"), nb::arg("a"));
 }
