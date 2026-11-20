@@ -4,6 +4,7 @@ import mflux.models.moss_image.model.moss_image_scheduler  # noqa: F401 - regist
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.lora_resolution import LoraResolution
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.ssd_stream.streamer import Streamer
@@ -14,6 +15,7 @@ from mflux.models.common.weights.loading.weight_loader import WeightLoader
 from mflux.models.common_models.qwen3_5 import Qwen35TextModel
 from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.moss_image.model.moss_image_transformer.moss_image_transformer import MOSSImageTransformer
+from mflux.models.moss_image.moss_image_streamed_lora import MOSSImageStreamedLoRA
 from mflux.models.moss_image.weights.moss_image_lora_mapping import MOSSImageLoRAMapping
 from mflux.models.moss_image.weights.moss_image_weight_definition import MOSSImageWeightDefinition
 
@@ -32,6 +34,7 @@ class MOSSImageInitializer:
         lora_scales: list[float] | None = None,
         bake_lora: bool = False,
         ssd_stream: bool = False,
+        stream_lora: bool = False,
     ) -> None:
         path = PrequantizedResolution.weights_root(
             model_config,
@@ -46,13 +49,15 @@ class MOSSImageInitializer:
         MOSSImageInitializer._init_tokenizers(model, path)
         MOSSImageInitializer._init_models(model, model_config)
         MOSSImageInitializer._apply_weights(model, weights, quantize)
-        MOSSImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
+        streamed_lora = ssd_stream and stream_lora
+        if not streamed_lora:
+            MOSSImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
         # The parameters stay lazy: each one is read (and quantized) when a forward pass first needs
         # it. Evaluating them here held the text encoder, transformer and VAE at once, so --low-ram
         # could only free the text encoder after that peak (#948).
         del weights
         if ssd_stream:
-            MOSSImageInitializer._apply_ssd_stream(model, path)
+            MOSSImageInitializer._apply_ssd_stream(model, path, lora_paths if streamed_lora else None, lora_scales)
         mx.clear_cache()
 
     @staticmethod
@@ -112,11 +117,16 @@ class MOSSImageInitializer:
         )
 
     @staticmethod
-    def _apply_ssd_stream(model, path: str) -> None:
+    def _apply_ssd_stream(model, path: str, lora_paths: list[str] | None, lora_scales: list[float] | None) -> None:
         layout = PrequantizedResolution.layout(MOSSImageWeightDefinition)
         root = PathResolution.resolve(
             path=path, patterns=layout["upstream_patterns"], saved_subdirs=layout["saved_subdirs"]
         )
         Streamer(cycle=False).wrap(model.text_encoder.layers, root / "text_encoder", "layers.")
-        Streamer(cycle=True).wrap(model.transformer.layers, root / "transformer", "layers.")
+        lora = None
+        if lora_paths:
+            model.lora_paths = LoraResolution.resolve_paths(lora_paths)
+            model.lora_scales = LoraResolution.resolve_scales(lora_scales, len(model.lora_paths))
+            lora = MOSSImageStreamedLoRA(model.lora_paths[0], model.lora_scales[0])
+        Streamer(cycle=True).wrap(model.transformer.layers, root / "transformer", "layers.", lora)
         model.vae.decode_mode = Flux2VAE.DECODE_LOW_MEMORY

@@ -40,6 +40,7 @@ class MOSSImage(nn.Module):
         lora_scales: list[float] | None = None,
         bake_lora: bool = DEFAULT_BAKE_LORA,
         ssd_stream: bool = False,
+        stream_lora: bool = False,
     ):
         super().__init__()
         MOSSImageInitializer.init(
@@ -51,6 +52,7 @@ class MOSSImage(nn.Module):
             lora_scales=lora_scales,
             bake_lora=bake_lora,
             ssd_stream=ssd_stream,
+            stream_lora=stream_lora,
         )
         self.bake_lora = bake_lora
 

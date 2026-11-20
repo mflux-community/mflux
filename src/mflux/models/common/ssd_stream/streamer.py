@@ -13,10 +13,10 @@ class Streamer:
         self.blocks = []
         self.pending = {}
 
-    def wrap(self, modules: list[nn.Module], component_dir: Path, prefix: str) -> None:
+    def wrap(self, modules: list[nn.Module], component_dir: Path, prefix: str, lora=None) -> None:
         weight_map = json.loads((component_dir / "model.safetensors.index.json").read_text())["weight_map"]
         for index, module in enumerate(modules):
-            block = StreamedBlock(module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks))
+            block = StreamedBlock(module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks), lora)
             modules[index] = block
             self.blocks.append(block)
 
@@ -26,6 +26,8 @@ class Streamer:
         for shard, keys in block.shard_keys.items():
             loaded = mx.load(shard)
             installed.extend((block.module_key(key[len(block.prefix) :]), loaded[key]) for key in keys)
+        if block.lora is not None:
+            installed.extend(block.lora.factors(block.prefix))
         mx.async_eval([value for _, value in installed])
         return installed
 
@@ -43,7 +45,9 @@ class Streamer:
 class StreamedBlock:
     PLACEHOLDER = mx.zeros((1,))
 
-    def __init__(self, module, prefix, weight_map, component_dir, streamer, position):
+    def __init__(self, module, prefix, weight_map, component_dir, streamer, position, lora=None):
+        self.lora = lora
+        factor_names = [] if lora is None else lora.wrap(module, prefix)
         self.module = module
         self.prefix = prefix
         self.streamer = streamer
@@ -54,6 +58,7 @@ class StreamedBlock:
             if key.startswith(prefix):
                 self.shard_keys.setdefault(str(component_dir / shard), []).append(key)
         stored = [self.module_key(key[len(prefix) :]) for keys in self.shard_keys.values() for key in keys]
+        stored += factor_names
         self.empty = tree_unflatten([(name, self.PLACEHOLDER) for name in stored])
         module.update(self.empty, strict=False)
 

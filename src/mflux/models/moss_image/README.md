@@ -165,6 +165,7 @@ mflux-generate-moss-image \
 ```
 
 - A LoRA loads as usual and stays in memory (594.6 MB for this one).
+- With `--stream-lora` as well, the first `--lora` file stays on the SSD too: each block's part of it is read just before the block runs, so the whole LoRA is not resident. It reads the same MOSS-Image LoRA formats as the loader (kohya and PEFT names, with or without a prefix, alpha from the tensors or the file metadata) and the projections that the file trains. It ignores further `--lora` files and `--bake-lora`, and does not check for DoRA files, which the loader rejects. Without `--stream-lora`, or without `--ssd-stream`, a LoRA loads as usual.
 - Only checkpoint 15000 was run. The author's newer checkpoints have the same size and layout and should work, but they have not been tested.
 - With the original `OpenMOSS-Team` repo the text encoder is not streamed, because its layer names differ.
 - `--ssd-stream` also decodes the image in row strips, as the FLUX.2 models do, because the full-image decode used more memory than the rest of the run. At 512x512 (one run, mflux 0.24.0) the strip image differed from the full-decode image by 0.40 of 255 in mean absolute pixel value. With the strips, `--vae-tiling` and `--vae-tile-size` have no effect. Without `--ssd-stream` the decode is unchanged.
