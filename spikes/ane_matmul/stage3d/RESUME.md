@@ -29,6 +29,51 @@ Take every number and hash from tool output, never from memory.
 | `52b4b0dd` | Step 2 wiring + weight-free smoke test |
 | `b6e645d5` | **Step 2a: T4 re-timed with the range fix → 1.186× at 34 blocks** |
 | `22bb44ed` | Step 2b prep: record the real token count, since share is not fixed |
+| `856b6efd` | swap delta split into load phase vs timed window |
+| `fb74544f` | **`wl_fused` as an MLX primitive — works under `mx.compile`** |
+| `3df900ee` | primitive reads inputs correctly on either MLX device |
+| `470014e6` | **option (a) complete — row split wired, eager == compiled** |
+
+## Read this first: the ANE arm was structurally broken, and is now fixed
+
+The first real generation run with `--ane-mlp` did not fail from memory. It failed at the first step:
+
+```
+ValueError: [eval] Attempting to eval an array during function transformations like compile or vmap is not allowed.
+```
+
+mflux wraps the denoise step in `mx.compile` (`src/mflux/models/z_image/variants/z_image.py:282`), and
+the spike's `RowSplitFFN` synchronised to the host with `np.array()` to feed Core ML. The standalone
+benches never caught it because they call the chain eagerly. So every T2/T3/T4 speedup number was
+measured on a code path that **cannot run inside generation**.
+
+Fixed by option (a): `wl_fused` is now an `mx::Primitive` (`WLFused`) with two fp16 outputs
+(`y_rows`, `h_max_out`), and `PrimitiveSplitFFN`/`patch_transformer_compilable` use it with no host
+sync. Verified on scaled dims:
+
+- primitive vs pointer API: **bit-identical** on both outputs (maxdiff 0.000000)
+- inside `mx.compile`: works; eager and compiled give the **same** cos 0.9999350 / relerr 0.01141
+- input device placement is irrelevant: identical on `mx.gpu` and `mx.cpu` (MLX 0.32.4 has no
+  `mx.to_device`; placement is set by `mx.set_default_device`)
+- the rowmax restore is **explicitly fp32**. In fp16 it reintroduces the overflow this exists to
+  remove (real `h_max` 5064; restored product 5.06e5 vs a 65504 ceiling).
+
+`patch_model(mode=)` selects the form: `"compiled"` (default, for generation) or `"bench"` (the
+threading path the standalone benches need in order to time phases).
+
+## Still open before any timing claim
+
+1. **T2/T3/T4 and the 1.265×/1.186× numbers came from the bench path, not the compiled path.**
+   Whether MLX's own scheduling overlaps the ANE call as well as my worker thread did is unmeasured.
+   The honest expectation is that the compiled arm may be slower. Re-measure in Step 2b before
+   quoting a speedup for generation.
+2. **Swap is not clean at 1024², for any arm.** Measured: bf16 load pushed +5612 MB and the window
+   pulled back −5426 MB; q8 +4795 / −4717. Negative window deltas mean page-ins happened *inside*
+   the timed region, so those step times are contaminated. `--low-ram` helps (8.71 vs 10.34 s/step,
+   and ~0.74 GB paged instead of ~2.86 GB) but cannot help the load, which is when the paging occurs.
+   **Reboot before Step 2b/3**, and expect the load phase to page regardless — say so rather than
+   presenting a contaminated number as a result.
+3. `free-memory` only frees ~1.00 GB against ~26.8 GB already available; it is not the lever.
 
 ## State after Step 2a
 
