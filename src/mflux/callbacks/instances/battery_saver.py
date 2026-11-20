@@ -39,11 +39,12 @@ class BatterySaver(BeforeLoopCallback):
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=5,
             )
             if self.PMSET_AC_POWER_STATUS not in result.stdout:
                 if match := re.search(self.PMSET_BATT_STATUS_PATTERN, result.stdout):
                     percentage = int(match.group(1))
-        except (subprocess.CalledProcessError, TypeError) as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, TypeError) as e:
             logger.warning(
                 f"Cannot read battery percentage via 'pmset -g batt': {e}. "
                 f"Battery saver functionality is disabled and the program will continue running."
@@ -67,11 +68,13 @@ class BatterySaver(BeforeLoopCallback):
                     capture_output=True,
                     text=True,
                     check=True,
+                    timeout=10,
                 )
                 data = json.loads(result.stdout)
                 cls._machine_model = data["SPHardwareDataType"][0]["machine_model"]
             except (
                 subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
                 json.JSONDecodeError,
                 FileNotFoundError,
                 IndexError,
