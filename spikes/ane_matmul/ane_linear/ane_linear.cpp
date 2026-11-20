@@ -190,6 +190,15 @@ class WLLinear : public mx::Primitive {
   std::shared_ptr<WLModel> model_;
 };
 
+// A dedicated CPU stream for ANE calls. On the default CPU stream a blocking Core ML prediction
+// shares the queue with every other CPU op; on its own stream, MLX's cross-stream ordering should
+// let the GPU continue while the ANE call runs. Cheap to test, and if it holds it removes the need
+// for a hand-rolled submit/join event pair.
+static mx::Stream ane_stream() {
+  static mx::Stream s = mx::new_stream(mx::Device::cpu);
+  return s;
+}
+
 // Stage 3d: the fused SwiGLU MLP as an MLX primitive, so it can live inside mx.compile.
 // The pointer API (wl_fused_predict) synchronises in Python, which MLX forbids during a graph
 // transformation -- the first real generation run died with "[eval] Attempting to eval an array
@@ -455,7 +464,7 @@ NB_MODULE(_ane_linear, m) {
           dtypes.push_back(mx::float16);
         }
         return mx::array::make_arrays(
-            shapes, dtypes, std::make_shared<WLFused>(mx::default_stream(mx::Device::cpu), model), ins);
+            shapes, dtypes, std::make_shared<WLFused>(ane_stream(), model), ins);
       },
       nb::arg("x"), nb::arg("w1"), nb::arg("w3"), nb::arg("w2"), nb::arg("s1"), nb::arg("s3"), nb::arg("s2"),
       nb::arg("model"));
