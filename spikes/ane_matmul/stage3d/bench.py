@@ -377,10 +377,17 @@ def main():
             "WARNING: backend copies weights per call (or is not the ANE): timings are NOT gate-valid", file=sys.stderr
         )
 
+    nice = os.getpriority(os.PRIO_PROCESS, 0)
+    if timed and nice != 0:
+        print(
+            f"WARNING: this process is nice {nice}, not 0 -- timings are not comparable to a nice-0 run",
+            file=sys.stderr,
+        )
     result = {
         "test": args.test,
         "args": vars(args),
         "weights_copied": backend.weights_copied,
+        "nice": nice,
     }
     with gate:
         result["swap_mb_start"] = swap_used_mb()
