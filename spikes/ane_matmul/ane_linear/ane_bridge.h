@@ -86,6 +86,10 @@ class WLModel {
   // the fp32 GPU epilogue can restore it -- multiplying it back inside the program overflows fp16.
   void set_fused(const std::vector<WLTensor>& ins, const std::vector<WLTensor>& outs);
   void predict_fused(const std::vector<const void*>& in_ptrs, const std::vector<void*>& out_ptrs);
+  // Needed by the MLX primitive: output shapes must be knowable when the graph is built, before
+  // any call happens, because mx.compile cannot ask the model at eval time.
+  size_t fused_out_count() const { return fused_outs_.size(); }
+  std::vector<int64_t> fused_out_shape(size_t j) const { return fused_outs_[j].shape; }
   int Mpad, N, K;
   std::string last_error() {
     std::lock_guard<std::mutex> g(mu_);

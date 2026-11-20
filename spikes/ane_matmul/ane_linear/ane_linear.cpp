@@ -190,6 +190,65 @@ class WLLinear : public mx::Primitive {
   std::shared_ptr<WLModel> model_;
 };
 
+// Stage 3d: the fused SwiGLU MLP as an MLX primitive, so it can live inside mx.compile.
+// The pointer API (wl_fused_predict) synchronises in Python, which MLX forbids during a graph
+// transformation -- the first real generation run died with "[eval] Attempting to eval an array
+// during function transformations". Here MLX schedules the call itself. It runs on the CPU stream
+// like the other ANE primitives in this file, and Core ML reads whatever buffers MLX places there.
+class WLFused : public mx::Primitive {
+ public:
+  WLFused(mx::Stream s, std::shared_ptr<WLModel> m) : mx::Primitive(s), model_(std::move(m)) {}
+
+  void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override {
+    for (auto& o : outputs) o.set_data(mx::allocator::malloc(o.nbytes()));
+    auto& enc = mx::cpu::get_command_encoder(stream());
+    for (const auto& in : inputs) enc.set_input_array(in);
+    for (auto& o : outputs) enc.set_output_array(o);
+    auto model = model_;
+    std::vector<const void*> in_ptrs;
+    for (const auto& in : inputs) in_ptrs.push_back(in.data<void>());
+    std::vector<void*> out_ptrs;
+    std::vector<size_t> out_elems;
+    for (auto& o : outputs) {
+      out_ptrs.push_back(o.data<void>());
+      out_elems.push_back(o.data_size());
+    }
+    enc.dispatch([model, in_ptrs = std::move(in_ptrs), out_ptrs = std::move(out_ptrs),
+                  out_elems = std::move(out_elems)]() {
+      try {
+        model->predict_fused(in_ptrs, out_ptrs);
+        model->clear_error();
+      } catch (const std::exception& e) {
+        model->set_error(e.what());
+        // Fill with fp16 NaN so a failed call reads as broken instead of as a plausible result.
+        for (size_t j = 0; j < out_ptrs.size(); ++j) {
+          auto* h = static_cast<uint16_t*>(out_ptrs[j]);
+          std::fill(h, h + out_elems[j], uint16_t(0x7E00));
+        }
+        throw;
+      }
+    });
+  }
+  void eval_gpu(const std::vector<mx::array>&, std::vector<mx::array>&) override {
+    throw std::runtime_error("wl_fused must run on the CPU stream");
+  }
+  const char* name() const override { return "WLFused"; }
+  bool is_equivalent(const mx::Primitive& other) const override {
+    return model_.get() == static_cast<const WLFused&>(other).model_.get();
+  }
+  std::vector<mx::Shape> output_shapes(const std::vector<mx::array>&) override {
+    std::vector<mx::Shape> out;
+    for (size_t j = 0; j < model_->fused_out_count(); ++j) {
+      auto sh = model_->fused_out_shape(j);
+      out.push_back(mx::Shape(sh.begin(), sh.end()));
+    }
+    return out;
+  }
+
+ private:
+  std::shared_ptr<WLModel> model_;
+};
+
 NB_MODULE(_ane_linear, m) {
   nb::class_<AneModel>(m, "AneModel")   // held by shared_ptr: no GIL needed when MLX frees it
       .def(nb::init<const std::string&, int, int, int>(), nb::arg("path"), nb::arg("tokens"), nb::arg("in_features"), nb::arg("out_features"))
@@ -378,4 +437,26 @@ NB_MODULE(_ane_linear, m) {
         model->predict_fused(p, o);
       },
       nb::arg("model"), nb::arg("in_ptrs"), nb::arg("out_ptrs"), nb::call_guard<nb::gil_scoped_release>());
+  // Graph form: wl_fused(x, w1, w3, w2, s1, s3, s2, model) -> [y_rows, h_max_out] fp16 arrays.
+  // Returns MLX arrays rather than touching host pointers, so the call is legal inside mx.compile
+  // and MLX owns input placement. Output dtypes are fp16, matching what wl_fused_load declared.
+  m.def(
+      "wl_fused",
+      [](const mx::array& x, const mx::array& w1, const mx::array& w3, const mx::array& w2, const mx::array& s1,
+         const mx::array& s3, const mx::array& s2, std::shared_ptr<WLModel> model) {
+        std::vector<mx::array> ins = {
+            mx::contiguous(x), mx::contiguous(w1), mx::contiguous(w3), mx::contiguous(w2),
+            mx::contiguous(s1), mx::contiguous(s3), mx::contiguous(s2)};
+        std::vector<mx::Shape> shapes;
+        std::vector<mx::Dtype> dtypes;
+        for (size_t j = 0; j < model->fused_out_count(); ++j) {
+          auto sh = model->fused_out_shape(j);
+          shapes.push_back(mx::Shape(sh.begin(), sh.end()));
+          dtypes.push_back(mx::float16);
+        }
+        return mx::array::make_arrays(
+            shapes, dtypes, std::make_shared<WLFused>(mx::default_stream(mx::Device::cpu), model), ins);
+      },
+      nb::arg("x"), nb::arg("w1"), nb::arg("w3"), nb::arg("w2"), nb::arg("s1"), nb::arg("s3"), nb::arg("s2"),
+      nb::arg("model"));
 }

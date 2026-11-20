@@ -40,9 +40,11 @@ class MlpSpec:
 
     @property
     def name(self) -> str:
+        # dim and hidden are in the key: a scaled-down probe otherwise reuses the cached real-width
+        # program, and Core ML then fails on a shape mismatch that looks like a bridge bug.
         return (
-            f"mlp_m{self.mpad}_{self.weight_dtype}_{self.scale_mode}_w2{self.w2_scale}"
-            f"_k{self.k13_chunks}x{self.k2_chunks}{'_rf' if self.range_fix else ''}"
+            f"mlp_m{self.mpad}_d{self.dim}h{self.hidden}_{self.weight_dtype}_{self.scale_mode}"
+            f"_w2{self.w2_scale}_k{self.k13_chunks}x{self.k2_chunks}{'_rf' if self.range_fix else ''}"
         )
 
     def validate(self) -> None:
