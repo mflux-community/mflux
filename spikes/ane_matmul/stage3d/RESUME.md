@@ -75,6 +75,32 @@ threading path the standalone benches need in order to time phases).
    presenting a contaminated number as a result.
 3. `free-memory` only frees ~1.00 GB against ~26.8 GB already available; it is not the lever.
 
+## STOP: the timing case is dead too, so Steps 2b and 3 should not be run
+
+Measured on `3a92a975` after this reboot, same arguments, differing only in `--patch-mode` (report §7,
+commit `8533d9b5`):
+
+| path | rung 8 | rung 16 | rung 34 | swap | peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| threaded (cannot ship) | 1.1116× | 1.1676× | 1.0882× | 0 → 0 MB | 5.96 GB |
+| primitive (shippable) | 1.0336× | **0.9191×** | **0.9692×** | 0 → 1287 MB | 9.08 GB |
+
+The 1.265× and 1.186× figures came from a host-syncing Python worker thread that `mx.compile` forbids.
+Given MLX's own scheduler the split is slower than the GPU at 16 and 34 blocks, and macmon recorded ANE
+power at median 0.00 W (max 2.55 W) during that run against 4.03 W in a back-to-back burst. The overlap
+was the thread's, not the ANE's. Rungs 8 and 16 had `discarded=0` with swap flat, so this is not
+contamination. Accuracy already failed independently (0 of 90 rows vs q8), so a bf16/q8/ANE image
+comparison would be an eyeball check on a path that loses on both axes. **Recommendation: stop the
+row-split lane.**
+
+If Scriv wants rung 34 firmed up, the one useful re-run is `bench.py t4 --range-fix --patch-mode
+primitive` on a freshly rebooted machine (swap 0.00M first). Note the primitive run's swap growth and
+that its per-call stats are empty by design — timing the phases requires the host sync.
+
+Known defect to fix before further primitive work: `PrimitiveSplitFFN` keeps MLX copies of the codes
+while `prepare_block_weights` keeps the numpy ones, so the primitive path carries the weights twice
+(peak RSS 9.08 GB vs 5.96 GB threaded).
+
 ## State after Step 2a
 
 T4 with `--range-fix` (run post-reboot with swap 0.00M at start, `weight_surfaces=per-block`, on
