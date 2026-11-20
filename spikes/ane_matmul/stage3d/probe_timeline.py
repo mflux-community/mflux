@@ -16,6 +16,7 @@ Synthetic weights at real Z-Image dims, like bench.py. No checkpoint, no image.
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -85,6 +86,7 @@ def run_chain(blocks, inputs, compiled):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--blocks", type=int, default=8)
+    ap.add_argument("--tag", default="", help="suffix for the result file, so env-var settings do not overwrite")
     ap.add_argument("--share", type=float, default=0.5)
     ap.add_argument("--cache", default=str(Path(__file__).parent / "cache"))
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
@@ -100,7 +102,8 @@ def main():
 
     blocks = make_blocks(args.blocks)
     inputs = make_inputs()
-    print(f"blocks={args.blocks} S={SEQ} mpad={m} spec={spec.name}", flush=True)
+    env = {k: os.environ.get(k, "-") for k in ("MLX_MAX_OPS_PER_BUFFER", "MLX_METAL_FAST_SYNCH", "MLX_BFS_MAX_WIDTH")}
+    print(f"blocks={args.blocks} S={SEQ} mpad={m} spec={spec.name} env={env}", flush=True)
 
     # The marked graph must compute the same thing as the production one.
     ff0 = blocks[0].feed_forward
@@ -176,8 +179,19 @@ def main():
                 f"{name} predict ms: median {np.median(durs):.1f} max {durs.max():.1f} | input wait ms median {np.median(waits):.1f} max {waits.max():.1f}"
             )
 
-    path = Path(args.out) / f"timeline_{args.blocks}b.json"
-    path.write_text(json.dumps({"spec": spec.name, "blocks": args.blocks, "results": results}, indent=2))
+    for name in ("primitive_loop", "primitive_compiled"):
+        pr = [r for r in results[name]["timeline"] if r[0] == "primitive"]
+        if len(pr) > 1:
+            half = pr[len(pr) // 2 :]  # the timed half, after warm-up
+            gap = np.median([r[2] - r[1] for r in half])
+            wt = np.median([r[3] - r[2] for r in half])
+            pd = np.median([r[5] - r[4] for r in half])
+            per = np.median([half[i + 1][1] - half[i][1] for i in range(len(half) - 1)])
+            print(
+                f"SUMMARY {name:19s} eval->task {gap:6.1f} ms | wait {wt:5.1f} | predict {pd:5.1f} | period {per:6.1f}"
+            )
+    path = Path(args.out) / f"timeline_{args.blocks}b{'_' + args.tag if args.tag else ''}.json"
+    path.write_text(json.dumps({"spec": spec.name, "blocks": args.blocks, "env": env, "results": results}, indent=2))
     print(f"\nwrote {path}")
 
 
