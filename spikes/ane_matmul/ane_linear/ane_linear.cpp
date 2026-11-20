@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <pthread.h>
@@ -275,6 +276,16 @@ class WLFused : public mx::Primitive {
       std::vector<const void*> in_ptrs;
       in_ptrs.reserve(ins.size());
       for (const auto& a : ins) in_ptrs.push_back(a.data<void>());
+      // Core ML wires the pages of the buffer it wraps, so give it the model's one reused host
+      // buffer instead of a fresh MLX allocation per block. In the timeline this blit is the gap
+      // between "input ready" and "predict start".
+      if (!ins.empty()) {
+        auto& stage = model->x_stage;
+        const size_t n = ins[0].nbytes();
+        if (stage.size() != n) stage.resize(n);
+        std::memcpy(stage.data(), in_ptrs[0], n);
+        in_ptrs[0] = stage.data();
+      }
       TLRow row{"primitive", t_eval, t_task, t_ready, now_ms(), -1.0};
       try {
         model->predict_fused(in_ptrs, out_ptrs);

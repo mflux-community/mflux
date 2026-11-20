@@ -396,6 +396,18 @@ class RowSplitBlock:
         return x + gate_mlp * b.ffn_norm2(ffn_out)
 
 
+_cpu_stream_holder = []
+
+
+def _cpu_stream():
+    """One dedicated CPU stream for ANE input staging, shared by every patched block."""
+    if not _cpu_stream_holder:
+        import mlx.core as mx
+
+        _cpu_stream_holder.append(mx.new_stream(mx.cpu))
+    return _cpu_stream_holder[0]
+
+
 class PrimitiveSplitFFN:
     """Row split that is legal inside mx.compile: calls the wl_fused primitive, never the host.
 
@@ -426,14 +438,15 @@ class PrimitiveSplitFFN:
 
         m = self.spec.mpad
         assert h.shape[0] == 1 and h.shape[1] > m, "row split needs batch 1 and S > Mpad"
-        # The ANE branch's staging kernel must be encoded before the GPU share, or MLX puts the
-        # cross-stream fence after it: 56-58% overlap against 100% for an ordered fork. depends()
-        # orders them while keeping the cast on the GPU. Casting on a CPU stream instead hands Core
-        # ML a host buffer, which wires ~31 MB per block and paged 2.1 GB at rung 34.
-        h_ane = h[:, :m].astype(mx.float16)
-        h_gpu = mx.depends([h[:, m:]], [h_ane])[0]
+        # Stage on a CPU stream. That forces the Metal commit boundary before the GPU share is
+        # encoded, which is the only form that started the CPU task early in the stand-in (100%
+        # overlap against 56% for a GPU-stream slice). The host buffer this produces is NOT what
+        # Core ML wraps: WLFused blits x into one reused surface per model, so the wired set stays
+        # ~31 MB once instead of ~31 MB per block, which is what paged the earlier CPU-cast attempt.
+        with mx.stream(_cpu_stream()):
+            h_ane = h[:, :m].astype(mx.float16)
         y, h_max = self.ext.wl_fused(h_ane, *self._mxw, self.model)
-        y_gpu = self.ff(h_gpu)  # enqueue the GPU share before the join, or the join stalls it
+        y_gpu = self.ff(h[:, m:])  # enqueue the GPU share before the join, or the join stalls it
         y_ane = y.astype(mx.float32) * h_max.astype(mx.float32) * self._gain
         return mx.concatenate([y_ane.astype(h.dtype), y_gpu.astype(h.dtype)], axis=1)
 

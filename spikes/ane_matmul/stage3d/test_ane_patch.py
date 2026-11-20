@@ -202,19 +202,21 @@ class _FakeProgram:
 
 
 def _primitive_ffn(monkeypatch, proj, host_read=True):
+    import rowsplit
     from mlp_program import MlpSpec
     from rowsplit import BlockWeights, PrimitiveSplitFFN
 
     calls = []
-    real_depends = mx.depends
+    real_stream = mx.stream
 
-    def spy(inputs, dependencies):
-        calls.append((len(inputs), len(dependencies)))
-        return real_depends(inputs, dependencies)
+    def spy(s):
+        calls.append(s)
+        return real_stream(s)
 
-    # The GPU share must depend on the ANE branch's staging kernel, so the cross-stream fence is
-    # encoded before the share instead of after it: 56-58% overlap without the edge, 100% with it.
-    monkeypatch.setattr(mx, "depends", spy)
+    # Staging must run on a CPU stream: that forces the Metal commit boundary before the GPU share
+    # is encoded, the only form that started the ANE task early (100% overlap vs 56% for a GPU slice).
+    monkeypatch.setattr(mx, "stream", spy)
+    monkeypatch.setattr(rowsplit, "_cpu_stream", lambda: mx.new_stream(mx.cpu))
 
     gain = np.arange(1, DIM + 1, dtype=np.float32) / DIM
     w = BlockWeights(
@@ -230,22 +232,24 @@ def _primitive_ffn(monkeypatch, proj, host_read=True):
     return ffn, ext, gain, calls
 
 
-def test_primitive_form_orders_the_gpu_share_after_the_ane_staging_kernel(monkeypatch):
+def test_primitive_form_stages_the_ane_rows_on_a_cpu_stream(monkeypatch):
     ffn, ext, _gain, calls = _primitive_ffn(monkeypatch, np.zeros((DIM, DIM), np.float32))
     h = _h()
     mx.eval(ffn(h))
-    assert calls == [(1, 1)], f"expected one depends edge from the staging kernel, got {calls}"
+    assert len(calls) == 1, f"expected one stream switch for staging, got {len(calls)}"
+    assert calls[0].device == mx.cpu, f"staging ran on {calls[0].device}, not the CPU"
     assert ext.seen_shapes == [((1, MPAD, DIM), mx.float16)]
 
 
-def test_mx_depends_preserves_the_rows(monkeypatch):
-    # The ordering edge must not change the values the GPU share sees.
+def test_cpu_stream_staging_preserves_the_rows(monkeypatch):
+    # Staging on another stream must not change the values the program receives.
     h = _h()
-    staging = h[:, :MPAD].astype(mx.float16)
-    hB = mx.depends([h[:, MPAD:]], [staging])[0]
-    mx.eval(hB)
-    got = np.array(hB.astype(mx.float32))  # numpy has no bfloat16, so widen first
-    assert np.array_equal(got, np.array(h[:, MPAD:].astype(mx.float32)))
+    with mx.stream(mx.new_stream(mx.cpu)):
+        staged = h[:, :MPAD].astype(mx.float16)
+    mx.eval(staged)
+    got = np.array(staged.astype(mx.float32))
+    want = np.array(h[:, :MPAD].astype(mx.float16).astype(mx.float32))
+    assert np.array_equal(got, want)
 
 
 def test_primitive_form_gpu_rows_match_the_unpatched_ffn(monkeypatch):

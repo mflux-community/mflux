@@ -91,6 +91,10 @@ class WLModel {
   size_t fused_out_count() const { return fused_outs_.size(); }
   std::vector<int64_t> fused_out_shape(size_t j) const { return fused_outs_[j].shape; }
   int Mpad, N, K;
+  // One reused host buffer for the ANE's x rows. Core ML wires the pages of whatever buffer it
+  // wraps, so wrapping a fresh MLX allocation per block wired ~31 MB x 34 and paged the run.
+  // Calls are serial on the ANE stream, so one buffer per model is safe.
+  std::vector<uint8_t> x_stage;
   std::string last_error() {
     std::lock_guard<std::mutex> g(mu_);
     return error_;
