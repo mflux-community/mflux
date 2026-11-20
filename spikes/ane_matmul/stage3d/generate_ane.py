@@ -79,6 +79,12 @@ def main() -> None:
     # a duration, not an absolute clock: perf_counter() has no fixed origin, so recording it raw
     # produced load_s values like 2186 that looked like a 36-minute load and were meaningless
     load_s = time.perf_counter() - t_load0
+    # Sample at the phase boundary. Paging during load/encode is not the same validity problem as
+    # paging inside the timed denoising window: under --low-ram the encoder is evicted right after
+    # encoding, so whatever it pushed to swap may never be touched again. Splitting the delta lets
+    # the gate look at the window that actually produced the timings.
+    swap_after_load = swap_used_mb()
+    wired_after_load = wired_gb()
 
     info: dict = {"arm": args.arm_name or ("ane" if args.ane_mlp else "baseline"), "quantize": args.quantize}
     if args.ane_mlp:
@@ -98,6 +104,7 @@ def main() -> None:
     t0 = time.perf_counter()
     image = ZImageTurboCommand.generate(model, args, seed, prompt)
     gen_s = time.perf_counter() - t0
+    swap_after_gen = swap_used_mb()
     steps = args.steps
 
     # the real CLI names this --output and formats it with the seed; reuse it unchanged
@@ -134,8 +141,12 @@ def main() -> None:
         "image_s": round(gen_s, 3),
         "per_step_s": round(gen_s / steps, 4) if steps else None,
         "swap_mb_before": swap0,
-        "swap_mb_after": swap_used_mb(),
+        "swap_mb_after_load": swap_after_load,
+        "swap_mb_after_gen": swap_after_gen,
+        "swap_delta_load_mb": round(swap_after_load - swap0, 1),
+        "swap_delta_window_mb": round(swap_after_gen - swap_after_load, 1),
         "wired_gb_before": round(wired0, 2),
+        "wired_gb_after_load": round(wired_after_load, 2),
         "wired_gb_after": round(wired_gb(), 2),
         "path": str(out),
     }
