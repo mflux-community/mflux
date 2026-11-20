@@ -606,7 +606,31 @@ swap flat (2970 to 2962 MB). Scope note: this leaked only where fresh numpy arra
 block. In `bench.py` the cache held references to MLX parameters the loaded blocks already own, so it
 delayed release without duplicating memory -- the §3 and §5g wired numbers for T2/T3/T4 stand.
 
-## 6. Commits
+## 6. Step 2a — T4 re-timed with the range fix (the number that ships)
+
+Post-reboot, swap 0.00M at start, commit `653077d9`, `--range-fix --shares 0.5 --repeats 5`,
+`weight_surfaces=per-block`. Chained ladder, 2 refiners ahead of n main blocks:
+
+| rung | gpu_only median ms | ANE median ms | ANE p90 | speedup | runs discarded |
+| --- | --- | --- | --- | --- | --- |
+| 8 | 1689.4 | 1456.4 | 2192.8 | 1.160× | 0 |
+| 16 | 3050.4 | 2740.0 | 2967.0 | 1.113× | 0 |
+| 34 | 6009.3 | 5068.8 | 5643.9 | **1.186×** | 1 |
+
+Per call at the top rung: `prep 80.06, wait 54.10, epilogue 1.54` ms.
+Memory: swap 0.0 → 203.6 MB, wired **6.23 → 9.31 GB (+3.08)**, peak RSS 5.47 GB.
+
+**The range fix costs about 10% of the ANE arm's time.** Against §5e's pre-fix run the speedup drops
+from 1.265× to 1.186× at 34 blocks, and the wait term explains it: 46.18 → 54.10 ms per call. That is
+the `abs` → `reduce_max` → `real_div` normalisation of a 2048×10240 `h` running on the ANE — real
+work the saturating program skipped. So **1.265× measured a broken program**; 1.186× is the first
+speedup for a numerically correct row-split MLP and is the number to carry into Steps 2b and 3.
+
+Rung 16 (1.113×) is the noisiest rung, not a trend: p90 2967 against a 2740 median, and one repeat
+was discarded at rung 34 for swap growth, so read 1.11–1.19 as a range. The gpu_only baseline also
+drifted ~2.8% versus §5e's run, which is why ratios are only compared within a run.
+
+## 7. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from
   `feat/dreamlite`)
@@ -618,4 +642,11 @@ delayed release without duplicating memory -- the §3 and §5g wired numbers for
   runs take the cooperative `BENCH.lock` via `s3a.BenchLock`
 - `f4010249` — probe A: graph-boundary programs and the two-reference gate (§5b)
 - `16dc9cd0` — probe B: fp16 weights (§5c); `BridgeBackend` weight-dtype fix
-- probe C (§5d) and this report update are committed together; `git log --oneline` gives the hash
+- `f922049a` — probe C: data bisect (§5d); activation precision ruled out, weight distribution decides
+- `53f1aa26` — real-weight gate (§5e): NO-GO, ANE lost to q8 in 0 of 90 rows
+- `e323e8ac` — range probe (§5f): the mirror reproduces the saturation with no ANE; clamp-not-trap
+- `a7580512` — shared weight surfaces do NOT fix wired memory (§5g)
+- `7c43f8c3` — range + accuracy mirror over all 34 real blocks (§5h)
+- `3f549884` — **Step 1: the a+b range fix in the program and bridge, confirmed on the ANE (§5i)**
+- `52b4b0dd` — Step 2 wiring: `--ane-mlp`, `generate_ane.py`, `ane_patch.py`, weight-free smoke test
+- `bdde23a2`, `653077d9` — `RESUME.md`, `image_metrics.py`, and the grid helper
