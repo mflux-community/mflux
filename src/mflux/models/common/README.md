@@ -22,6 +22,7 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 - [Float16 compute (Apple M1 family)](#float16-compute-apple-m1-family)
 - [Resource and inspection options](#resource-and-inspection-options)
 - [MLX cache limit](#mlx-cache-limit)
+- [SSD streaming (`--ssd-stream`)](#ssd-streaming---ssd-stream)
 - [Cache locations](#cache-locations)
 - [Capabilities by task](#capabilities-by-task)
 - [Command reference](#command-reference)
@@ -756,6 +757,29 @@ mflux-generate-z-image-turbo \
 - Value must be positive (`> 0`).
 - The value is converted internally using decimal gigabytes (`GB * 1000^3`).
 - Works in both normal mode and `--low-ram` mode.
+
+---
+
+## SSD streaming (`--ssd-stream`)
+
+`--ssd-stream` is for Macs whose RAM is smaller than the model. It keeps only the layer that is running in memory. Each layer is read from the model's saved shards on the SSD just before it runs, the next layer is read while the current one computes, and the layer is dropped after it runs. Without it mflux holds the layers it has used until the run ends, so a model larger than RAM is paged to the swap file, which writes to the SSD.
+
+- It reads raw tensors by their saved names, so the model folder or repo must be in the mflux layout (an `mflux-save` folder or a `mflux-community` repo), not the original publisher's layout.
+- Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
+- It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit.
+- The models that support it are listed in their READMEs: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+
+### Checking that a run does not wear the SSD
+
+Swap writes are what wear the SSD, and a run that fits in RAM writes almost nothing. Read three counters before and after a run and subtract:
+
+```sh
+ioreg -c IOBlockStorageDriver -r -w0 | grep -o '"Bytes (Write)"=[0-9]*'   # bytes written to the drive, a running total
+vm_stat | grep Swapouts                                                     # pages written to swap (16 KB each on Apple silicon)
+sysctl vm.swapusage                                                         # swap file in use
+```
+
+`ioreg` prints one line per storage driver; with external drives attached, find the internal one. The counter covers every process on the machine, so close other apps first. An idle machine wrote about 8 MB per 90 s on one M1 with 8 GiB. If a run writes far more than that, or `Swapouts` rises, the model is paging: close other apps, lower the resolution, or stop the run.
 
 ---
 
