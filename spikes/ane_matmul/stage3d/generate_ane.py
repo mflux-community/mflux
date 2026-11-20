@@ -102,6 +102,23 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     image.save(path=str(out), export_json_metadata=args.metadata)
 
+    # Record what the split actually saw before info goes to JSON: the real token count sets the
+    # real share, and an image time quoted against the intended share would be misleading.
+    runtime = info.get("patch", {}).pop("_runtime", None)
+    observed: dict = {}
+    if runtime is not None:
+        st, be, sn = runtime["stats"], runtime["backend"], runtime["spec_name"]
+        seqs = st.seq_seen()
+        models = getattr(be, "_models", {})
+        observed = {
+            "seq_seen": seqs,
+            "actual_share": [round(info["patch"]["mpad"] / s, 4) for s in seqs],
+            "per_call_ms": {k: round(v, 3) for k, v in st.summary_ms().items()},
+            "copybacks": models[sn].copybacks() if sn in models else None,
+            "plan_report": getattr(be, "plan_reports", {}).get(sn),
+            "ane_calls": len(st.wait),
+        }
+
     summary = {
         **info,
         "prompt": prompt,
@@ -109,6 +126,7 @@ def main() -> None:
         "steps": steps,
         "width": args.width,
         "height": args.height,
+        "ane_observed": observed or None,
         "load_s": round(t_load, 2),
         "image_s": round(gen_s, 3),
         "per_step_s": round(gen_s / steps, 4) if steps else None,

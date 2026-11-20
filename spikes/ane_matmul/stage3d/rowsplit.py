@@ -293,9 +293,16 @@ class CallStats:
     prep: list[float] = field(default_factory=list)
     wait: list[float] = field(default_factory=list)
     epilogue: list[float] = field(default_factory=list)
+    # Z-Image's main layers run on the unified sequence, so S moves with prompt length, and an image
+    # timing means nothing unless the real S -- hence the real share -- is recorded.
+    seen_seq: set[int] = field(default_factory=set)
 
     def summary_ms(self) -> dict[str, float]:
-        return {k: 1e3 * float(np.median(v)) if v else 0.0 for k, v in vars(self).items()}
+        # medians over the timing lists only; seen_seq is a set of token counts, not milliseconds
+        return {k: 1e3 * float(np.median(v)) if v else 0.0 for k, v in vars(self).items() if isinstance(v, list)}
+
+    def seq_seen(self) -> list[int]:
+        return sorted(self.seen_seq)
 
 
 class RowSplitFFN:
@@ -313,6 +320,7 @@ class RowSplitFFN:
 
         m = self.spec.mpad
         assert h.shape[0] == 1 and h.shape[1] > m, "row split needs batch 1 and S > Mpad"
+        self.stats.seen_seq.add(int(h.shape[1]))
         h_ane = h[:, :m].astype(mx.float16)
 
         t0 = time.perf_counter()

@@ -78,6 +78,20 @@ def test_patched_ffn_matches_the_plain_ffn_within_int8_tolerance():
     assert relerr < 0.05, relerr
 
 
+def test_stats_record_the_real_token_count_not_just_the_intended_one():
+    """An image time is meaningless unless the S the split actually saw is recorded."""
+    model = TinyModel()
+    stats = CallStats()
+    spec = ane_patch.spec_for(MPAD / SEQ, SEQ, dim=DIM, hidden=HID)
+    ane_patch._patch_transformer(model.transformer, ane_patch.make_backend("mirror"), spec, stats)
+    model.transformer.layers[0].feed_forward(_h())
+    assert stats.seq_seen() == [SEQ], stats.seq_seen()
+    # summary_ms must ignore the seq set rather than try to take a median of it
+    summary = stats.summary_ms()
+    assert set(summary) == {"prep", "wait", "epilogue"}, summary
+    assert all(v > 0 for v in summary.values()), summary
+
+
 def test_unpatch_restores_the_original_modules_not_fresh_ones():
     model = TinyModel()
     originals = [l.feed_forward for l in model.transformer.layers]

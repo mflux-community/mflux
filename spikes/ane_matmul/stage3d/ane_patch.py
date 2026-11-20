@@ -61,8 +61,12 @@ def patch_model(
     """
     spec = spec_for(share, seq_len, range_fix=range_fix)
     backend = make_backend(backend_name, cache_dir, shared_surfaces)
-    n = _patch_transformer(model.transformer, backend, spec, stats or CallStats())
-    info = {
+    # Kept, not discarded: without this handle the real token count and the per-call breakdown are
+    # unreachable from the caller, and an image time cannot be attributed to a share. The compute
+    # plan lives on the backend and fills in lazily, so it is read after generation, not here.
+    stats = stats or CallStats()
+    n = _patch_transformer(model.transformer, backend, spec, stats)
+    return {
         "spec": spec.name,
         "mpad": spec.mpad,
         "share": share,
@@ -71,12 +75,8 @@ def patch_model(
         "range_fix": range_fix,
         "backend": backend_name,
         "weight_surfaces": "shared" if shared_surfaces else "per-block",
+        "_runtime": {"stats": stats, "backend": backend, "spec_name": spec.name},
     }
-    plan = getattr(backend, "plan_reports", {})
-    if isinstance(plan, dict):
-        # populated lazily on the first call, so the ANE plan is only known after generation starts
-        info["plan_report"] = plan.get(spec.name, "pending first call")
-    return info
 
 
 def unpatch_model(model):
