@@ -27,6 +27,31 @@ Take every number and hash from tool output, never from memory.
 | `7c43f8c7` | range + accuracy mirror over 34 real blocks |
 | `3f549884` | **Step 1: a+b range fix on the ANE — accepted by Scriv** |
 | `52b4b0dd` | Step 2 wiring + weight-free smoke test |
+| `b6e645d5` | **Step 2a: T4 re-timed with the range fix → 1.186× at 34 blocks** |
+| `22bb44ed` | Step 2b prep: record the real token count, since share is not fixed |
+
+## State after Step 2a
+
+T4 with `--range-fix` (run post-reboot with swap 0.00M at start, `weight_surfaces=per-block`, on
+commit `653077d9`):
+
+| rung | gpu_only ms | ANE ms | ANE p90 | speedup | discarded |
+| --- | --- | --- | --- | --- | --- |
+| 8 | 1689.4 | 1456.4 | 2192.8 | 1.160× | 0 |
+| 16 | 3050.4 | 2740.0 | 2967.0 | 1.113× | 0 |
+| 34 | 6009.3 | 5068.8 | 5643.9 | **1.186×** | 1 |
+
+Per call at rung 34: `prep 80.06, wait 54.10, epilogue 1.54`. Swap 0 → 203.6 MB, wired +3.08 GB,
+peak RSS 5.47 GB. **The range fix costs about 10%**: wait rose 46.18 → 54.10 ms because
+`abs`/`reduce_max`/`real_div` on a 2048×10240 `h` is real ANE work the saturating program skipped.
+So **1.186× replaces 1.265×** as the honest chained-step number, and 1.265× must never be quoted as
+the achievable gain — it measured a program that clamped at the fp16 ceiling.
+
+**Next is Step 2b.** It loads the real ~20 GB model and generates, so it needs Scriv's go-ahead
+first. Share caveat, now handled in code: `--ane-seq` sizes the program, but Z-Image's main layers
+run on the unified sequence, so the share actually used is `Mpad / S` and moves with prompt token
+count. Read `ane_observed.seq_seen` and `actual_share` from the ANE-RESULT line rather than assuming
+0.50.
 
 ## What Step 1 established (do not redo it)
 
