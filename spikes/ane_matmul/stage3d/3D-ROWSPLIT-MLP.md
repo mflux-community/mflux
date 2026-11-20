@@ -670,6 +670,37 @@ Two caveats, recorded rather than smoothed over:
 fails (§5e), and the compiled-path timing now fails too, so a three-arm speed comparison would measure
 a loss. Recommendation: stop the row-split lane here rather than spend the image runs on it.
 
+## 7a. Correction: the clean-boot paired re-test says ~1.02x, not slower
+
+The §7 primitive run paged 1287 MB and discarded one repeat, so its 0.9692× was not trustworthy.
+Re-run paired on one clean boot (commit `5c392a6d`, swap flat, `discarded=0` in both):
+
+| path | gpu_only ms | ANE ms | ANE p90 | speedup | swap | wired | peak RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| primitive | 5823.0 | 5685.2 | 6264.9 | **1.0242×** | 0.0 → 13.3 MB | +4.06 GB | 7.53 GB |
+| threaded | 5814.0 | 4633.7 | 5224.9 | **1.2547×** | 13.3 → 5.3 MB | +5.04 GB | 5.98 GB |
+
+**What this changes:** the primitive path does not lose to the GPU. It gains about 2.4%, which is
+inside the noise band. The correct statement is *no shippable gain*, not *a regression*. Rungs 8 and 16
+were not re-measured on this boot, so §7's `0.9191×` at rung 16 is still a single, partly-contaminated
+reading.
+
+**What this does not change:** the threaded path still shows 1.2547× on the same boot against the same
+baseline (5814 vs 5823 ms, 0.16% apart), and the threaded path still cannot run inside `mx.compile`.
+So the ratio stands: **primitive recovers about a tenth of the threaded gain.** The overlap was the
+worker thread's, and MLX's scheduler does not reproduce it.
+
+Two corrections to claims made in §7:
+
+1. **The ANE is not idle.** Re-sampled on the clean run: 58 of 150 samples non-zero, median **1.93 W**
+   over those samples, max 2.50 W. "median 0.00 W" was a misleading summary of a bursty signal. The
+   silicon does the work; MLX simply does not overlap it with GPU work, which is better evidence for
+   the serial-schedule explanation than what §7 offered.
+2. **Cross-boot comparison is worthless here.** threaded moved 1.0882× → 1.2547× between boots with
+   flat swap on both, and `gpu_only` moved 6155 → 5823 ms. Within a boot the two baselines agree to
+   0.16%. So only same-boot paired runs are comparable -- which is why §6's 1.186× and §7's 1.0882×
+   should not be read as a trend.
+
 ## 8. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from
