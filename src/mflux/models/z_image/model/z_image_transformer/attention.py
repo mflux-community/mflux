@@ -1,14 +1,22 @@
+import os
+
 import mlx.core as mx
 from mlx import nn
 from mlx.core.fast import scaled_dot_product_attention
 
 from mflux.models.common.compute_precision import ComputePrecision
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import fused_qk_norm_rope
 
 
 class ZImageAttention(nn.Module):
     # In float16 the output reaches ~1.4e5, so V is taken this many times smaller and the output scaled back
     # in the stream dtype. Attention is linear in V and there are no biases: exact up to rounding.
     FLOAT16_HEADROOM = 4.0
+    DISABLE_FUSED_ENV = "MFLUX_ZIMAGE_DISABLE_FUSED_QKNORM_ROPE"
+
+    @staticmethod
+    def fused_enabled() -> bool:
+        return not os.environ.get(ZImageAttention.DISABLE_FUSED_ENV)
 
     def __init__(
         self,
@@ -40,6 +48,7 @@ class ZImageAttention(nn.Module):
 
         # True keeps the RoPE output in float32, as before #761 (the --float32 option).
         self.float32 = False
+        self.eps = eps
 
     def __call__(
         self,
@@ -57,25 +66,46 @@ class ZImageAttention(nn.Module):
         key = self.to_k(hidden_states)
         value = precision.shrink(self.to_v(hidden_states), ZImageAttention.FLOAT16_HEADROOM)
 
-        # Reshape to (batch, seq_len, heads, head_dim)
-        query = query.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
-        key = key.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
+        fused = None
+        if self.norm_q is not None and freqs_cis is not None and not self.float32 and ZImageAttention.fused_enabled():
+            # One Metal pass: QK-RMSNorm + interleaved fp32 RoPE + head-major layout.
+            fused = fused_qk_norm_rope(
+                query,
+                key,
+                self.norm_q.weight,
+                self.norm_k.weight,
+                freqs_cis[..., 0],
+                freqs_cis[..., 1],
+                self.n_heads,
+                self.head_dim,
+                eps=self.eps,
+                disable_env=ZImageAttention.DISABLE_FUSED_ENV,
+            )
+        if fused is not None:
+            query = precision.to_compute(fused[0])
+            key = precision.to_compute(fused[1])
+        else:
+            # Reshape to (batch, seq_len, heads, head_dim)
+            query = query.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
+            key = key.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
+
+            # Apply QK normalization
+            if self.norm_q is not None:
+                query = self.norm_q(query)
+            if self.norm_k is not None:
+                key = self.norm_k(key)
+
+            # Apply RoPE
+            if freqs_cis is not None:
+                query = precision.to_compute(
+                    ZImageAttention.apply_rotary_emb(query, freqs_cis, keep_float32=self.float32)
+                )
+                key = precision.to_compute(ZImageAttention.apply_rotary_emb(key, freqs_cis, keep_float32=self.float32))
+
+            # Transpose for attention: (batch, heads, seq_len, head_dim)
+            query = mx.transpose(query, axes=(0, 2, 1, 3))
+            key = mx.transpose(key, axes=(0, 2, 1, 3))
         value = value.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
-
-        # Apply QK normalization
-        if self.norm_q is not None:
-            query = self.norm_q(query)
-        if self.norm_k is not None:
-            key = self.norm_k(key)
-
-        # Apply RoPE
-        if freqs_cis is not None:
-            query = precision.to_compute(ZImageAttention.apply_rotary_emb(query, freqs_cis, keep_float32=self.float32))
-            key = precision.to_compute(ZImageAttention.apply_rotary_emb(key, freqs_cis, keep_float32=self.float32))
-
-        # Transpose for attention: (batch, heads, seq_len, head_dim)
-        query = mx.transpose(query, axes=(0, 2, 1, 3))
-        key = mx.transpose(key, axes=(0, 2, 1, 3))
         value = mx.transpose(value, axes=(0, 2, 1, 3))
 
         # Convert boolean mask to additive mask for SDPA
