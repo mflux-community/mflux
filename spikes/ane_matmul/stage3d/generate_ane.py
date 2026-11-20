@@ -74,8 +74,11 @@ def main() -> None:
     args = parser.parse_args()
 
     wired0, swap0 = wired_gb(), swap_used_mb()
+    t_load0 = time.perf_counter()
     model = ZImageTurboCommand.load(args)
-    t_load = time.perf_counter()
+    # a duration, not an absolute clock: perf_counter() has no fixed origin, so recording it raw
+    # produced load_s values like 2186 that looked like a 36-minute load and were meaningless
+    load_s = time.perf_counter() - t_load0
 
     info: dict = {"arm": args.arm_name or ("ane" if args.ane_mlp else "baseline"), "quantize": args.quantize}
     if args.ane_mlp:
@@ -127,7 +130,7 @@ def main() -> None:
         "width": args.width,
         "height": args.height,
         "ane_observed": observed or None,
-        "load_s": round(t_load, 2),
+        "load_s": round(load_s, 2),
         "image_s": round(gen_s, 3),
         "per_step_s": round(gen_s / steps, 4) if steps else None,
         "swap_mb_before": swap0,
