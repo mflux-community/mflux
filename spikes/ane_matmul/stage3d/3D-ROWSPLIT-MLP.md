@@ -630,7 +630,47 @@ Rung 16 (1.113×) is the noisiest rung, not a trend: p90 2967 against a 2740 med
 was discarded at rung 34 for swap growth, so read 1.11–1.19 as a range. The gpu_only baseline also
 drifted ~2.8% versus §5e's run, which is why ratios are only compared within a run.
 
-## 7. Commits
+## 7. T4 through the primitive path: the speedup does not survive the fix
+
+The threaded path cannot run under `mx.compile`, so every speedup above describes a program that
+cannot ship. Re-measured on commit `3a92a975` after a reboot, same arguments
+(`--range-fix --shares 0.5 --repeats 5`), differing only in `--patch-mode`:
+
+| run | rung 8 | rung 16 | rung 34 | swap | peak RSS | valid |
+| --- | --- | --- | --- | --- | --- | --- |
+| threaded | 1.1116× | 1.1676× | **1.0882×** | 0.0 → 0.0 MB | 5.96 GB | yes, 0 discarded |
+| primitive | 1.0336× | **0.9191×** | **0.9692×** | 0.0 → 1287 MB | 9.08 GB | one run discarded at rung 34 |
+
+threaded per-call at rung 34: `prep 80.70, wait 54.72, epilogue 1.89`. The primitive run reports no
+per-call breakdown, because timing the phases requires the host sync the primitive exists to avoid.
+
+**Conclusion: the overlap was mine, not the ANE's.** The threaded path hides the ANE call behind GPU
+work using a Python worker thread. Handed to MLX's scheduler, the win disappears and the split runs
+*slower* than the GPU at 16 and 34 blocks. That is Stage 3c's serial-stall failure mode returning: an
+ANE call inside the dependency chain stalls the chain instead of overlapping it. Rungs 8 and 16 had
+`discarded=0` with swap flat at their start, so the ordering is not a contamination artifact.
+
+Supporting signal: macmon over the primitive run recorded **ANE power median 0.00 W, max 2.55 W**
+across 264 samples at 500 ms, against 4.03 W median when the same program was driven back-to-back in
+§5c. The silicon was largely idle. Consistent with the timing result, but not on its own proof of the
+mechanism.
+
+Two caveats, recorded rather than smoothed over:
+
+1. **The threaded speedup fell from 1.186× to 1.0882×** between boots with identical arguments. The
+   `gpu_only` baseline moved 6009 → 6155 ms (+2.4%) while the split arm moved 5069 → 5656 ms (+11.6%),
+   so run-to-run variance is roughly 7-10% -- wider than the margin being claimed. Even the threaded
+   number is soft, and §6's "the number that ships" should be read against this section.
+2. **primitive peak RSS (9.08 GB) exceeds threaded (5.96 GB)** because `PrimitiveSplitFFN` keeps MLX
+   copies of the int8 codes while `prepare_block_weights` still holds the numpy ones. That is a defect
+   of this spike's wiring, not a property of the primitive, and it inflates the primitive's memory
+   figures.
+
+**Effect on the plan.** Steps 2b and 3 were to time and eyeball bf16 vs q8 vs ANE. Accuracy already
+fails (§5e), and the compiled-path timing now fails too, so a three-arm speed comparison would measure
+a loss. Recommendation: stop the row-split lane here rather than spend the image runs on it.
+
+## 8. Commits
 
 - `f9231fc5` — spike code imported onto the 3d branch (cherry-pick of `ff8ecd9c` from
   `feat/dreamlite`)
