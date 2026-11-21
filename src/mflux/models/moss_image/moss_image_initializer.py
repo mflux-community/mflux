@@ -44,6 +44,7 @@ class MOSSImageInitializer:
             **PrequantizedResolution.layout(MOSSImageWeightDefinition),
         )
         MOSSImageInitializer._init_config(model, model_config)
+        model.ssd_stream = ssd_stream
         weights = MOSSImageInitializer._load_weights(path)
         MOSSImageInitializer._init_tokenizers(model, path)
         MOSSImageInitializer._init_models(model, model_config)
