@@ -1,5 +1,6 @@
 import mlx.core as mx
 
+from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.qwen21.model.qwen21_vae.blocks import VAEOperations
 from mflux.models.qwen21.model.qwen21_vae.qwen21_vae_config import Qwen21VAEConfig
 from mflux.models.qwen21.model.qwen21_vae.vae import Qwen21VAECore
@@ -8,6 +9,9 @@ from mflux.models.qwen21.model.qwen21_vae.vae import Qwen21VAECore
 class Qwen21VAE(Qwen21VAECore):
     LATENTS_MEAN = Qwen21VAEConfig.LATENTS_MEAN
     LATENTS_STD = Qwen21VAEConfig.LATENTS_STD
+    # "low_memory" (the default) decodes in row strips (see Decoder.STRIP_FROM). "full_precision"
+    # (--vae-full-precision) and "legacy" decode the full image at once.
+    decode_mode: str = VAEBlockDecoder.LOW_MEMORY
 
     def __init__(self, config: dict | None = None):
         super().__init__(config, text_mode=True)
@@ -18,7 +22,7 @@ class Qwen21VAE(Qwen21VAECore):
         std = mx.array(self._std, dtype=mx.float32).reshape(1, self.latent_channels, 1, 1)
         latents = latents * std + mean
         latents = VAEOperations.conv(self.post_quant_conv, latents, True)
-        return self.decoder(latents)[:, :3]
+        return self.decoder(latents, strips=self.decode_mode == VAEBlockDecoder.LOW_MEMORY)[:, :3]
 
     def encode(self, latents: mx.array) -> mx.array:
         latents = self._single_frame(latents)
