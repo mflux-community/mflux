@@ -33,6 +33,8 @@ class MOSSImageInitializer:
         bake_lora: bool = False,
         ssd_stream: bool = False,
     ) -> None:
+        if ssd_stream:
+            MOSSImageInitializer._check_ssd_stream(quantize, lora_paths, bake_lora)
         path = PrequantizedResolution.weights_root(
             model_config,
             model_path,
@@ -54,6 +56,21 @@ class MOSSImageInitializer:
         if ssd_stream:
             MOSSImageInitializer._apply_ssd_stream(model, path)
         mx.clear_cache()
+
+    @staticmethod
+    def _check_ssd_stream(quantize: int | None, lora_paths: list[str] | None, bake_lora: bool) -> None:
+        # Both would load, and then give a wrong image without a message. Stop before the weights are read.
+        if quantize is not None:
+            raise ValueError(
+                "--ssd-stream cannot be combined with -q/--quantize: the streamer installs the saved weights over the "
+                "layers, and layers that -q has quantized need packed weights. Stream a model that is already "
+                "quantized (a pre-quantized repo, or a copy saved with `mflux-save -q N`) and do not pass -q."
+            )
+        if lora_paths and bake_lora:
+            raise ValueError(
+                "--ssd-stream cannot be combined with --bake-lora: the streamer installs the saved weights over the "
+                "layers, which would drop the baked LoRA. Run the LoRA without --bake-lora."
+            )
 
     @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:

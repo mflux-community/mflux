@@ -14,7 +14,13 @@ class Streamer:
         self.pending = {}
 
     def wrap(self, modules: list[nn.Module], component_dir: Path, prefix: str) -> None:
-        weight_map = json.loads((component_dir / "model.safetensors.index.json").read_text())["weight_map"]
+        index_file = component_dir / "model.safetensors.index.json"
+        if not index_file.is_file():
+            raise FileNotFoundError(
+                f"--ssd-stream reads each layer by name from the saved shards, and {index_file} is missing. "
+                "The model must be in the mflux layout: an `mflux-save` folder or a `mflux-community` repo."
+            )
+        weight_map = json.loads(index_file.read_text())["weight_map"]
         for index, module in enumerate(modules):
             block = StreamedBlock(module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks))
             modules[index] = block
@@ -41,7 +47,14 @@ class Streamer:
 
 
 class StreamedBlock:
-    PLACEHOLDER = mx.zeros((1,))
+    # Created on first use, not at import: an import should not allocate an array.
+    _placeholder = None
+
+    @classmethod
+    def placeholder(cls):
+        if cls._placeholder is None:
+            cls._placeholder = mx.zeros((1,))
+        return cls._placeholder
 
     def __init__(self, module, prefix, weight_map, component_dir, streamer, position):
         self.module = module
@@ -54,25 +67,35 @@ class StreamedBlock:
             if key.startswith(prefix):
                 self.shard_keys.setdefault(str(component_dir / shard), []).append(key)
         stored = [self.module_key(key[len(prefix) :]) for keys in self.shard_keys.values() for key in keys]
-        self.empty = tree_unflatten([(name, self.PLACEHOLDER) for name in stored])
+        self.empty = tree_unflatten([(name, self.placeholder()) for name in stored])
         module.update(self.empty, strict=False)
 
     def module_key(self, key: str) -> str:
-        # A LoRA layer keeps the original linear layer as its `linear` child.
+        # A layer that a runtime LoRA wraps keeps the original linear layer as its `linear` child (one LoRA) or its
+        # `base_linear` child (several LoRAs fused on the layer). Without a match the key is returned as it is.
         if key in self.names:
             return key
         parent, leaf = key.rsplit(".", 1)
-        return f"{parent}.linear.{leaf}"
+        for child in ("linear", "base_linear"):
+            if f"{parent}.{child}.{leaf}" in self.names:
+                return f"{parent}.{child}.{leaf}"
+        return key
 
     def __call__(self, *args, **kwargs):
         streamer = self.streamer
         installed = streamer.pending.pop(self, None) or streamer.read(self)
+        # Whatever else was read ahead belongs to a block that this pass skipped (--uncond-skip-layers reads the
+        # block after each one that runs, and the pass jumps over it). Drop it, or the skipped blocks pile up in memory.
+        streamer.pending.clear()
         self.module.update(tree_unflatten(installed), strict=False)
         del installed
-        out = self.module(*args, **kwargs)
-        # Compute is dispatched before the next read so the two overlap.
-        mx.async_eval(out)
-        streamer.prefetch(self)
-        mx.eval(out)
-        self.module.update(self.empty, strict=False)
+        try:
+            out = self.module(*args, **kwargs)
+            # Compute is dispatched before the next read so the two overlap.
+            mx.async_eval(out)
+            streamer.prefetch(self)
+            mx.eval(out)
+        finally:
+            # Also when the call is interrupted: the weights must not stay installed on the module.
+            self.module.update(self.empty, strict=False)
         return out

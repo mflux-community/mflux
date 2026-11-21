@@ -167,16 +167,26 @@ mflux-generate-moss-image \
 - A LoRA loads as usual and stays in memory (594.6 MB for this one).
 - Only checkpoint 15000 was run. The author's newer checkpoints have the same size and layout and should work, but they have not been tested.
 - With the original `OpenMOSS-Team` repo the text encoder is not streamed, because its layer names differ.
-- `--ssd-stream` also decodes the image in row strips, as the FLUX.2 models do, because the full-image decode used more memory than the rest of the run. At 512x512 (one run, mflux 0.24.0) the strip image differed from the full-decode image by 0.40 of 255 in mean absolute pixel value. With the strips, `--vae-tiling` and `--vae-tile-size` have no effect. Without `--ssd-stream` the decode is unchanged.
-- `-q` with a bf16 model folder is not supported with `--ssd-stream`: the streamer installs the saved bf16 weights into layers that `-q` has quantized, which fails or gives wrong output (not tested). To stream a quantized model, use one that is already quantized, such as a pre-quantized repo or a copy saved with `mflux-save -q N`, and do not add `-q`. Streaming a quantized model has not been run.
-- Measured on an Apple M1 with 8 GiB and macOS 14.6.1, with mflux 0.24.0 and a separate script that did the same streaming and also read the LoRA from the SSD one block at a time, bf16, 4 steps, CFG 1, 4-step LoRA at 1.0, seed 42, one run each:
+- `--ssd-stream` also decodes the image in row strips, as the FLUX.2 models do, because the full-image decode used more memory than the rest of the run. At 512x512 (one run, mflux 0.24.0) the strip image differed from the full-decode image by 0.40 of 255 in mean absolute pixel value. With the strips, `--vae-tiling` and `--vae-tile-size` have no effect, and the command prints a warning when you pass them. Without `--ssd-stream` the decode is unchanged.
+- `--ssd-stream` stops with an error, before it reads any weight, in these cases, because each one would otherwise give a wrong image without a message:
+  - with `-q`: the streamer installs the saved weights over the layers, and layers that `-q` has quantized need packed weights. To stream a quantized model, use one that is already quantized, such as a pre-quantized repo or a copy saved with `mflux-save -q N`, and do not add `-q`. Streaming a quantized model has not been run.
+  - with `--bake-lora` and a `--lora`: the streamer would install the saved weights over the baked ones and drop the LoRA. Run the LoRA without `--bake-lora` (the default).
+- A model that was loaded with `ssd_stream=True` cannot be saved: `save_model` raises an error, because the idle layers are placeholders.
+- A pass that skips transformer layers (`--uncond-skip-layers`) reads the block after each running block ahead, and then jumps over it. That block is dropped at the next call, so the skipped blocks do not pile up in memory, but the block that runs after the jump is read when it is needed, without the overlap.
+- Measured on an Apple M1 with 8 GiB and macOS 14.6.1, bf16, 4 steps, CFG 1, 4-step LoRA at 1.0, checkpoint 15000, seed 42, one run each.
+
+  With mflux 0.24.0 and a separate script that did the same streaming and also read the LoRA from the SSD one block at a time:
 
   | Size | Time | SSD writes | Swap-outs | Peak footprint |
   |---|---|---|---|---|
   | 1024x1024 | 149 s | 14 MB | 0 | 3.0 GB |
   | 1824x1024 | 305 s | 21 MB | 0 | 2.96 GB |
 
-  With this code (mflux 0.24.0 plus the commits after it, MLX 0.32.0, the LoRA kept in memory, checkpoint 15000, otherwise the same machine and settings, one run), 1024x1024 took 151.6 s, wrote 42 MB to the SSD (about 29 MB above the idle level), had 0 swap-outs and a peak footprint of 3.36 GB.
+  With this code (mflux 0.24.0 plus the commits after it, MLX 0.32.0, the LoRA kept in memory):
+
+  | Size | Time | SSD writes | Swap-outs | Peak footprint |
+  |---|---|---|---|---|
+  | 1024x1024 | 151.6 s | 42 MB (about 29 MB above the idle level) | 0 | 3.36 GB |
 
 ## Validation
 
