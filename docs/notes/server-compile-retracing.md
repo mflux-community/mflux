@@ -11,10 +11,12 @@ caption length therefore produces a new input shape.
 One hardware exception matters for any measurement of this. `variants/z_image.py:263-265` returns the
 uncompiled `predict` when `AppleSiliconUtil.is_m1_or_m2()` is true. That predicate tests for "max" or
 "ultra" first. It returns false when either appears (`utils/apple_silicon.py:15-17`), so it is true
-only for the base and Pro members of those two generations. Four chips never reach `mx.compile`: M1,
+only for the base and Pro members of those two generations. Four chips skip `mx.compile` for `predict`: M1,
 M1 Pro, M2 and M2 Pro. Every other chip takes the compiled path, including M1 Max, M1 Ultra, M2 Max
-and M2 Ultra. A first-step measurement on one of those four says nothing about `mx.compile`
-retracing, because that build never traces at all.
+and M2 Ultra. A first-step measurement on one of those four says nothing about retracing of the
+DiT graph, because `predict` never traces there. The scheduler step is the exception: `_step`
+(`schedulers/flow_match_euler_discrete_scheduler.py:13`) is compiled with `shapeless=True` on every
+chip, so those four chips still run one compiled function. It does not retrace on a shape change.
 
 MLX recompiles a compiled function when an input shape changes. The `shapeless` option exists
 specifically to stop that: `mx.compile(fun, shapeless=True)` is documented in
