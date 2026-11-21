@@ -87,6 +87,8 @@ def test_main_call_sequence_is_pinned(monkeypatch, tmp_path, full_argv, lora_fil
         "lora_paths": [str(lora_file)],
         "lora_scales": [0.7],
         "bake_lora": True,
+        "ssd_stream": False,
+        "stream_lora": False,
     }
     assert model.generate_calls == [expected_generate_call(7), expected_generate_call(8)]
     # With more than one seed parse_args renames --output to <stem>_seed_{seed}; that
@@ -293,6 +295,8 @@ def test_load_returns_a_bare_model(monkeypatch):
         "lora_paths": None,
         "lora_scales": None,
         "bake_lora": False,
+        "ssd_stream": False,
+        "stream_lora": False,
     }
     registry = model.callbacks
     assert (registry.before_loop, registry.in_loop, registry.after_loop, registry.interrupt) == ([], [], [], [])

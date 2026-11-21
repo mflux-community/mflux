@@ -290,6 +290,12 @@ class CommandLineParser(argparse.ArgumentParser):
         self.add_argument("--pid-decode", action=argparse.BooleanOptionalAction, default=False, help="Decode with NVIDIA PiD's pixel-diffusion super-resolving decoder instead of the standard VAE. First run downloads two separate Hugging Face checkpoints (~8GB total); google/gemma-2-2b-it is gated and requires accepting its license + `hf auth login`.")
         self.add_argument("--pid-degrade-sigma", type=float, default=0.0, help="With --pid-decode, deliberately noise the latent to this flow-matching sigma before decoding (0.0-0.8). PiD's LQ gate was distilled on latents noised at sigma~U[0.0, 0.8]; a fully clean latent (the default, sigma=0.0) is the input it saw least during training, which can show up as over-textured detail invented on smooth areas like skin. Try 0.2 if you see that. Ignored without --pid-decode.")
 
+    def add_ssd_stream_arguments(self) -> None:
+        self.add_argument("--ssd-stream", action=argparse.BooleanOptionalAction, default=False, help="Keep only the layer that is running in memory and read each layer from the model's saved shards on the SSD just before it runs (and one layer ahead while it computes). Needs a mflux-layout model folder or repo, such as the mflux-community repos. Meant for Macs whose RAM is smaller than the model; see the MOSS-Image README.")
+
+    def add_stream_lora_arguments(self) -> None:
+        self.add_argument("--stream-lora", action=argparse.BooleanOptionalAction, default=False, help="With --ssd-stream, keep the first --lora file on the SSD as well and read each block's part of it just before the block runs. Takes one kohya-named LoRA file; see the MOSS-Image README.")
+
     def add_small_text_encoder_arguments(self, help_text: str | None = None) -> None:
         self.add_argument("--small-text-encoder", action=argparse.BooleanOptionalAction, default=False, help=help_text or "[EXPERIMENTAL] Replace klein-4B's Qwen3-4B text encoder with Qwen3-0.6B + the AiArtLab/qwen3-0.6b-4b-adapter (FLUX.2-klein-4B / klein-base-4B only). Needs 1-6 GB less memory for weights depending on -q and downloads ~2.4 GB instead of ~8.0 GB; prompts are capped at 256 tokens and fine details can drift from the native encoder.")
 
