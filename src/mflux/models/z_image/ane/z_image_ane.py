@@ -1,4 +1,7 @@
-"""--ane integration for the Z-Image DiT: split 32 transformer blocks onto ANE + GPU.
+"""FROZEN: Stage 3b column-split ANE code, superseded by the eager row-split path (spikes/ane_matmul/stage3d/eager_*).
+Known open review findings: MAILBOX/coderabbit-eager-report.md section 4 to section 12.
+
+--ane integration for the Z-Image DiT: split 32 transformer blocks onto ANE + GPU.
 
 Covers the four fused call sites per block (qkv, o, w1w3, w2 K-split 4) in the
 30 main blocks and the 2 noise-refiner blocks. The context refiner, adaLN, the
