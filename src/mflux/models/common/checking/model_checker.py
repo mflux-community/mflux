@@ -286,6 +286,10 @@ class ModelChecker:
             from mflux.models.fibo2.weights.fibo2_weight_definition import Fibo2WeightDefinition
 
             return Fibo2WeightDefinition
+        if key in {"dreamlite", "dreamlite-mobile"}:
+            from mflux.models.dreamlite.weights.dreamlite_weight_definition import DreamLiteWeightDefinition
+
+            return DreamLiteWeightDefinition
         if key in {"ernie-image", "ernie-image-turbo"}:
             from mflux.models.ernie_image.weights.ernie_weight_definition import ErnieWeightDefinition
 

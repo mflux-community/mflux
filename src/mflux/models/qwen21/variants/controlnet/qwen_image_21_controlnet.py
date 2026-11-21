@@ -9,6 +9,7 @@ from PIL import Image
 
 from mflux.models.common.config.config import Config
 from mflux.models.common.config.model_config import ModelConfig
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
@@ -167,10 +168,16 @@ class QwenImage21Controlnet(nn.Module):
             image_path=QwenImage21Controlnet._recorded(image_path),
             masked_image_path=QwenImage21Controlnet._recorded(mask_image),
             negative_prompt=negative_prompt,
-            generation_parameters=self.compute_precision.generation_parameters(),
+            generation_parameters={
+                **self.compute_precision.generation_parameters(),
+                **VAEDecodeOptions.generation_parameters(self),
+            },
         )
 
     def save_model(self, base_path: str) -> None:
+        from mflux.models.qwen21.weights.qwen21_w8a8 import Qwen21W8A8
+
+        Qwen21W8A8.check_savable(self)
         # The base checkpoint as QwenImage21Edit saves it, with the control branch under controlnet/.
         ModelSaver.save_model(
             self,

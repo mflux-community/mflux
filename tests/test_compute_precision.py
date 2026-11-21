@@ -1034,6 +1034,8 @@ class TestCommandLine:
         supporting = {name for name, options in flags.items() if "--compute-precision" in options}
         assert supporting == {
             "mflux-generate-anima",
+            "mflux-generate-dreamlite",
+            "mflux-generate-dreamlite-edit",
             "mflux-generate-flux2",
             "mflux-generate-flux2-edit",
             "mflux-generate-flux3",
