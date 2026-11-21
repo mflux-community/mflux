@@ -55,7 +55,6 @@ class MOSSImage(nn.Module):
             stream_lora=stream_lora,
         )
         self.bake_lora = bake_lora
-        self.ssd_stream = ssd_stream
 
     def generate_image(
         self,

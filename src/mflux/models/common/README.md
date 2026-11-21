@@ -767,7 +767,8 @@ mflux-generate-z-image-turbo \
 - It reads raw tensors by their saved names, so the model folder or repo must be in the mflux layout (an `mflux-save` folder or a `mflux-community` repo), not the original publisher's layout.
 - Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
 - It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit.
-- Only MOSS-Image supports it so far, so `--ssd-stream` is only on `mflux-generate-moss-image`, although the argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Its README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+- Only MOSS-Image supports it so far, so `--ssd-stream` and `--stream-lora` are only on `mflux-generate-moss-image`, although the argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Its README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+- `--stream-lora` (with `--ssd-stream`) also keeps one LoRA file on the SSD and reads each block's part of it just before the block runs, so the whole LoRA is not resident.
 - A model that is streamed cannot be saved with `save_model` (it raises an error), because the idle layers are placeholders.
 
 ### Checking that a run does not wear the SSD

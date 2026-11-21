@@ -87,6 +87,22 @@ class LoRALoader:
         return resolved_paths, resolved_scales
 
     @staticmethod
+    def reject_dora(weights: dict) -> None:
+        for key in weights:
+            if key.endswith(".dora_scale"):
+                layer = key.removesuffix(".dora_scale")
+            elif "lora_magnitude_vector" in key.split("."):
+                layer = key.split(".lora_magnitude_vector", 1)[0]
+            else:
+                continue
+            if any(
+                name == f"{layer}.{matrix}" or name.startswith(f"{layer}.{matrix}.")
+                for name in weights
+                for matrix in ("lora_A", "lora_B", "lora_down", "lora_up", "lora.down", "lora.up")
+            ):
+                raise ValueError(f"DoRA with LoRA matrices is not supported: {key}")
+
+    @staticmethod
     def _apply_single_lora(
         transformer: nn.Module,
         lora_file: str,
@@ -110,19 +126,7 @@ class LoRALoader:
         except (FileNotFoundError, ValueError, RuntimeError) as e:
             raise ValueError(f"Failed to load LoRA file {lora_file}: {e}") from e
 
-        for key in weights:
-            if key.endswith(".dora_scale"):
-                layer = key.removesuffix(".dora_scale")
-            elif "lora_magnitude_vector" in key.split("."):
-                layer = key.split(".lora_magnitude_vector", 1)[0]
-            else:
-                continue
-            if any(
-                name == f"{layer}.{matrix}" or name.startswith(f"{layer}.{matrix}.")
-                for name in weights
-                for matrix in ("lora_A", "lora_B", "lora_down", "lora_up", "lora.down", "lora.up")
-            ):
-                raise ValueError(f"DoRA with LoRA matrices is not supported: {key}")
+        LoRALoader.reject_dora(weights)
 
         # Build pattern mappings from LoRATargets
         pattern_mappings = LoRALoader._build_pattern_mappings(lora_mapping)

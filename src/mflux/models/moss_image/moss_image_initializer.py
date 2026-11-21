@@ -36,8 +36,7 @@ class MOSSImageInitializer:
         ssd_stream: bool = False,
         stream_lora: bool = False,
     ) -> None:
-        if ssd_stream:
-            MOSSImageInitializer._check_ssd_stream(quantize, lora_paths, bake_lora)
+        MOSSImageInitializer._check_ssd_stream(ssd_stream, stream_lora, quantize, lora_paths, bake_lora)
         path = PrequantizedResolution.weights_root(
             model_config,
             model_path,
@@ -47,6 +46,7 @@ class MOSSImageInitializer:
             **PrequantizedResolution.layout(MOSSImageWeightDefinition),
         )
         MOSSImageInitializer._init_config(model, model_config)
+        model.ssd_stream = ssd_stream
         weights = MOSSImageInitializer._load_weights(path)
         MOSSImageInitializer._init_tokenizers(model, path)
         MOSSImageInitializer._init_models(model, model_config)
@@ -63,8 +63,15 @@ class MOSSImageInitializer:
         mx.clear_cache()
 
     @staticmethod
-    def _check_ssd_stream(quantize: int | None, lora_paths: list[str] | None, bake_lora: bool) -> None:
-        # Both would load, and then give a wrong image without a message. Stop before the weights are read.
+    def _check_ssd_stream(
+        ssd_stream: bool, stream_lora: bool, quantize: int | None, lora_paths: list[str] | None, bake_lora: bool
+    ) -> None:
+        # Each of these would load and then give a wrong image, or ignore an input, without a message. Stop before
+        # the weights are read.
+        if stream_lora and not ssd_stream:
+            raise ValueError("--stream-lora needs --ssd-stream: it keeps the LoRA on the SSD for the streamed blocks.")
+        if not ssd_stream:
+            return
         if quantize is not None:
             raise ValueError(
                 "--ssd-stream cannot be combined with -q/--quantize: the streamer installs the saved weights over the "
@@ -75,6 +82,11 @@ class MOSSImageInitializer:
             raise ValueError(
                 "--ssd-stream cannot be combined with --bake-lora: the streamer installs the saved weights over the "
                 "layers, which would drop the baked LoRA. Run the LoRA without --bake-lora."
+            )
+        if stream_lora and len(lora_paths or []) != 1:
+            raise ValueError(
+                f"--stream-lora streams one LoRA file, and {len(lora_paths or [])} were given. "
+                "Pass exactly one --lora, or run without --stream-lora to load several."
             )
 
     @staticmethod
@@ -142,8 +154,11 @@ class MOSSImageInitializer:
         Streamer(cycle=False).wrap(model.text_encoder.layers, root / "text_encoder", "layers.")
         lora = None
         if lora_paths:
+            # The check before the load allows one file, so these list the one LoRA that runs.
             model.lora_paths = LoraResolution.resolve_paths(lora_paths)
             model.lora_scales = LoraResolution.resolve_scales(lora_scales, len(model.lora_paths))
             lora = MOSSImageStreamedLoRA(model.lora_paths[0], model.lora_scales[0])
         Streamer(cycle=True).wrap(model.transformer.layers, root / "transformer", "layers.", lora)
+        if lora is not None:
+            lora.check_applied()
         model.vae.decode_mode = Flux2VAE.DECODE_LOW_MEMORY
