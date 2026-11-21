@@ -46,6 +46,13 @@ def build_parser() -> CommandLineParser:
     return parser
 
 
+# Options that have no effect when --ssd-stream is on (the VAE then always decodes in row strips).
+SSD_STREAM_IGNORED_OPTIONS = {
+    "--vae-tiling": "--ssd-stream decodes the image in row strips instead.",
+    "--vae-tile-size": "--ssd-stream decodes the image in row strips instead.",
+}
+
+
 class MOSSImageCommand:
     latent_creator = MOSSImageLatentCreator
 
@@ -109,6 +116,8 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    if args.ssd_stream:
+        CommandLineParser.warn_ignored_options(SSD_STREAM_IGNORED_OPTIONS)
 
     # 1. Load the model
     model = MOSSImageCommand.load(args)

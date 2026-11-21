@@ -767,19 +767,20 @@ mflux-generate-z-image-turbo \
 - It reads raw tensors by their saved names, so the model folder or repo must be in the mflux layout (an `mflux-save` folder or a `mflux-community` repo), not the original publisher's layout.
 - Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
 - It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit.
-- The models that support it are listed in their READMEs: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+- Only MOSS-Image supports it so far, so `--ssd-stream` is only on `mflux-generate-moss-image`, although the argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Its README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+- A model that is streamed cannot be saved with `save_model` (it raises an error), because the idle layers are placeholders.
 
 ### Checking that a run does not wear the SSD
 
 Swap writes are what wear the SSD, and a run that fits in RAM writes almost nothing. Read three counters before and after a run and subtract:
 
 ```sh
-ioreg -c IOBlockStorageDriver -r -w0 | grep -o '"Bytes (Write)"=[0-9]*'   # bytes written to the drive, a running total
+ioreg -c IOBlockStorageDriver -r -w0 | awk '/^\+-o/{match($0,/id 0x[0-9a-f]+/); print "driver " substr($0,RSTART,RLENGTH)} match($0,/"Bytes \(Write\)"=[0-9]+/){print "  " substr($0,RSTART,RLENGTH)}'   # bytes written, a running total per driver
 vm_stat | grep Swapouts                                                     # pages written to swap (16 KB each on Apple silicon)
 sysctl vm.swapusage                                                         # swap file in use
 ```
 
-`ioreg` prints one line per storage driver; with external drives attached, find the internal one. The counter covers every process on the machine, so close other apps first. An idle machine wrote about 8 MB per 90 s on one M1 with 8 GiB. If a run writes far more than that, or `Swapouts` rises, the model is paging: close other apps, lower the resolution, or stop the run.
+`ioreg` prints one counter for each storage driver, under the driver's id. With external drives attached there are several: read the counters before and after the run, and use the one that moves during the run. The counter covers every process on the machine, so close other apps first. An idle machine wrote about 8 MB per 90 s on one M1 with 8 GiB. If a run writes far more than that, or `Swapouts` rises, the model is paging: close other apps, lower the resolution, or stop the run.
 
 ---
 
