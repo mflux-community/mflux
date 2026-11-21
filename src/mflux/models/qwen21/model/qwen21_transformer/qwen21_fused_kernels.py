@@ -78,6 +78,7 @@ _fused_qk_norm_rope_unavailable = False
 
 def _get_kernel(eps: float = 1e-6):
     global _fused_qk_norm_rope_kernel, _fused_qk_norm_rope_unavailable
+    eps = float(eps)  # an int such as 0 would render as the invalid Metal literal "0f"
     if _fused_qk_norm_rope_unavailable or not mx.metal.is_available() or mx.default_device() != mx.gpu:
         return None
     if eps != 1e-6:
