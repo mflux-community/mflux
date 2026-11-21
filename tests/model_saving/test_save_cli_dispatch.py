@@ -270,6 +270,20 @@ def test_flux3_saves_with_the_config_of_the_entry_that_was_asked_for(name):
 
 
 @pytest.mark.fast
+@pytest.mark.parametrize(
+    ("name", "key"),
+    [("dreamlite", "dreamlite"), ("dreamlite-base", "dreamlite"), ("dreamlite-mobile", "dreamlite-mobile")],
+)
+def test_dreamlite_saves_with_the_config_of_the_entry_that_was_asked_for(name, key):
+    # Base and Mobile share the class and the layout; the config says which repository the weights come from.
+    built = run_save(name)
+
+    assert built["class"] is save.MODEL_CLASSES[key]
+    assert built["kwargs"]["model_config"] is AVAILABLE_MODELS[key]
+    assert "lora_paths" not in built["kwargs"]
+
+
+@pytest.mark.fast
 @pytest.mark.parametrize("name", ["sensenova", "sensenova-u1.5", "sensenova-u1.5-8b-mot"])
 def test_sensenova_saves_with_its_own_class_and_config(name):
     built = run_save(name)
