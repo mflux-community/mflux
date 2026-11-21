@@ -54,3 +54,6 @@ tmp-PR-body.md
 .agents/skills/gitnexus-impact-analysis/SKILL.md
 .agents/skills/gitnexus-refactoring/SKILL.md
 scripts/push_qwen21_turbo_vae.sh
+
+# Metal/Instruments captures from the eager GPU+ANE diagnostics (9+ GB)
+spikes/ane_matmul/stage3d/results_eager/traces/
