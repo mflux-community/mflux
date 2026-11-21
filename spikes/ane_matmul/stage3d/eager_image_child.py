@@ -115,7 +115,7 @@ def wired_gb():
 swap_start, wired_start = os.popen("sysctl -n vm.swapusage").read().strip(), wired_gb()
 args = parse(8)
 model = ZImageTurboCommand.load(args)
-info = {"arm": arm}
+info = {"arm": ARM_LABEL}
 # Memory: encode every prompt once, then drop the text encoder (about 8 GB) before the ANE weights are built.
 # Both arms do this, so the timed window is denoise + VAE in each. Encoding is not in the timed region.
 import gc  # noqa: E402
