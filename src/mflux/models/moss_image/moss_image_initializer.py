@@ -160,5 +160,5 @@ class MOSSImageInitializer:
             lora = MOSSImageStreamedLoRA(model.lora_paths[0], model.lora_scales[0])
         Streamer(cycle=True).wrap(model.transformer.layers, root / "transformer", "layers.", lora)
         if lora is not None:
-            lora.check_applied()
+            lora.check_applied(len(model.transformer.layers))
         model.vae.decode_mode = Flux2VAE.DECODE_LOW_MEMORY

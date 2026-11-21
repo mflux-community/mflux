@@ -28,14 +28,23 @@ class MOSSImageStreamedLoRA:
         self.applied += len(names)
         return [f"proj.{name}.lora_{factor}" for name in names for factor in "AB"]
 
-    def check_applied(self) -> None:
-        # Like the loader, refuse a file that names no projection of this model. A file that trains only some
-        # projections, or some blocks, is fine.
+    def check_applied(self, blocks: int) -> None:
+        # Like the loader, refuse a file that names no projection of this model, and a file that names a block the
+        # model does not have (the rest of it would be applied, and that block silently dropped). A file that trains
+        # only some projections, or some blocks, is fine.
         if self.applied == 0:
             raise ValueError(
                 f"No LoRA layers were applied from {self.path}: it names no projection of this model. "
                 "--stream-lora reads the same MOSS-Image LoRA key formats as the loader (kohya and PEFT names)."
             )
+        mappings = LoRALoader._build_pattern_mappings(MOSSImageLoRAMapping.get_mapping())
+        for key in mx.load(self.path):
+            for mapping in mappings:
+                block = LoRALoader._match_pattern(key, mapping.source_pattern)
+                if block is not None and block >= blocks:
+                    raise ValueError(
+                        f"The LoRA file {self.path} names layer {block} ({key}), and this model has {blocks} layers."
+                    )
 
     def factors(self, block: int) -> list:
         # A fresh load each time: an evaluated array stays in memory while anything references it.
@@ -72,9 +81,13 @@ class MOSSImageStreamedLoRA:
 
     @staticmethod
     def _find(tensors: dict, patterns: list[str], block: int) -> str | None:
+        found = []
         for pattern in patterns:
             key = pattern.format(block=block)
             for candidate in (key, key.removesuffix(".weight")):
-                if candidate in tensors:
-                    return candidate
-        return None
+                if candidate in tensors and candidate not in found:
+                    found.append(candidate)
+        if len(found) > 1:
+            # Like the loader: two spellings of one matrix would fill the same slot, and one would be dropped.
+            raise ValueError(f"The LoRA file has more than one key for the same matrix of block {block}: {found}")
+        return found[0] if found else None
