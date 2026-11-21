@@ -156,6 +156,25 @@ The same red-fox subject with the small and the full Qwen3-VL-8B text encoder:
 - The zen-image-edit pipeline uses guidance 1.5 with a negative prompt by default. mflux keeps the Qwen-Image-2.1 defaults. To match the zen-image-edit pipeline, add `--guidance 1.5 --negative-prompt "..."`.
 - License: the adapter uses the Qwen Research License (the same as Qwen-Image-2.1). Qwen3.5-0.8B uses Apache-2.0.
 
+### W8A8 DiT from ComfyUI int8_convrot files (experimental)
+
+`MFLUX_QWEN21_W8A8=<file>` loads the DiT from a ComfyUI `int8_convrot` checkpoint (Comfy-Org/Qwen-Image-2.1:
+`qwen_image_2.1_int8_convrot.safetensors` or `qwen_image_2.1_turbo_int8_convrot.safetensors`) instead of the
+checkpoint's `transformer/` folder. The text encoder and the VAE still come from the checkpoint; pass the matching
+base or Turbo model as usual.
+
+```sh
+MFLUX_QWEN21_W8A8=~/models/qwen_image_2.1_turbo_int8_convrot.safetensors \
+  mflux-generate-qwen-2.1 --model qwen-image-2.1-turbo --prompt "..." --output out.png
+```
+
+- Every block projection (QKV, attention output, gate/up, feed-forward output) runs as an INT8 x INT8 matmul on the
+  Metal TensorOps of Apple M5 GPUs: the activations get the same 256-wide Hadamard rotation as the stored weights and a
+  per-row int8 quantization. QKV and gate/up each run as one GEMM. Layers outside the blocks stay bf16 as stored.
+- Older GPUs run the same file through a float fallback (rotated activations times the dequantized weights), so the
+  file still works, without the speedup.
+- It cannot be combined with `-q` or LoRAs. The kernel is mlx-serve's (MIT, `common/quantization/w8a8_kernels`).
+
 ### img2img
 
 Pass `--image-path` and optionally `--image-strength`, like the other models.

@@ -22,6 +22,7 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_feed_forward import Qwe
 from mflux.models.qwen21.model.qwen21_transformer.qwen_image21_transformer import QwenImage21Transformer
 from mflux.models.qwen21.model.qwen21_vae.vae import QwenImage21VAE
 from mflux.models.qwen21.qwen21_initializer import Qwen21Initializer
+from mflux.models.qwen21.weights.qwen21_w8a8 import Qwen21W8A8
 from mflux.models.qwen21.weights.qwen_image21_weight_definition import (
     QwenImage21NoTextEncoderWeightDefinition,
     QwenImage21WeightDefinition,
@@ -47,12 +48,14 @@ class QwenImage21Initializer:
         small_text_encoder: bool = False,
     ) -> None:
         precision = ComputePrecision(compute_precision)
+        # MFLUX_QWEN21_W8A8 errors (missing file, quantize or LoRAs) need no download to detect.
+        Qwen21W8A8.validate(quantize, lora_paths)
         definition = QwenImage21NoTextEncoderWeightDefinition if small_text_encoder else QwenImage21WeightDefinition
         root = PathResolution.resolve(
             PrequantizedResolution.weights_root(
                 model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
             ),
-            download_patterns or definition.get_download_patterns(),
+            Qwen21W8A8.download_patterns(download_patterns or definition.get_download_patterns()),
         )
         if root is None:
             raise ValueError("No Qwen-Image-2.1 checkpoint path was provided.")
@@ -80,7 +83,11 @@ class QwenImage21Initializer:
         # (bfloat16 for Qwen-Image-2.1-Turbo, float32 for Qwen-Image-2.1).
         model._vae_stored_dtype = SafetensorsReader.stored_float_dtype(root / "vae")
         model.transformer = QwenImage21Transformer(model._component_configs["transformer"])
+        # MFLUX_QWEN21_W8A8: the DiT comes from an int8_convrot file, the rest from the checkpoint.
+        definition, w8a8 = Qwen21W8A8.prepare(model, definition, quantize, lora_paths)
         Qwen21Initializer.load_components(model, root, definition, quantize, validate=True)
+        if w8a8 is not None:
+            Qwen21W8A8.load(model.transformer, w8a8)
         Qwen21Initializer.apply_lora(model, lora_paths, lora_scales, bake_lora)
         model.compute_precision = precision
         if compute_precision is not None:

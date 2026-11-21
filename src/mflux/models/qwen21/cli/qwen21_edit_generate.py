@@ -6,6 +6,8 @@ from mflux.callbacks.callback_manager import CallbackManager
 from mflux.cli.parser.parsers import CommandLineParser, lora_init_kwargs_from_args
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
+from mflux.models.qwen21.cli import qwen21_vae_options
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
 from mflux.models.qwen21.model.qwen21_scheduler import Qwen21TurboScheduler, ViggleTurboScheduler
 from mflux.models.qwen21.model.qwen21_small_text_encoder.qwen21_small_text_encoder import Qwen21SmallTextEncoder
@@ -17,7 +19,10 @@ from mflux.utils.scale_factor import ScaleFactor
 
 # Same architecture as qwen-image-2.1. The Turbo checkpoint brings its own schedule.
 FAMILY_MODELS = ("qwen-image-2.1-turbo",)
-IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
+IGNORED_OPTIONS = {
+    "--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora.",
+    **qwen21_vae_options.IGNORED_TILING,
+}
 CONDITIONAL_OPTIONS = {
     "--scheduler": {
         "condition": "linear Euler or viggle_turbo scheduler only",
@@ -49,6 +54,7 @@ def build_parser() -> CommandLineParser:
             "If omitted, derive from output-resolution and the last reference's aspect ratio."
         )
     parser.add_image_paths_arguments(required=False)
+    parser.add_vae_full_precision_arguments(help=qwen21_vae_options.FULL_PRECISION_HELP)
     parser.add_output_arguments()
     parser.add_argument(
         "--output-resolution",
@@ -98,7 +104,9 @@ def build_parser() -> CommandLineParser:
     parser.add_argument(
         "--enhance-prompt",
         action="store_true",
-        help="Rewrite the instruction into a detailed prompt with the built-in Qwen3-VL first.",
+        help="Rewrite the prompt into a detailed one with the built-in Qwen3-VL first. Without --image-paths "
+        "this rewrites a text-to-image request and, unless --width/--height are given, uses the aspect ratio "
+        "the rewrite proposes.",
     )
     parser.add_argument(
         "--verify",
@@ -120,7 +128,6 @@ def validate_edit_args(parser: CommandLineParser, args, paths: list) -> None:
         "--mask-image": args.mask_image is not None,
         "--auto-mask": args.auto_mask is not None,
         "--strength": args.strength != 1.0,
-        "--enhance-prompt": args.enhance_prompt,
         "--verify": args.verify,
     }
     used = [flag for flag, on in edits.items() if on]
@@ -138,7 +145,9 @@ def validate_edit_args(parser: CommandLineParser, args, paths: list) -> None:
         parser.error("--verify-retries needs --verify")
     if args.use_step_cache and not args.use_kv_cache:
         parser.error("--use-step-cache needs --use-kv-cache (the default)")
-    vision_chat = [flag for flag in ("--auto-mask", "--enhance-prompt", "--verify") if flag in used]
+    vision_chat = [flag for flag in ("--auto-mask", "--verify") if flag in used]
+    if args.enhance_prompt:
+        vision_chat.insert(1 if args.auto_mask is not None else 0, "--enhance-prompt")
     if args.small_text_encoder and vision_chat:
         parser.error(f"{', '.join(vision_chat)} need the native Qwen3-VL text encoder; remove --small-text-encoder.")
 
@@ -193,6 +202,7 @@ def main() -> None:
         small_text_encoder=args.small_text_encoder,
         **lora_init_kwargs_from_args(args),
     )
+    VAEDecodeOptions.apply(args, model)
     memory_saver = CallbackManager.register_callbacks(args, model, QwenImage21LatentCreator)
     try:
         for seed in args.seed:
