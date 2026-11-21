@@ -22,6 +22,13 @@ from mflux.models.z_image.cli.z_image_turbo_generate import ZImageTurboCommand, 
 from mflux.models.z_image.variants.z_image import ZImage  # noqa: E402
 
 arm, rep, outdir = sys.argv[1], sys.argv[2], sys.argv[3]
+# A trailing F selects the fused QK-norm + RoPE kernel (PR #1009); without it the composed ops are forced.
+FUSED = arm.endswith("F") and arm != "C8K"
+ARM_LABEL = arm
+if FUSED:
+    arm = arm[:-1]
+else:
+    os.environ["MFLUX_ZIMAGE_DISABLE_FUSED_QKNORM_ROPE"] = "1"
 IS_Q8 = arm in ("A8", "C8", "C8K")  # GPU weights: q8 (local mflux q8 model) or bf16 (HF default)
 IS_ANE = arm in ("C", "C8", "C8K")
 DROP_ENCODER = arm != "C8K"
@@ -163,7 +170,7 @@ for k, p in PROMPTS.items():
     mx.eval(mx.array(0))
     res[k] = time.perf_counter() - t
     if rep == "0":
-        img.save(path=f"{outdir}/{arm}_{k}.png")
+        img.save(path=f"{outdir}/{ARM_LABEL}_{k}.png")
 swap1 = os.popen("sysctl -n vm.swapusage").read().strip()
 mm.__exit__()
 if IS_ANE:

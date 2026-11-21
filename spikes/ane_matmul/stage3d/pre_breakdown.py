@@ -70,10 +70,21 @@ qh = q.reshape(1, S, H, HD)
 kh = k.reshape(1, S, H, HD)
 qn = piece("QK-RMSNorm (q and k)", 0, lambda q, k: (a.norm_q(q), a.norm_k(k)), qh, kh)
 qr = piece(
-    "RoPE (q and k, composed ops; no fused kernel on this branch)",
+    "RoPE (q and k, composed ops)",
     0,
     lambda q, k: (ZImageAttention.apply_rotary_emb(q, freqs), ZImageAttention.apply_rotary_emb(k, freqs)),
     *qn,
+)
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import fused_qk_norm_rope  # noqa: E402
+
+fused = piece(
+    "FUSED QK-norm + RoPE + layout (replaces the two rows above)",
+    0,
+    lambda q, k: fused_qk_norm_rope(
+        q, k, a.norm_q.weight, a.norm_k.weight, freqs[..., 0], freqs[..., 1], H, HD, eps=a.eps
+    ),
+    q,
+    k,
 )
 qt, kt, vt = (mx.transpose(z, axes=(0, 2, 1, 3)) for z in (qr[0], qr[1], v.reshape(1, S, H, HD)))
 mx.eval(qt, kt, vt)
@@ -101,9 +112,16 @@ def tail(x, ao, t_emb):
 
 
 piece("attention_norm2 + gate + residual + ffn_norm1 * scale_mlp + row split casts", 0, tail, x, ao, t_emb)
+import os  # noqa: E402
+
+os.environ["MFLUX_ZIMAGE_DISABLE_FUSED_QKNORM_ROPE"] = "1"
+pre_old = make_pre(b, m)
+ms_pre_old, _ = med(lambda x, mk, f, t: pre_old(x, mk, f, t), x, mask, freqs, t_emb)
+del os.environ["MFLUX_ZIMAGE_DISABLE_FUSED_QKNORM_ROPE"]
 pre = make_pre(b, m)
 ms_pre, _ = med(lambda x, mk, f, t: pre(x, mk, f, t), x, mask, freqs, t_emb)
-total = sum(r["ms"] for r in rows)
+print("compiled pre graph: composed %.2f ms | fused %.2f ms" % (ms_pre_old, ms_pre))
+total = sum(r["ms"] for r in rows if not r["piece"].startswith("FUSED"))
 for r in rows:
     r["pct_of_sum"] = 100 * r["ms"] / total
     r["pct_of_compiled_pre"] = 100 * r["ms"] / ms_pre
