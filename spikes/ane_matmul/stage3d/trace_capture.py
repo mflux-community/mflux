@@ -13,11 +13,20 @@ from eager_bench import SplitBlock, load_real_blocks, make_inputs, real_ane_fns 
 from mlp_program import MlpSpec, plan_split  # noqa: E402
 
 arm, out = sys.argv[1], sys.argv[2]
+
+
+def _run_blocks(blocks, x, mk, f, t):
+    for b in blocks:
+        x = b(x, mk, f, t)
+    return x
+
+
 _, blocks = load_real_blocks(0, 4)
 x, mask, freqs, t = make_inputs(4224, 3840)
 m = plan_split(4224, 0.5)[0]
 if arm == "A":
-    calls = [mx.compile(lambda x, mk, f, t, b=b: b(x, mk, f, t)) for b in blocks]
+    chain = mx.compile(lambda x, mk, f, t: _run_blocks(blocks[:2], x, mk, f, t))  # the same 2 blocks as arm C
+    calls = [lambda x, mk, f, t: chain(x, mk, f, t)]
 else:
     spec = MlpSpec(mpad=m, scale_mode="output", range_fix=True)
     fns, gains, _ = real_ane_fns(blocks, spec, HERE / "cache")
@@ -31,7 +40,7 @@ for _ in range(2):  # warm-up
     mx.eval(y)
 mx.metal.start_capture(out)
 y = x
-for c in calls[:2]:
+for c in calls if arm == "A" else calls[:2]:
     y = c(y, mask, freqs, t)
 mx.eval(y)
 mx.metal.stop_capture()

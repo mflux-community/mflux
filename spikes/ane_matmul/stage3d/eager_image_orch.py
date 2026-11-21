@@ -1,8 +1,9 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3a")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "stage3a"))
 from s3a import BenchLock
 
 PY, WD, CHILD, OUT = sys.argv[1:5]
@@ -17,7 +18,11 @@ def swap():
 with BenchLock(owner="eager-image-%d" % os.getpid(), wait_s=3600):
     print("SWAP_BEFORE", swap(), flush=True)
     for rep in range(REPS):
-        for arm in os.environ.get("ARMS", "A,C").split(","):
+        arms = os.environ.get("ARMS", "A,C").split(",")
+        if rep % 2 == 1:  # alternate the order each repetition so no arm always runs first
+            arms = arms[::-1]
+        print("ORDER", rep, ",".join(arms), flush=True)
+        for arm in arms:
             r = subprocess.run([WD, PY, CHILD, arm, str(rep), OUT], capture_output=True, text=True)
             line = [l for l in r.stdout.splitlines() if l.startswith("RESULT")]
             print(line[0] if line else "FAIL " + arm + " " + r.stderr[-1500:], flush=True)

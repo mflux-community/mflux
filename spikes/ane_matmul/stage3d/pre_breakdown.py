@@ -96,7 +96,8 @@ def tail(x, ao, t_emb):
     mod = mx.expand_dims(b.adaLN_modulation[0](t_emb), axis=1)
     sm, gm, sl, gl = mx.split(mod, 4, axis=2)
     x1 = x + mx.tanh(gm) * b.attention_norm2(ao)
-    return b.ffn_norm1(x1) * (1.0 + sl)
+    h = b.ffn_norm1(x1) * (1.0 + sl)
+    return x1, h[:, :m].astype(mx.float16), h[:, m:], mx.tanh(gl)
 
 
 piece("attention_norm2 + gate + residual + ffn_norm1 * scale_mlp + row split casts", 0, tail, x, ao, t_emb)
