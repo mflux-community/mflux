@@ -1,0 +1,552 @@
+{
+  "test": "t4",
+  "args": {
+    "test": "t4",
+    "backend": "bridge",
+    "shares": [
+      0.5
+    ],
+    "repeats": 5,
+    "weight_dtype": "int8",
+    "scale_mode": "output",
+    "w2_scale": "program",
+    "range_fix": true,
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_wait_s": 3600,
+    "weight_surfaces": "per-block",
+    "patch_mode": "primitive"
+  },
+  "weights_copied": false,
+  "swap_mb_start": 0.0,
+  "wired_gb_start": 3.071279104,
+  "blocks_8": {
+    "arms": {
+      "gpu_only": {
+        "median_ms": 1633.112290999975,
+        "p90_ms": 1662.59561640004,
+        "n": 5,
+        "discarded_swap_growth": 0,
+        "runs": [
+          {
+            "seconds": 1.6602944160000561,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.261243904,
+              7.180664832
+            ],
+            "peak_rss_gb": 3.63937792,
+            "ane_power_w_median": 0.001054,
+            "finite": true
+          },
+          {
+            "seconds": 1.6288639160000002,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.36591872,
+              6.392578048
+            ],
+            "peak_rss_gb": 3.822698496,
+            "ane_power_w_median": 0.0017045,
+            "finite": true
+          },
+          {
+            "seconds": 1.633112290999975,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.861157888,
+              7.034667008
+            ],
+            "peak_rss_gb": 3.822731264,
+            "ane_power_w_median": 0.00254,
+            "finite": true
+          },
+          {
+            "seconds": 1.6641297500000292,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              8.326119424,
+              7.11213056
+            ],
+            "peak_rss_gb": 3.822731264,
+            "ane_power_w_median": 0.002529,
+            "finite": true
+          },
+          {
+            "seconds": 1.6274556250000387,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.793576448,
+              7.577337856
+            ],
+            "peak_rss_gb": 3.822747648,
+            "ane_power_w_median": 0.0025445,
+            "finite": true
+          }
+        ]
+      },
+      "share_0.5_m2048": {
+        "median_ms": 1579.9830839999913,
+        "p90_ms": 1640.2141578000283,
+        "n": 5,
+        "discarded_swap_growth": 0,
+        "runs": [
+          {
+            "seconds": 1.6583267910000359,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.180664832,
+              7.36591872
+            ],
+            "peak_rss_gb": 3.822682112,
+            "ane_power_w_median": 1.984523,
+            "finite": true
+          },
+          {
+            "seconds": 1.5776680830000487,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.392578048,
+              7.861157888
+            ],
+            "peak_rss_gb": 3.822731264,
+            "ane_power_w_median": 1.629006,
+            "finite": true
+          },
+          {
+            "seconds": 1.5799830839999913,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.034667008,
+              8.326119424
+            ],
+            "peak_rss_gb": 3.822731264,
+            "ane_power_w_median": 1.6460565000000003,
+            "finite": true
+          },
+          {
+            "seconds": 1.5721395000000484,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.11213056,
+              6.793576448
+            ],
+            "peak_rss_gb": 3.822731264,
+            "ane_power_w_median": 1.6261115,
+            "finite": true
+          },
+          {
+            "seconds": 1.6130452080000168,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.57661696,
+              7.45299968
+            ],
+            "peak_rss_gb": 3.822813184,
+            "ane_power_w_median": 1.5185525,
+            "finite": true
+          }
+        ]
+      }
+    },
+    "per_call_ms": {
+      "prep": 0.0,
+      "wait": 0.0,
+      "epilogue": 0.0
+    }
+  },
+  "blocks_16": {
+    "arms": {
+      "gpu_only": {
+        "median_ms": 2963.201042000037,
+        "p90_ms": 3090.3256502000204,
+        "n": 5,
+        "discarded_swap_growth": 0,
+        "runs": [
+          {
+            "seconds": 2.937720417000037,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.375981056,
+              6.768214016
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 0.000308,
+            "finite": true
+          },
+          {
+            "seconds": 2.963201042000037,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.52812032,
+              7.424131072
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 0.002547,
+            "finite": true
+          },
+          {
+            "seconds": 3.0677228750000722,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.725369856,
+              7.238959104
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 0.002533,
+            "finite": true
+          },
+          {
+            "seconds": 3.105394166999986,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.34732288,
+              7.1204864
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 0.002542,
+            "finite": true
+          },
+          {
+            "seconds": 2.9533405829999992,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.4039296,
+              6.8202496
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 0.001058,
+            "finite": true
+          }
+        ]
+      },
+      "share_0.5_m2048": {
+        "median_ms": 3224.193249999985,
+        "p90_ms": 3307.8140668000515,
+        "n": 5,
+        "discarded_swap_growth": 0,
+        "runs": [
+          {
+            "seconds": 3.224193249999985,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.768214016,
+              8.026259456
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 1.7727945,
+            "finite": true
+          },
+          {
+            "seconds": 3.292414417000032,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.424131072,
+              6.725238784
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 1.6642805,
+            "finite": true
+          },
+          {
+            "seconds": 3.009768582999982,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.238959104,
+              7.34732288
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 1.939652,
+            "finite": true
+          },
+          {
+            "seconds": 3.3180805000000646,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              7.06936832,
+              7.175520256
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 1.7503465,
+            "finite": true
+          },
+          {
+            "seconds": 2.9031692920000296,
+            "valid": true,
+            "swap_mb": [
+              0.0,
+              0.0
+            ],
+            "wired_gb": [
+              6.8202496,
+              8.1637376
+            ],
+            "peak_rss_gb": 6.656786432,
+            "ane_power_w_median": 1.922094,
+            "finite": true
+          }
+        ]
+      }
+    },
+    "per_call_ms": {
+      "prep": 0.0,
+      "wait": 0.0,
+      "epilogue": 0.0
+    }
+  },
+  "blocks_34": {
+    "arms": {
+      "gpu_only": {
+        "median_ms": 5902.0640830000275,
+        "p90_ms": 5953.199791599991,
+        "n": 5,
+        "discarded_swap_growth": 0,
+        "runs": [
+          {
+            "seconds": 5.9020640830000275,
+            "valid": true,
+            "swap_mb": [
+              757.88,
+              741.88
+            ],
+            "wired_gb": [
+              6.169378816,
+              7.486226432
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 0.001054,
+            "finite": true
+          },
+          {
+            "seconds": 5.963237791999973,
+            "valid": true,
+            "swap_mb": [
+              1382.56,
+              1310.56
+            ],
+            "wired_gb": [
+              7.56662272,
+              7.077920768
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 0.001923,
+            "finite": true
+          },
+          {
+            "seconds": 5.841998542000056,
+            "valid": true,
+            "swap_mb": [
+              1310.56,
+              1310.56
+            ],
+            "wired_gb": [
+              6.445416448,
+              6.795198464
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 0.001057,
+            "finite": true
+          },
+          {
+            "seconds": 5.938142791000018,
+            "valid": true,
+            "swap_mb": [
+              1294.56,
+              1294.56
+            ],
+            "wired_gb": [
+              7.599079424,
+              7.234371584
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 0.00234,
+            "finite": true
+          },
+          {
+            "seconds": 5.8438308749999806,
+            "valid": true,
+            "swap_mb": [
+              1294.56,
+              1286.56
+            ],
+            "wired_gb": [
+              7.684325376,
+              6.746636288
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 0.002557,
+            "finite": true
+          }
+        ]
+      },
+      "share_0.5_m2048": {
+        "median_ms": 6089.345250000008,
+        "p90_ms": 6673.569775000022,
+        "n": 4,
+        "discarded_swap_growth": 1,
+        "runs": [
+          {
+            "seconds": 7.516321874999903,
+            "valid": false,
+            "swap_mb": [
+              741.88,
+              1382.56
+            ],
+            "wired_gb": [
+              7.486226432,
+              7.56662272
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 1.5405289999999998,
+            "finite": true
+          },
+          {
+            "seconds": 6.874270000000024,
+            "valid": true,
+            "swap_mb": [
+              1310.56,
+              1310.56
+            ],
+            "wired_gb": [
+              7.077920768,
+              6.708936704
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 1.816139,
+            "finite": true
+          },
+          {
+            "seconds": 5.973421250000001,
+            "valid": true,
+            "swap_mb": [
+              1310.56,
+              1294.56
+            ],
+            "wired_gb": [
+              6.795198464,
+              7.59906304
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 2.035041,
+            "finite": true
+          },
+          {
+            "seconds": 5.780254416000048,
+            "valid": true,
+            "swap_mb": [
+              1294.56,
+              1294.56
+            ],
+            "wired_gb": [
+              7.234420736,
+              7.684325376
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 1.962769,
+            "finite": true
+          },
+          {
+            "seconds": 6.205269250000015,
+            "valid": true,
+            "swap_mb": [
+              1286.56,
+              1286.56
+            ],
+            "wired_gb": [
+              6.746652672,
+              7.01341696
+            ],
+            "peak_rss_gb": 9.075802112,
+            "ane_power_w_median": 1.9731524999999999,
+            "finite": true
+          }
+        ]
+      }
+    },
+    "per_call_ms": {
+      "prep": 0.0,
+      "wait": 0.0,
+      "epilogue": 0.0
+    }
+  },
+  "swap_mb_end": 1286.56,
+  "wired_gb_end": 7.01341696,
+  "peak_rss_gb": 9.075802112,
+  "commit": "3a92a975"
+}

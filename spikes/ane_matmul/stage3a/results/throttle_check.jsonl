@@ -1,0 +1,1 @@
+{"test": "throttle_check", "passes": [46.21, 46.12, 46.17, 46.12, 45.78, 46.16], "ane_power_med": 5.539695, "verdict": "UNTHROTTLED (all passes < 50 ms)"}

@@ -1,0 +1,2 @@
+{"test": "t1b_fused_pre", "case": "qkv_w8a8_pre", "fused_ms": 26.591750000079628, "sep_one_ms": 10.143999999854714, "sep_total_ms": 30.43199999956414, "n_calls": 3, "speedup": 1.1444150911268725, "fused_tflops": 14.053700354391152, "sep_tflops": 12.28024731878787}
+{"test": "t1b_fused_pre", "case": "w1w3_w8a8_pre", "fused_ms": 48.14387499936856, "sep_one_ms": 26.124292002350558, "sep_total_ms": 52.248584004701115, "n_calls": 2, "speedup": 1.0852592153287701, "fused_tflops": 13.799839618408651, "sep_tflops": 12.715708305898243}

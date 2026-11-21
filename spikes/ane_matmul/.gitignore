@@ -1,0 +1,10 @@
+# Build outputs and caches
+*.so
+cache/
+bench/anebench
+bench/aneplan
+bench/anerun
+__pycache__/
+stage3b/models_precision/
+bench/dynrun
+bench/surface_run

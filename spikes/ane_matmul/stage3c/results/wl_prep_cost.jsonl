@@ -1,0 +1,5 @@
+{"shape": [4128, 3840, 5760, 4352], "quantise_ms": 2.747, "quantise_transpose_ms": 2.968, "epilogue_ms": 3.053, "reference_bf16_matmul_ms": 102.183}
+{"shape": [4128, 3840, 5760, 4352], "quantise_ms": 2.846, "quantise_transpose_ms": 3.003, "epilogue_ms": 3.029, "reference_bf16_matmul_ms": 100.517}
+{"shape": [4128, 3840, 5760, 4352], "quantise_ms": 2.745, "quantise_transpose_ms": 2.979, "epilogue_ms": 3.048, "reference_bf16_matmul_ms": 101.27}
+{"shape": [4128, 3840, 5760, 4352], "quantise_ms": 2.688, "quantise_transpose_ms": 2.898, "epilogue_ms": 2.948, "reference_bf16_matmul_ms": 100.167}
+{"shape": [4128, 3840, 5760, 4352], "quantise_ms": 2.726, "quantise_transpose_ms": 2.911, "epilogue_ms": 2.974, "reference_bf16_matmul_ms": 103.8}

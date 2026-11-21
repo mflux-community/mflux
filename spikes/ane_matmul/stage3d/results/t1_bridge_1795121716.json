@@ -1,0 +1,77 @@
+{
+  "test": "t1",
+  "args": {
+    "test": "t1",
+    "backend": "bridge",
+    "shares": [
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.5
+    ],
+    "repeats": 5,
+    "weight_dtype": "int8",
+    "scale_mode": "output",
+    "w2_scale": "program",
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_file": null
+  },
+  "weights_copied": false,
+  "swap_mb_start": 0.0,
+  "wired_gb_start": 3.506814976,
+  "t1": [
+    {
+      "share": 0.15,
+      "mpad": 512,
+      "cosine": 0.999802080761688,
+      "nonfinite": 0,
+      "max_abs_y": 68.125,
+      "pass": false
+    },
+    {
+      "share": 0.2,
+      "mpad": 768,
+      "cosine": 0.9998017992040628,
+      "nonfinite": 0,
+      "max_abs_y": 68.125,
+      "pass": false
+    },
+    {
+      "share": 0.25,
+      "mpad": 1024,
+      "cosine": 0.9998015413472513,
+      "nonfinite": 0,
+      "max_abs_y": 68.125,
+      "pass": false
+    },
+    {
+      "share": 0.3,
+      "mpad": 1280,
+      "cosine": 0.9998014103876244,
+      "nonfinite": 0,
+      "max_abs_y": 68.125,
+      "pass": false
+    },
+    {
+      "share": 0.5,
+      "mpad": 2048,
+      "cosine": 0.9998004358710822,
+      "nonfinite": 0,
+      "max_abs_y": 70.625,
+      "pass": false
+    }
+  ],
+  "compute_plan": {
+    "mlp_m512_int8_output_w2program_k1x4": "preferred devices: {'const/none': 33, 'MLNeuralEngineComputeDevice': 28}; non-ANE ops: none",
+    "mlp_m768_int8_output_w2program_k1x4": "preferred devices: {'const/none': 33, 'MLNeuralEngineComputeDevice': 28}; non-ANE ops: none",
+    "mlp_m1024_int8_output_w2program_k1x4": "preferred devices: {'const/none': 33, 'MLNeuralEngineComputeDevice': 28}; non-ANE ops: none",
+    "mlp_m1280_int8_output_w2program_k1x4": "preferred devices: {'const/none': 33, 'MLNeuralEngineComputeDevice': 28}; non-ANE ops: none",
+    "mlp_m2048_int8_output_w2program_k1x4": "preferred devices: {'const/none': 33, 'MLNeuralEngineComputeDevice': 28}; non-ANE ops: none"
+  },
+  "swap_mb_end": 0.0,
+  "wired_gb_end": 5.471125504,
+  "peak_rss_gb": 3.05446912,
+  "commit": "4599aaa9"
+}

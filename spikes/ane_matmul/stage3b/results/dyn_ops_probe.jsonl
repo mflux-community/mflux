@@ -1,0 +1,4 @@
+{"variant": "mm_i8", "convert": "fail", "err": "Op \"matmul_0\" (op_type: matmul) Input x=\"x\" expects tensor or scalar of dtype from type domain ['fp16', 'fp32', 'int32'] but got tensor[320,256,int8]"}
+{"variant": "mm_f16", "convert": "ok", "ane_copy": 0.069, "ane_copy_cos": NaN, "out_shape": [320, 192], "ane_peak_w": 0.0, "ane_wrap": 0.072, "ane_wrap_cos": NaN, "cpu": 0.069, "cpu_cos": NaN}
+{"variant": "conv_i8", "convert": "fail", "err": "Op \"conv_0\" (op_type: conv) Input x=\"x\" expects tensor or scalar of dtype from type domain ['fp16', 'fp32'] but got tensor[1,256,1,320,int8]"}
+{"variant": "conv_dq", "convert": "fail", "err": "('Op \"dequantize_0\" (op_type: dequantize) Input scale must be const at compile time', 'scale', 'squeeze_0')"}

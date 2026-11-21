@@ -1,0 +1,365 @@
+{
+  "test": "t2",
+  "args": {
+    "test": "t2",
+    "backend": "bridge",
+    "shares": [
+      0.25,
+      0.4,
+      0.5
+    ],
+    "repeats": 5,
+    "weight_dtype": "int8",
+    "scale_mode": "output",
+    "w2_scale": "program",
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_wait_s": 3600
+  },
+  "weights_copied": false,
+  "swap_mb_start": 0.0,
+  "wired_gb_start": 5.979062272,
+  "t2": {
+    "gpu_only": {
+      "median_ms": 3517.910957999902,
+      "p90_ms": 3619.10549180011,
+      "n": 5,
+      "discarded_swap_growth": 0,
+      "runs": [
+        {
+          "seconds": 3.517910957999902,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            9.942351872,
+            10.137616384
+          ],
+          "peak_rss_gb": 2.797568,
+          "ane_power_w_median": 0.0,
+          "finite": true
+        },
+        {
+          "seconds": 3.6800423750000846,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.716165632,
+            10.054434816
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 0.001926,
+          "finite": true
+        },
+        {
+          "seconds": 3.5137784580001608,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.532875264,
+            10.524819456
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 0.001065,
+          "finite": true
+        },
+        {
+          "seconds": 3.527700167000148,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.521507328,
+            10.124869632
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 0.001797,
+          "finite": true
+        },
+        {
+          "seconds": 3.5154029999998784,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.253315072,
+            10.146103296
+          ],
+          "peak_rss_gb": 6.165610496,
+          "ane_power_w_median": 0.0022449999999999996,
+          "finite": true
+        }
+      ]
+    },
+    "share_0.25_m1024": {
+      "median_ms": 3504.532791999736,
+      "p90_ms": 3985.144225000022,
+      "n": 5,
+      "discarded_swap_growth": 0,
+      "runs": [
+        {
+          "seconds": 4.069459625000036,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.137632768,
+            11.47912192
+          ],
+          "peak_rss_gb": 5.774753792,
+          "ane_power_w_median": 1.570004,
+          "finite": true
+        },
+        {
+          "seconds": 3.8586711250000008,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.054434816,
+            11.028922368
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 1.227712,
+          "finite": true
+        },
+        {
+          "seconds": 3.088812541000152,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.524819456,
+            11.599151104
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 1.743175,
+          "finite": true
+        },
+        {
+          "seconds": 3.504532791999736,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.124869632,
+            10.801774592
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 1.4140915,
+          "finite": true
+        },
+        {
+          "seconds": 2.8279138329999114,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.146103296,
+            12.448907264
+          ],
+          "peak_rss_gb": 6.177570816,
+          "ane_power_w_median": 1.788786,
+          "finite": true
+        }
+      ]
+    },
+    "share_0.4_m1792": {
+      "median_ms": 2965.4182500003117,
+      "p90_ms": 5969.194249799966,
+      "n": 5,
+      "discarded_swap_growth": 0,
+      "runs": [
+        {
+          "seconds": 7.571027333000075,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.479138304,
+            11.395661824
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 0.000537,
+          "finite": true
+        },
+        {
+          "seconds": 3.5664446249998036,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.028922368,
+            11.733778432
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 2.33774,
+          "finite": true
+        },
+        {
+          "seconds": 2.8254956669998137,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.599151104,
+            12.485476352
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 3.526853,
+          "finite": true
+        },
+        {
+          "seconds": 2.837952707999648,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            10.801774592,
+            12.02225152
+          ],
+          "peak_rss_gb": 6.165610496,
+          "ane_power_w_median": 2.825444,
+          "finite": true
+        },
+        {
+          "seconds": 2.9654182500003117,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.448907264,
+            12.24228864
+          ],
+          "peak_rss_gb": 6.222462976,
+          "ane_power_w_median": 2.797529,
+          "finite": true
+        }
+      ]
+    },
+    "share_0.5_m2048": {
+      "median_ms": 2678.9469580003242,
+      "p90_ms": 3095.5624418001207,
+      "n": 5,
+      "discarded_swap_growth": 0,
+      "runs": [
+        {
+          "seconds": 3.2640821250001864,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.395661824,
+            11.716165632
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 2.9512675,
+          "finite": true
+        },
+        {
+          "seconds": 2.650967082999614,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            11.733745664,
+            12.532842496
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 3.966602,
+          "finite": true
+        },
+        {
+          "seconds": 2.8427829170000223,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.485476352,
+            11.521507328
+          ],
+          "peak_rss_gb": 6.14252544,
+          "ane_power_w_median": 3.226135,
+          "finite": true
+        },
+        {
+          "seconds": 2.6789469580003242,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.02225152,
+            12.253315072
+          ],
+          "peak_rss_gb": 6.165610496,
+          "ane_power_w_median": 4.025298,
+          "finite": true
+        },
+        {
+          "seconds": 2.3691066659998796,
+          "valid": true,
+          "swap_mb": [
+            0.25,
+            0.25
+          ],
+          "wired_gb": [
+            12.24228864,
+            12.455739392
+          ],
+          "peak_rss_gb": 6.222462976,
+          "ane_power_w_median": 4.2997385,
+          "finite": true
+        }
+      ]
+    }
+  },
+  "per_call_ms": {
+    "prep": 0.49002099990502757,
+    "wait": 55.30418800003645,
+    "epilogue": 18.173396500060335
+  },
+  "swap_mb_end": 0.25,
+  "wired_gb_end": 12.454985728,
+  "peak_rss_gb": 6.222462976,
+  "commit": "ce1cb694"
+}

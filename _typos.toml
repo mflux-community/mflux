@@ -6,7 +6,9 @@
 extend-exclude = [".cursor/skills/asd-ste100/"]
 
 [default]
-extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs", "RGBa"]
+# f16ba7bf, 4ad0ba78 = git object hashes cited as provenance in spikes/ane_matmul; typos reads the
+# "ba" inside them as a typo for "by"/"be". Exact identifiers only, so no real word is un-checked.
+extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PNGs", "RGBa", "f16ba7bf", "4ad0ba78"]
 
 # False positives typos would otherwise "fix" (destructively, incl. file renames):
 # hed = Holistically-nested Edge Detection model; thre1/thre2 = upstream openpose
@@ -16,6 +18,13 @@ extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PN
 # "temperal_downsample" key in published Qwen VAE configs and Diffusers;
 # RGBa (in the identifier list above) = premultiplied Pillow image mode.
 [default.extend-words]
+# ane = Apple Neural Engine (spikes/ane_matmul).
+# Graphis = a third-party macOS app named in the README (typos "fixes" it to Graphics).
+Graphis = "Graphis"
+graphis = "graphis"
+ane = "ane"
+ANE = "ANE"
+Ane = "Ane"
 hed = "hed"
 HED = "HED"
 thre = "thre"

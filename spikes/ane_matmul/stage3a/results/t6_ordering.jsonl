@@ -1,0 +1,7 @@
+{"test": "t6_ordering", "phase": "correctness", "strategy": "none", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "hack", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "correctness", "strategy": "async", "max_abs_diff_vs_hack": 0.0}
+{"test": "t6_ordering", "phase": "timing", "strategy": "gpu_only_q8", "median_ms": 30.848707999666658, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "none", "median_ms": 34.79445799985115, "speedup_vs_gpu": 0.8865983197611134, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "hack", "median_ms": 19.528917000116053, "speedup_vs_gpu": 1.5796425372427634, "repeat": 3}
+{"test": "t6_ordering", "phase": "timing", "strategy": "async", "median_ms": 34.61337499993533, "speedup_vs_gpu": 0.891236639008022, "repeat": 3}

@@ -302,6 +302,14 @@ class CommandLineParser(argparse.ArgumentParser):
     def add_float32_arguments(self) -> None:
         self.add_argument("--float32", action=argparse.BooleanOptionalAction, default=False, help="Run the transformer hidden stream in float32, as in mflux 0.20 and earlier. On an M5, the default bfloat16 stream is about 30%% faster. The two streams give slightly different images for the same seed. Use this flag to reproduce an image from an older release.")
 
+    def add_ane_arguments(self) -> None:
+        self.add_argument("--ane", action=argparse.BooleanOptionalAction, default=False, help="[EXPERIMENTAL] Run half of each transformer linear on the Apple Neural Engine (Core ML int8 weights) with the other half on the GPU. Needs macOS 26+ on M3/M4 and a bf16 or -q 8 model. Default behaviour is unchanged.")
+        self.add_argument("--ane-precision", type=str, choices=["w8a16", "w8a8"], default="w8a16", help="ANE weight/activation mode with --ane. w8a16: int8 weights, fp16 activations. w8a8: also per-token int8 activations (measured faster on the ANE, slightly less accurate).")
+        self.add_argument("--ane-gpu-share", type=float, default=0.5, help="Share of each layer's output columns the GPU keeps with --ane (the rest go to the ANE). Default 0.5.")
+        self.add_argument("--ane-cache", type=str, default=None, help="Directory for the cached Core ML ANE packages. Default: the mflux cache dir under ~/Library/Caches, or $MFLUX_ANE_CACHE.")
+        self.add_argument("--dequantize-on-load", action=argparse.BooleanOptionalAction, default=False, help="With --ane on an 8-bit model: dequantize the transformer to bfloat16 at load before the split (~+3 GB memory, faster GPU halves).")
+        self.add_argument("--ane-allow-m5", action="store_true", help="Acknowledge that --ane is untested on M-class 5 chips and allow it.")
+
     def add_output_arguments(self) -> None:
         # --metadata and --no-metadata are the first released names (#703). They stay as aliases.
         self.add_argument("--make-conf", "--metadata", dest="metadata", action="store_true", help="Write the generation parameters to a JSON sidecar (<output>.metadata.json). Use it again with --config-from-conf/-C.")

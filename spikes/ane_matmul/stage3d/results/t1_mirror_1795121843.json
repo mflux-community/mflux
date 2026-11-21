@@ -1,0 +1,35 @@
+{
+  "test": "t1",
+  "args": {
+    "test": "t1",
+    "backend": "mirror",
+    "shares": [
+      0.25
+    ],
+    "repeats": 5,
+    "weight_dtype": "int8",
+    "scale_mode": "weight",
+    "w2_scale": "program",
+    "cache": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/cache",
+    "out": "/Users/ianscrivener/MFlux/mflux-ane-stage3/spikes/ane_matmul/stage3d/results",
+    "lock_wait_s": 3600
+  },
+  "weights_copied": true,
+  "swap_mb_start": 0.0,
+  "wired_gb_start": 3.090235392,
+  "t1": [
+    {
+      "share": 0.25,
+      "mpad": 1024,
+      "cosine": 0.9999650051949545,
+      "nonfinite": 0,
+      "max_abs_y": 0.53173828125,
+      "pass": 1.0
+    }
+  ],
+  "compute_plan": {},
+  "swap_mb_end": 0.0,
+  "wired_gb_end": 4.492673024,
+  "peak_rss_gb": 2.152103936,
+  "commit": "f4474b6e"
+}

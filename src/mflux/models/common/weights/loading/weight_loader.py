@@ -162,7 +162,7 @@ class WeightLoader:
             else:
                 # Fall back to HuggingFace format with mapping
                 raw_weights = WeightLoader._load_safetensors(
-                    component_path, component.loading_mode, component.weight_files
+                    component_path, component.loading_mode, component.weight_files, component.precision
                 )
                 # Cache for potential reuse by other components
                 if raw_weights_cache is not None:
@@ -340,9 +340,11 @@ class WeightLoader:
         return {k: mx.array(v.numpy()) for k, v in pt_weights.items() if isinstance(v, torch.Tensor)}
 
     @staticmethod
-    def _load_safetensors(path: Path, loading_mode: str, weight_files: list[str] | None = None) -> dict[str, mx.array]:
+    def _load_safetensors(
+        path: Path, loading_mode: str, weight_files: list[str] | None = None, precision: mx.Dtype | None = None
+    ) -> dict[str, mx.array]:
         if loading_mode == "mlx_native":
-            return WeightLoader._load_mlx_native(path, weight_files)
+            return WeightLoader._load_mlx_native(path, weight_files, precision)
         elif loading_mode == "torch_convert":
             return WeightLoader._load_torch_convert(path, weight_files)
         elif loading_mode == "multi_json":
@@ -352,14 +354,16 @@ class WeightLoader:
         elif loading_mode == "single":
             return WeightLoader._load_single(path)
         elif loading_mode == "multi_glob":
-            return WeightLoader._load_multi_glob(path)
+            return WeightLoader._load_multi_glob(path, precision)
         elif loading_mode == "fp8_safetensors":
             return WeightLoader._load_fp8_safetensors(path)
         else:
             raise ValueError(f"Unknown loading mode: {loading_mode}")
 
     @staticmethod
-    def _load_mlx_native(path: Path, weight_files: list[str] | None = None) -> dict[str, mx.array]:
+    def _load_mlx_native(
+        path: Path, weight_files: list[str] | None = None, precision: mx.Dtype | None = None
+    ) -> dict[str, mx.array]:
         if weight_files:
             # Load only specified files
             missing = [f for f in weight_files if not (path / f).exists()]
@@ -375,7 +379,7 @@ class WeightLoader:
         all_weights: dict[str, mx.array] = {}
         for shard in shard_files:
             weights = mx.load(str(shard))
-            all_weights.update(weights)
+            all_weights.update(WeightLoader._cast_shard(weights, precision))
 
         return all_weights
 
@@ -466,7 +470,7 @@ class WeightLoader:
         return dict(data[0].items())
 
     @staticmethod
-    def _load_multi_glob(path: Path) -> dict[str, mx.array]:
+    def _load_multi_glob(path: Path, precision: mx.Dtype | None = None) -> dict[str, mx.array]:
         shard_files = sorted(f for f in path.glob("*.safetensors") if not f.name.startswith("._"))
         if not shard_files:
             raise FileNotFoundError(f"No safetensors files found in {path}")
@@ -474,13 +478,28 @@ class WeightLoader:
         all_weights: dict[str, mx.array] = {}
         for shard in shard_files:
             data, _ = mx.load(str(shard), return_metadata=True)
-            all_weights.update(dict(data.items()))
+            all_weights.update(WeightLoader._cast_shard(data, precision))
 
         return all_weights
 
     @staticmethod
     def _load_fp8_safetensors(path: Path) -> dict[str, mx.array]:
         return SafetensorsReader.read_directory(path)
+
+    @staticmethod
+    def _cast_shard(weights, precision: mx.Dtype | None) -> dict[str, mx.array]:
+        """Cast one shard to `precision` and materialise it, then hand back only the result.
+
+        The per-shard eval is the point. Casting after every shard is resident holds both copies at
+        once -- Z-Image's transformer is 22.9 GB of F32 on disk plus a ~12 GB bf16 result, which does
+        not fit a 36 GB Mac before the text encoder is even loaded. MLX's astype is lazy, so without
+        the eval the source tensors of every shard stay alive until the caller touches them.
+        """
+        if precision is None:
+            return dict(weights)
+        cast = {k: (v if v.dtype == precision else v.astype(precision)) for k, v in weights.items()}
+        mx.eval(*cast.values())
+        return cast
 
     @staticmethod
     def _convert_precision(weights: dict[str, mx.array], precision: mx.Dtype) -> dict[str, mx.array]:

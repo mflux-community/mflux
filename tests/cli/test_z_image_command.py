@@ -104,6 +104,12 @@ def test_main_call_sequence_is_pinned(monkeypatch, tmp_path, ref_png, lora_file,
         "lora_scales": [0.5],
         "bake_lora": True,
         "compute_precision": mx.float16,
+        "ane": False,
+        "ane_precision": "w8a16",
+        "ane_gpu_share": 0.5,
+        "ane_cache": None,
+        "dequantize_on_load": False,
+        "ane_allow_m5": False,
     }
     assert model.generate_calls == [expected_generate_call(7, ref_png), expected_generate_call(8, ref_png)]
     assert [img.saves for img in model.images] == [
