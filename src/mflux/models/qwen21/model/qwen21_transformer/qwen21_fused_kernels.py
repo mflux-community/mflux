@@ -14,7 +14,7 @@ import os
 import mlx.core as mx
 
 _FUSED_QK_NORM_ROPE_SOURCE = """
-    constexpr float eps = 1e-6;
+    constexpr float eps = EPS_VALUE;
     constexpr uint blocks = (D + 127) / 128;
     constexpr uint pairs_per_lane = 2 * blocks;
     uint row = thread_position_in_grid.x / 32;
@@ -71,21 +71,40 @@ _FUSED_QK_NORM_ROPE_SOURCE = """
     }
 """
 
-_fused_qk_norm_rope_kernel = None
+_fused_qk_norm_rope_kernels: dict[float, object] = {}
+_fused_qk_norm_rope_kernel = None  # eps 1e-6 kernel, kept for the Qwen tests
 _fused_qk_norm_rope_unavailable = False
 
 
-def _get_kernel():
+def _get_kernel(eps: float = 1e-6):
     global _fused_qk_norm_rope_kernel, _fused_qk_norm_rope_unavailable
+    eps = float(eps)  # an int such as 0 would render as the invalid Metal literal "0f"
     if _fused_qk_norm_rope_unavailable or not mx.metal.is_available() or mx.default_device() != mx.gpu:
         return None
+    if eps != 1e-6:
+        kernel = _fused_qk_norm_rope_kernels.get(eps)
+        if kernel is None:
+            try:
+                kernel = mx.fast.metal_kernel(
+                    name=f"fused_qk_norm_rope_eps_{eps!r}".replace(".", "p").replace("-", "m").replace("+", ""),
+                    input_names=["q", "k", "wq", "wk", "cos_t", "sin_t"],
+                    output_names=["out_q", "out_k"],
+                    source=_FUSED_QK_NORM_ROPE_SOURCE.replace("EPS_VALUE", f"{eps!r}f"),
+                    ensure_row_contiguous=False,
+                    compile_options={"math_mode": "safe"},
+                )
+            except (RuntimeError, ValueError):
+                _fused_qk_norm_rope_unavailable = True
+                return None
+            _fused_qk_norm_rope_kernels[eps] = kernel
+        return kernel
     if _fused_qk_norm_rope_kernel is None:
         try:
             _fused_qk_norm_rope_kernel = mx.fast.metal_kernel(
                 name="fused_qk_norm_rope",
                 input_names=["q", "k", "wq", "wk", "cos_t", "sin_t"],
                 output_names=["out_q", "out_k"],
-                source=_FUSED_QK_NORM_ROPE_SOURCE,
+                source=_FUSED_QK_NORM_ROPE_SOURCE.replace("EPS_VALUE", "1e-6f"),
                 ensure_row_contiguous=False,
                 compile_options={"math_mode": "safe"},
             )
@@ -96,13 +115,15 @@ def _get_kernel():
     return _fused_qk_norm_rope_kernel
 
 
-def fused_qk_norm_rope_available(head_dim: int) -> bool:
+def fused_qk_norm_rope_available(
+    head_dim: int, eps: float = 1e-6, disable_env: str = "MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE"
+) -> bool:
     """Supported head widths, with one SIMD group per normalization row."""
-    if os.environ.get("MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE"):
+    if os.environ.get(disable_env):
         return False
     if head_dim <= 0 or head_dim % 64 != 0 or head_dim > 512:
         return False
-    return _get_kernel() is not None
+    return _get_kernel(eps) is not None
 
 
 def fused_qk_norm_rope(
@@ -114,15 +135,17 @@ def fused_qk_norm_rope(
     rope_sin: mx.array,
     num_heads: int,
     head_dim: int,
+    eps: float = 1e-6,
+    disable_env: str = "MFLUX_QWEN21_DISABLE_FUSED_PROLOGUE",
 ) -> tuple[mx.array, mx.array] | None:
     """RMSNorm + RoPE for Q and K in one pass.
 
     q_flat/k_flat: [B, L, H*D], including strided projection views; rope tables
     must cover exactly L positions. Returns head-major [B, H, L, D] arrays
-    with each native RMSNorm's promoted dtype. Epsilon is fixed at 1e-6.
+    with each native RMSNorm's promoted dtype. Epsilon defaults to 1e-6.
     Returns None for unsupported inputs so callers can use composed ops.
     """
-    if not fused_qk_norm_rope_available(head_dim):
+    if not fused_qk_norm_rope_available(head_dim, eps, disable_env):
         return None
     if q_flat.ndim != 3 or k_flat.shape != q_flat.shape:
         return None
@@ -140,7 +163,7 @@ def fused_qk_norm_rope(
     # fast.rms_norm promotes input and weight before normalization (mlx/fast.cpp).
     dtype_q = mx.result_type(q_flat, weight_q)
     dtype_k = mx.result_type(k_flat, weight_k)
-    kernel = _get_kernel()
+    kernel = _get_kernel(eps)
     out_q, out_k = kernel(
         inputs=[q_flat, k_flat, weight_q, weight_k, rope_cos, rope_sin],
         template=[("TQ", dtype_q), ("TK", dtype_k), ("B", B), ("L", L), ("H", H), ("D", D)],
