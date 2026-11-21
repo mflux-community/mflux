@@ -31,127 +31,134 @@ DTYPE = mx.bfloat16
 SEQ_LENS = [1152, 4224, 5952]
 
 
-def _probe_force_fused() -> bool:
-    # inspect.signature cannot read kwargs off the nanobind binding, so ask the function itself.
-    # head_dim must be one the fused kernel supports, or a ValueError about the shape arrives
-    # instead of the TypeError that means "this build has no force_fused kwarg".
-    tiny = mx.zeros((1, 2, 8, 128), dtype=DTYPE)
-    try:
-        mx.eval(scaled_dot_product_attention(tiny, tiny, tiny, scale=1.0, mask=None, force_fused=True))
-    except TypeError:
-        return False
-    return True
+class SdpaMaskBench:
+    """The benchmark's helpers, kept together on one class instead of as module-level functions."""
+
+    @staticmethod
+    def probe_force_fused() -> bool:
+        # inspect.signature cannot read kwargs off the nanobind binding, so ask the function itself.
+        # head_dim must be one the fused kernel supports, or a ValueError about the shape arrives
+        # instead of the TypeError that means "this build has no force_fused kwarg".
+        tiny = mx.zeros((1, 2, 8, 128), dtype=DTYPE)
+        try:
+            mx.eval(scaled_dot_product_attention(tiny, tiny, tiny, scale=1.0, mask=None, force_fused=True))
+        except TypeError:
+            return False
+        return True
+
+    @staticmethod
+    def _git(*args: str) -> str:
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+
+    @staticmethod
+    def env_stamp() -> dict:
+        """Every result row carries the MLX version and the commit it was produced from.
+
+        A number without both is not reproducible, and this investigation has already shipped one
+        claim that a second run contradicted.
+        """
+        commit = SdpaMaskBench._git("rev-parse", "HEAD")
+        return {
+            "mlx": mx.__version__,
+            "commit": commit,
+            "commit_short": commit[:8],
+            "python": sys.version.split()[0],
+            "branch": SdpaMaskBench._git("rev-parse", "--abbrev-ref", "HEAD"),
+        }
+
+    @staticmethod
+    def attn_macs(seq_len: int, causal: bool = False) -> float:
+        # QK^T and A@V: one S*S*D matmul each, per head. A causal mask keeps only the lower triangle,
+        # so scoring that row with the dense count reports throughput that was never earned.
+        pairs = seq_len * (seq_len + 1) / 2 if causal else float(seq_len * seq_len)
+        return 2.0 * pairs * HEAD_DIM * HEADS
+
+    @staticmethod
+    def time_interleaved(fns: dict, reps: int, warmup: int = 10) -> dict:
+        """Time every variant once per repetition, flipping the variant order on every other repetition.
+
+        Timing each variant in one block lets clock, thermal and cache drift favour whichever variant
+        runs first or last. Alternating the order spreads that drift over all variants, and the raw
+        per-repetition samples (milliseconds) are returned so a reader can check the spread.
+        """
+        for fn in fns.values():
+            for _ in range(warmup):
+                mx.eval(fn())
+        labels = list(fns)
+        samples = {label: [] for label in labels}
+        for rep in range(reps):
+            order = labels if rep % 2 == 0 else labels[::-1]
+            for label in order:
+                start = time.perf_counter()
+                mx.eval(fns[label]())
+                samples[label].append((time.perf_counter() - start) * 1e3)
+        return samples
+
+    @staticmethod
+    def summarize(samples: list) -> dict:
+        return {
+            "median_ms": statistics.median(samples),
+            "p90_ms": sorted(samples)[int(0.9 * (len(samples) - 1))],
+            "min_ms": min(samples),
+            "reps": len(samples),
+            "samples_ms": samples,
+        }
+
+    @staticmethod
+    def build_variants(q, k, v, seq_len: int) -> dict:
+        """Each entry maps a label to a zero-arg callable; outputs compared against the no-mask run."""
+        ones_bool = mx.ones((BATCH, seq_len), dtype=mx.bool_)
+        bool_bhsw = mx.ones((BATCH, 1, 1, seq_len), dtype=mx.bool_)
+        additive_zeros = mx.zeros((BATCH, 1, 1, seq_len), dtype=DTYPE)
+
+        def sdpa(mask, **kw):
+            return lambda: scaled_dot_product_attention(q, k, v, scale=HEAD_DIM**-0.5, mask=mask, **kw)
+
+        def mask_built():
+            # Exactly attention.py:84-88: bool (B,S) -> additive (B,1,1,S), inside the timed graph.
+            mask = mx.where(
+                ones_bool[:, None, None, :],
+                mx.array(0.0, dtype=q.dtype),
+                mx.array(float("-inf"), dtype=q.dtype),
+            )
+            return scaled_dot_product_attention(q, k, v, scale=HEAD_DIM**-0.5, mask=mask)
+
+        variants = {
+            "none": sdpa(None),
+            "additive_zeros_in": sdpa(additive_zeros),
+            "bool_bcast_in": sdpa(bool_bhsw),
+            "bool_full_bhsd_in": sdpa(mx.ones((BATCH, HEADS, seq_len, seq_len), dtype=mx.bool_)),
+            "mask_built_in_graph": mask_built,
+            "causal_str": sdpa("causal"),
+        }
+        if SdpaMaskBench.SUPPORTS_FORCE_FUSED:
+            variants["force_fused_none"] = sdpa(None, force_fused=True)
+            variants["force_fused_additive"] = sdpa(additive_zeros, force_fused=True)
+        return variants
+
+    @staticmethod
+    def compare(reference: mx.array, other: mx.array) -> dict:
+        a = mx.array(reference.astype(mx.float32))
+        b = mx.array(other.astype(mx.float32))
+        diff = a - b
+        denom = mx.sqrt(mx.sum(a * a)) * mx.sqrt(mx.sum(b * b))
+        return {
+            "cosine": float(mx.sum(a * b) / denom),
+            "max_abs_diff": float(mx.max(mx.abs(diff))),
+            "bitwise_equal": bool(mx.array_equal(a, b)),
+        }
 
 
-SUPPORTS_FORCE_FUSED = _probe_force_fused()
-
-
-def env_stamp() -> dict:
-    """Every result row carries the MLX version and the commit it was produced from.
-
-    A number without both is not reproducible, and this investigation has already shipped one
-    claim that a second run contradicted.
-    """
-    try:
-        commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        commit = "unknown"
-    return {
-        "mlx": mx.__version__,
-        "commit": commit,
-        "commit_short": commit[:8],
-        "python": sys.version.split()[0],
-        "branch": _branch(),
-    }
-
-
-def _branch() -> str:
-    import subprocess
-
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-
-
-def attn_macs(seq_len: int, causal: bool = False) -> float:
-    # QK^T and A@V: one S*S*D matmul each, per head. A causal mask keeps only the lower triangle,
-    # so scoring that row with the dense count reports throughput that was never earned.
-    pairs = seq_len * (seq_len + 1) / 2 if causal else float(seq_len * seq_len)
-    return 2.0 * pairs * HEAD_DIM * HEADS
-
-
-def timed(fn, reps: int, warmup: int = 10) -> dict:
-    for _ in range(warmup):
-        mx.eval(fn())
-    samples = []
-    for _ in range(reps):
-        start = time.perf_counter()
-        out = fn()
-        mx.eval(out)
-        samples.append((time.perf_counter() - start) * 1e3)
-    return {
-        "median_ms": statistics.median(samples),
-        "p90_ms": sorted(samples)[int(0.9 * (len(samples) - 1))],
-        "min_ms": min(samples),
-        "reps": reps,
-    }
-
-
-def build_variants(q, k, v, seq_len: int) -> dict:
-    """Each entry maps a label to a zero-arg callable; outputs compared against the no-mask run."""
-    ones_bool = mx.ones((BATCH, seq_len), dtype=mx.bool_)
-    bool_bhsw = mx.ones((BATCH, 1, 1, seq_len), dtype=mx.bool_)
-    additive_zeros = mx.zeros((BATCH, 1, 1, seq_len), dtype=DTYPE)
-
-    def sdpa(mask, **kw):
-        return lambda: scaled_dot_product_attention(q, k, v, scale=HEAD_DIM**-0.5, mask=mask, **kw)
-
-    def mask_built():
-        # Exactly attention.py:84-88: bool (B,S) -> additive (B,1,1,S), inside the timed graph.
-        mask = mx.where(
-            ones_bool[:, None, None, :],
-            mx.array(0.0, dtype=q.dtype),
-            mx.array(float("-inf"), dtype=q.dtype),
-        )
-        return scaled_dot_product_attention(q, k, v, scale=HEAD_DIM**-0.5, mask=mask)
-
-    variants = {
-        "none": sdpa(None),
-        "additive_zeros_in": sdpa(additive_zeros),
-        "bool_bcast_in": sdpa(bool_bhsw),
-        "bool_full_bhsd_in": sdpa(mx.ones((BATCH, HEADS, seq_len, seq_len), dtype=mx.bool_)),
-        "mask_built_in_graph": mask_built,
-        "causal_str": sdpa("causal"),
-    }
-    if SUPPORTS_FORCE_FUSED:
-        variants["force_fused_none"] = sdpa(None, force_fused=True)
-        variants["force_fused_additive"] = sdpa(additive_zeros, force_fused=True)
-    return variants
-
-
-def compare(reference: mx.array, other: mx.array) -> dict:
-    a = mx.array(reference.astype(mx.float32))
-    b = mx.array(other.astype(mx.float32))
-    diff = a - b
-    denom = mx.sqrt(mx.sum(a * a)) * mx.sqrt(mx.sum(b * b))
-    return {
-        "cosine": float(mx.sum(a * b) / denom),
-        "max_abs_diff": float(mx.max(mx.abs(diff))),
-        "bitwise_equal": bool(mx.array_equal(a, b)),
-    }
+SdpaMaskBench.SUPPORTS_FORCE_FUSED = SdpaMaskBench.probe_force_fused()
 
 
 def main() -> None:
@@ -161,11 +168,16 @@ def main() -> None:
     parser.add_argument("--eager", action="store_true", help="also time without mx.compile")
     args = parser.parse_args()
 
-    stamp = env_stamp()
-    results = {**stamp, "force_fused_supported": SUPPORTS_FORCE_FUSED, "runs": []}
+    stamp = SdpaMaskBench.env_stamp()
+    results = {
+        **stamp,
+        "force_fused_supported": SdpaMaskBench.SUPPORTS_FORCE_FUSED,
+        "order_policy": "variant order alternates forward and reverse on each repetition; raw samples are in samples_ms",
+        "runs": [],
+    }
     print(
         f"mlx {stamp['mlx']}  python {stamp['python']}  commit {stamp['commit_short']}"
-        f" ({stamp['branch']})  force_fused={SUPPORTS_FORCE_FUSED}  dtype={DTYPE}  reps={args.reps}\n"
+        f" ({stamp['branch']})  force_fused={SdpaMaskBench.SUPPORTS_FORCE_FUSED}  dtype={DTYPE}  reps={args.reps}\n"
     )
 
     for seq_len in SEQ_LENS:
@@ -176,28 +188,32 @@ def main() -> None:
         v = mx.random.normal(shape=shape).astype(DTYPE)
         mx.eval(q, k, v)
 
-        variants = build_variants(q, k, v, seq_len)
+        variants = SdpaMaskBench.build_variants(q, k, v, seq_len)
         reference = None
         rows = []
+        compiled_fns = {label: mx.compile(fn) for label, fn in variants.items()}
+        samples = SdpaMaskBench.time_interleaved(compiled_fns, reps=args.reps)
         for label, fn in variants.items():
-            compiled = mx.compile(fn)
-            stats = timed(compiled, reps=args.reps)
+            compiled = compiled_fns[label]
+            stats = SdpaMaskBench.summarize(samples[label])
             out = mx.array(compiled())
             if reference is None:
                 reference = out
             stats.update(
                 label=label,
                 seq_len=seq_len,
-                tflops=attn_macs(seq_len, label == "causal_str") * 2 / (stats["median_ms"] * 1e-3) / 1e12,
+                tflops=SdpaMaskBench.attn_macs(seq_len, label == "causal_str") * 2 / (stats["median_ms"] * 1e-3) / 1e12,
             )
             if label != "causal_str":
-                stats.update(compare(reference, out))
+                stats.update(SdpaMaskBench.compare(reference, out))
             if args.eager:
-                stats["eager_median_ms"] = timed(fn, reps=max(10, args.reps // 5))["median_ms"]
+                stats["eager_median_ms"] = statistics.median(
+                    SdpaMaskBench.time_interleaved({label: fn}, reps=max(10, args.reps // 5))[label]
+                )
             rows.append(stats)
 
         base = next(r for r in rows if r["label"] == "none")
-        print(f"--- S={seq_len}  (dense QK^T + AV = {attn_macs(seq_len) * 2 / 1e12:.3f} TFLOP) ---")
+        print(f"--- S={seq_len}  (dense QK^T + AV = {SdpaMaskBench.attn_macs(seq_len) * 2 / 1e12:.3f} TFLOP) ---")
         print(f"{'variant':22s} {'median_ms':>10s} {'p90_ms':>9s} {'vs none':>9s} {'TFLOP/s':>8s}  identical")
         for row in sorted(rows, key=lambda r: r["median_ms"]):
             delta = (row["median_ms"] / base["median_ms"] - 1) * 100
