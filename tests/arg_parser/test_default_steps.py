@@ -14,6 +14,7 @@ from mflux.cli.defaults import defaults as ui_defaults
 from mflux.models.boogu.cli import boogu_image_generate
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.dreamlite.cli import dreamlite_edit_generate, dreamlite_generate
 from mflux.models.ernie_image.cli import ernie_image_generate, ernie_image_turbo_generate
 from mflux.models.fibo.cli import fibo_edit, fibo_generate
 from mflux.models.flux.cli import flux_generate
@@ -34,6 +35,7 @@ from mflux.models.z_image.cli import (
 
 # Extra flags a CLI's argparse requires before parse_args() will return.
 _EXTRA_ARGV = {
+    "dreamlite_edit_generate": ["--image-paths", "a.png"],
     "flux2_edit_generate": ["--image-paths", "a.png"],
     "flux3_edit_generate": ["--image-paths", "a.png"],
     "qwen_image_edit_generate": ["--image-paths", "a.png"],
@@ -50,6 +52,8 @@ CLI_DEFAULTS = [
     (lens_generate, "lens-turbo", 4),
     (moss_image_generate, "moss-image-sft", 50),
     (sensenova_generate, "sensenova-u1.5", 50),
+    (dreamlite_generate, "dreamlite", 28),
+    (dreamlite_edit_generate, "dreamlite", 28),
     (z_image_generate, "z-image", 50),
     (z_image_turbo_generate, "z-image-turbo", 9),
     (z_image_turbo_generate_controlnet, "z-image-turbo-controlnet-union-2.1", 8),

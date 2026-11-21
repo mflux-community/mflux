@@ -34,7 +34,7 @@ Because README examples can drift, prefer verifying support against the current 
 
 ### Core generation
 
-- Text-to-image across Flux, Flux2, FLUX 3 Image Klein, Iris-3B, SenseNova-U1.5, Qwen, Z-Image Turbo, FIBO.
+- Text-to-image across Flux, Flux2, FLUX 3 Image Klein, Iris-3B, SenseNova-U1.5, DreamLite, Qwen, Z-Image Turbo, FIBO.
 - Image-to-image where supported (Flux, Qwen, Z-Image Turbo, FIBO).
 
 ### Editing and conditioning
@@ -47,6 +47,7 @@ Because README examples can drift, prefer verifying support against the current 
 - Depth conditioning.
 - Fill / inpainting.
 - Flux2 Edit, FLUX 3 Image Klein edit (1-10 reference images) and Qwen Edit (multi-image edit).
+- DreamLite edit (one image, instruction-based).
 
 ### Upscaling
 
