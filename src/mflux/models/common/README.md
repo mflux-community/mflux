@@ -576,6 +576,10 @@ print(metadata)
 ```
 </details>
 
+### What `generation_time_seconds` measures
+
+`generation_time_seconds` is the time from the start of the denoising loop to the end of the VAE decode. It includes the decode. It does not include the model load. Work that MLX has not yet evaluated when the loop starts, such as a lazy text-encoder pass, falls inside the first step. So the first step takes longer than later steps. Do not divide the value by the step count to get the time per step.
+
 ---
 
 ## PiD pixel-diffusion decode
