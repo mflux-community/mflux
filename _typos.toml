@@ -19,6 +19,9 @@ extend-ignore-identifiers-re = ["EmbedND", "embed_nd", "alle", "thw", "PNG", "PN
 # RGBa (in the identifier list above) = premultiplied Pillow image mode.
 [default.extend-words]
 # ane = Apple Neural Engine (spikes/ane_matmul).
+# Graphis = a third-party macOS app named in the README (typos "fixes" it to Graphics).
+Graphis = "Graphis"
+graphis = "graphis"
 ane = "ane"
 ANE = "ANE"
 Ane = "Ane"
