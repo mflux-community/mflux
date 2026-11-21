@@ -13,6 +13,7 @@ from PIL import Image
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.common.step_cache.step_cache import StepCache as StepReuse
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen_image21_latent_creator import QwenImage21LatentCreator
@@ -253,6 +254,7 @@ class QwenImage21Edit(nn.Module):
             "use_kv_cache": use_kv_cache,
             "output_resolution": output_resolution,
             **self.compute_precision.generation_parameters(),
+            **VAEDecodeOptions.generation_parameters(self),
         }
         if self.small_text_encoder:
             parameters["small_text_encoder"] = True

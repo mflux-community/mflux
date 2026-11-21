@@ -296,8 +296,8 @@ class CommandLineParser(argparse.ArgumentParser):
     def add_small_text_encoder_arguments(self, help_text: str | None = None) -> None:
         self.add_argument("--small-text-encoder", action=argparse.BooleanOptionalAction, default=False, help=help_text or "[EXPERIMENTAL] Replace klein-4B's Qwen3-4B text encoder with Qwen3-0.6B + the AiArtLab/qwen3-0.6b-4b-adapter (FLUX.2-klein-4B / klein-base-4B only). Needs 1-6 GB less memory for weights depending on -q and downloads ~2.4 GB instead of ~8.0 GB; prompts are capped at 256 tokens and fine details can drift from the native encoder.")
 
-    def add_vae_full_precision_arguments(self) -> None:
-        self.add_argument("--vae-full-precision", action=argparse.BooleanOptionalAction, default=False, help="Decode each VAE block on the full image in fp32, as the earlier decode did, not in bf16 row strips. The decode needs more memory (8.6 GB at 1024x1024, compared with 1.6 GB).")
+    def add_vae_full_precision_arguments(self, help: str | None = None) -> None:
+        self.add_argument("--vae-full-precision", action=argparse.BooleanOptionalAction, default=False, help=help or "Decode each VAE block on the full image in fp32, as the earlier decode did, not in bf16 row strips. The decode needs more memory (8.6 GB at 1024x1024, compared with 1.6 GB).")
 
     def add_small_decoder_arguments(self) -> None:
         self.add_argument("--small-decoder", action=argparse.BooleanOptionalAction, default=False, help="Decode with black-forest-labs/FLUX.2-small-decoder, a distilled VAE decoder with about half the parameters of the standard one. Decoding is faster and needs less memory; images are almost the same. First run downloads ~250 MB. Cannot be used with --pid-decode.")
