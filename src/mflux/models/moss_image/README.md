@@ -142,6 +142,52 @@ wrote. The loader stops with an error when a checkpoint
 does not have all the weights of the model. The MLX conversions in the `vanch007/MOSS-Image-SFT-mlx-*`
 repositories use other weight names and do not include the text encoder, so this port does not load them.
 
+## Streaming from the SSD (`--ssd-stream`)
+
+The model is 26 GB in bf16, more than the RAM of many Macs. `--ssd-stream` runs the 32 text-encoder layers and the 42 transformer blocks one at a time from the SSD. See [SSD streaming](../common/README.md#ssd-streaming---ssd-stream) for how it works and how to check that a run does not write to the SSD.
+
+Get the files. The model must be a `mflux-community` repo (or an `mflux-save` folder), because the streamer reads the saved layers by name:
+
+```sh
+hf download mflux-community/moss-image-sft-mflux-bf16   # 26.18 GB: text encoder 15.9, transformer 10.2, VAE 0.1
+hf download lvladikov/MOSS-SFT-Distill-4step-LoRA _archive/checkpoints/moss_sft_4step_rank_64_lora_chk00015000.safetensors   # 594.6 MB, checkpoint 15000
+```
+
+Run the 4-step LoRA with it:
+
+```sh
+mflux-generate-moss-image \
+  --model mflux-community/moss-image-sft-mflux-bf16 --base-model moss-image-sft \
+  --lora lvladikov/MOSS-SFT-Distill-4step-LoRA:_archive/checkpoints/moss_sft_4step_rank_64_lora_chk00015000.safetensors \
+  --steps 4 --guidance 1 --width 1024 --height 1024 --seed 42 \
+  --ssd-stream --mlx-cache-limit-gb 0.256 \
+  --prompt "a fisherman mending a net on a foggy pier, a lighthouse behind him"
+```
+
+- A LoRA loads as usual and stays in memory (594.6 MB for this one).
+- Only checkpoint 15000 was run. The author's newer checkpoints have the same size and layout and should work, but they have not been tested.
+- With the original `OpenMOSS-Team` repo the text encoder is not streamed, because its layer names differ.
+- `--ssd-stream` also decodes the image in row strips, as the FLUX.2 models do, because the full-image decode used more memory than the rest of the run. At 512x512 (one run, mflux 0.24.0) the strip image differed from the full-decode image by 0.40 of 255 in mean absolute pixel value. With the strips, `--vae-tiling` and `--vae-tile-size` have no effect, and the command prints a warning when you pass them. Without `--ssd-stream` the decode is unchanged.
+- `--ssd-stream` stops with an error, before it reads any weight, in these cases, because each one would otherwise give a wrong image without a message:
+  - with `-q`: the streamer installs the saved weights over the layers, and layers that `-q` has quantized need packed weights. To stream a quantized model, use one that is already quantized, such as a pre-quantized repo or a copy saved with `mflux-save -q N`, and do not add `-q`. Streaming a quantized model has not been run.
+  - with `--bake-lora` and a `--lora`: the streamer would install the saved weights over the baked ones and drop the LoRA. Run the LoRA without `--bake-lora` (the default).
+- A model that was loaded with `ssd_stream=True` cannot be saved: `save_model` raises an error, because the idle layers are placeholders.
+- A pass that skips transformer layers (`--uncond-skip-layers`) reads the block after each running block ahead, and then jumps over it. That block is dropped at the next call, so the skipped blocks do not pile up in memory, but the block that runs after the jump is read when it is needed, without the overlap.
+- Measured on an Apple M1 with 8 GiB and macOS 14.6.1, bf16, 4 steps, CFG 1, 4-step LoRA at 1.0, checkpoint 15000, seed 42, one run each.
+
+  With mflux 0.24.0 and a separate script that did the same streaming and also read the LoRA from the SSD one block at a time:
+
+  | Size | Time | SSD writes | Swap-outs | Peak footprint |
+  |---|---|---|---|---|
+  | 1024x1024 | 149 s | 14 MB | 0 | 3.0 GB |
+  | 1824x1024 | 305 s | 21 MB | 0 | 2.96 GB |
+
+  With this code (mflux 0.24.0 plus the commits after it, MLX 0.32.0, the LoRA kept in memory):
+
+  | Size | Time | SSD writes | Swap-outs | Peak footprint |
+  |---|---|---|---|---|
+  | 1024x1024 | 151.6 s | 42 MB (about 29 MB above the idle level) | 0 | 3.36 GB |
+
 ## Validation
 
 We compared the port with the reference pipeline (`pipeline_moss_image.py` in the model
