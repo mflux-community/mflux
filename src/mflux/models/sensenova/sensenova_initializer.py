@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights, MetaData
@@ -13,6 +16,9 @@ from mflux.models.sensenova.weights.sensenova_weight_definition import SenseNova
 
 
 class SenseNovaInitializer:
+    _SAVED_SUBDIRS = ("transformer", "text_encoder", "tokenizer")
+    _SHARD_INDEX = "model.safetensors.index.json"
+
     @staticmethod
     def init(
         model,
@@ -25,10 +31,14 @@ class SenseNovaInitializer:
     ) -> None:
         definition = SenseNovaWeightDefinition
         saved_path = SenseNovaInitializer.saved_path(model_config, model_path, quantize, bool(lora_paths), bake_lora)
+        source = model_config.model_name
+        if saved_path is not None and SenseNovaInitializer.is_upstream_checkpoint(saved_path):
+            # A local copy of the upstream checkpoint loads like the upstream repo, from that directory (#993)
+            source, saved_path = saved_path, None
         num_layers = SenseNovaInitializer.num_layers(model_config)
         SenseNovaInitializer._init_config(model, model_config)
-        weights = SenseNovaInitializer._load_weights(definition, model_config, saved_path, num_layers)
-        SenseNovaInitializer._init_tokenizers(model, definition, model_config, saved_path)
+        weights = SenseNovaInitializer._load_weights(definition, source, saved_path, num_layers)
+        SenseNovaInitializer._init_tokenizers(model, definition, source, saved_path)
         SenseNovaInitializer._init_models(model, num_layers)
         SenseNovaInitializer._apply_weights(model, weights, quantize, definition)
         SenseNovaInitializer._apply_loras(model, weights, lora_paths, lora_scales, bake_lora)
@@ -47,6 +57,27 @@ class SenseNovaInitializer:
         return None if candidate == upstream_repo else candidate
 
     @staticmethod
+    def is_upstream_checkpoint(path: str) -> bool:
+        # Upstream layout: model-*.safetensors shards at the root and none of the mflux-save subdirs
+        root = Path(path).expanduser()
+        if not root.is_dir() or not any(shard.is_file() for shard in root.glob("model-*.safetensors")):
+            return False
+        if any((root / subdir).exists() for subdir in SenseNovaInitializer._SAVED_SUBDIRS):
+            return False
+        index = SenseNovaInitializer._SHARD_INDEX
+        if not (root / index).is_file():
+            raise FileNotFoundError(
+                f"{root} has model-*.safetensors shards but no {index}; "
+                "the upstream checkpoint looks incomplete (copy the whole HuggingFace folder)."
+            )
+        if not PathResolution._indexed_shards_present(root):
+            raise FileNotFoundError(
+                f"{root} is missing shards listed in {index}; "
+                "the upstream checkpoint looks incomplete (copy the whole HuggingFace folder)."
+            )
+        return True
+
+    @staticmethod
     def num_layers(model_config: ModelConfig) -> int:
         return model_config.transformer_overrides.get("num_layers", SenseNovaWeightDefinition.NUM_LAYERS)
 
@@ -58,7 +89,7 @@ class SenseNovaInitializer:
         model.tiling_config = None
 
     @staticmethod
-    def _load_weights(definition, model_config: ModelConfig, model_path: str | None, num_layers: int) -> LoadedWeights:
+    def _load_weights(definition, source: str, model_path: str | None, num_layers: int) -> LoadedWeights:
         if model_path is not None:
             # An mflux-saved model (mflux-save) holds the transformer, the text encoder and the tokenizer.
             return WeightLoader.load(weight_definition=definition, model_path=model_path)
@@ -66,18 +97,18 @@ class SenseNovaInitializer:
         for component in (definition.source_transformer(num_layers), definition.source_text_encoder(num_layers)):
             loaded = WeightLoader.load_single(
                 component=component,
-                repo_id=model_config.model_name,
+                repo_id=source,
                 file_pattern=definition.SOURCE_PATTERN,
             )
             components.update(loaded.components)
         return LoadedWeights(components=components, meta_data=MetaData())
 
     @staticmethod
-    def _init_tokenizers(model, definition, model_config: ModelConfig, model_path: str | None) -> None:
+    def _init_tokenizers(model, definition, source: str, model_path: str | None) -> None:
         if model_path is not None:
             definitions, path = definition.get_tokenizers(), model_path
         else:
-            definitions, path = definition.source_tokenizers(), model_config.model_name
+            definitions, path = definition.source_tokenizers(), source
         model.tokenizers = TokenizerLoader.load_all(definitions=definitions, model_path=path)
 
     @staticmethod

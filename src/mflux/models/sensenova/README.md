@@ -119,9 +119,18 @@ the LoRA takes about 25 seconds. The base model with 50 steps and CFG takes abou
 
 ## Weights
 The model loads the official repository `sensenova/SenseNova-U1.5-8B-MoT` (35 GB of bfloat16 weights, pinned to one
-commit) or a copy that `mflux-save` wrote. The loader stops with an error when a checkpoint does not have all the
-weights of the model. The text-to-image path does not use the language-model head or the vision tower of the
-understanding stream, so mflux does not load them.
+commit), a local copy of that repository, or a copy that `mflux-save` wrote. The loader stops with an error when a
+checkpoint does not have all the weights of the model. The text-to-image path does not use the language-model head or
+the vision tower of the understanding stream, so mflux does not load them.
+
+A local copy is a folder with the repository's files at its root (`model-*.safetensors`,
+`model.safetensors.index.json`, the tokenizer files). Pass it with `--model`, for example to quantize it:
+
+```sh
+mflux-save --model ~/models/SenseNova-U1.5-8B-MoT -q 4 --path ~/models/sensenova-q4
+```
+
+A folder without `model.safetensors.index.json`, or one missing a shard the index lists, stops with an error.
 
 ## Validation
 We compared the port with the reference pipeline (`OpenSenseNova/SenseNova-U1`) on the same weights:
