@@ -109,8 +109,8 @@ class Qwen21TransformerBlock(nn.Module):
         attn, stored = self.attn.forward_reference(
             self.img_norm1(x) * (1 + scale1), layout, rope, cached, extract, key_valid
         )
-        x = _gated_residual(x, gate1, attn)
-        x = _gated_residual(x, gate2, self.img_mlp(self.img_norm2(x) * (1 + scale2)))
+        x = Qwen21TransformerBlock.gated_residual(x, gate1, attn)
+        x = Qwen21TransformerBlock.gated_residual(x, gate2, self.img_mlp(self.img_norm2(x) * (1 + scale2)))
         return x, stored
 
     @staticmethod
@@ -120,8 +120,8 @@ class Qwen21TransformerBlock(nn.Module):
             return value[:-1, None]
         return mx.where(mask[None, :, None], value[:-1, None], value[-1:, None])
 
-
-@mx.compile
-def _gated_residual(x: mx.array, gate: mx.array, y: mx.array) -> mx.array:
-    # x + tanh(gate) * y as one kernel
-    return x + mx.tanh(gate) * y
+    @staticmethod
+    @mx.compile
+    def gated_residual(x: mx.array, gate: mx.array, y: mx.array) -> mx.array:
+        # x + tanh(gate) * y as one kernel
+        return x + mx.tanh(gate) * y

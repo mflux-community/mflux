@@ -86,7 +86,13 @@ class Qwen21Attention(nn.Module):
         projections = self._project_qkv(x)
         v = projections[2].reshape(batch, length, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         fused = None
-        if self.use_fused_prologue:
+        if (
+            self.use_fused_prologue
+            and self.norm_q.eps == self.norm_k.eps == 1e-6
+            # the composed path rounds the normalized Q/K to v.dtype before RoPE; the kernel does not
+            and mx.result_type(projections[0], self.norm_q.weight) == v.dtype
+            and mx.result_type(projections[1], self.norm_k.weight) == v.dtype
+        ):
             # RMSNorm + float32 RoPE + head-major layout in one kernel (same values as the composed ops)
             fused = fused_qk_norm_rope(
                 projections[0],
