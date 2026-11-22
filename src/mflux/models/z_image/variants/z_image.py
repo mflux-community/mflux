@@ -225,6 +225,9 @@ class ZImage(nn.Module):
         return VAEUtil.decode(vae=self.vae, latent=unpacked, tiling_config=self.tiling_config)
 
     def save_model(self, base_path: str) -> None:
+        if self.ssd_stream:
+            # The streamed layers are placeholders between calls, so a save would write a checkpoint without them.
+            raise ValueError("A model loaded with ssd_stream=True cannot be saved. Load it without --ssd-stream.")
         if self.small_text_encoder:
             raise ValueError(
                 "save_model() is not supported with small_text_encoder: it would write the Qwen3-1.7B student "

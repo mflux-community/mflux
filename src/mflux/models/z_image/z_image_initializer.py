@@ -44,6 +44,8 @@ class ZImageInitializer:
     ) -> None:
         if small_text_encoder:
             ZImageInitializer.validate_small_text_encoder(model_config)
+        if ssd_stream:
+            ZImageInitializer._check_ssd_stream(quantize, lora_paths, bake_lora, compute_precision)
         precision = ComputePrecision(compute_precision)
         definition = ZImageNoTextEncoderWeightDefinition if small_text_encoder else ZImageWeightDefinition
         path = PrequantizedResolution.weights_root(
@@ -75,6 +77,28 @@ class ZImageInitializer:
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)
+
+    @staticmethod
+    def _check_ssd_stream(
+        quantize: int | None, lora_paths: list[str] | None, bake_lora: bool, compute_precision: mx.Dtype | None
+    ) -> None:
+        # Each would load, and then give a wrong image without a message. Stop before the weights are read.
+        if quantize is not None:
+            raise ValueError(
+                "--ssd-stream cannot be combined with -q/--quantize: the streamer installs the saved weights over the "
+                "layers, and layers that -q has quantized need packed weights. Stream a model that is already "
+                "quantized (a pre-quantized repo, or a copy saved with `mflux-save -q N`) and do not pass -q."
+            )
+        if lora_paths and bake_lora:
+            raise ValueError(
+                "--ssd-stream cannot be combined with --bake-lora, which is the default for Z-Image: the streamer "
+                "installs the saved weights over the layers, which would drop the baked LoRA. Pass --no-bake-lora."
+            )
+        if compute_precision is not None:
+            raise ValueError(
+                "--ssd-stream cannot be combined with --compute-precision: the cast is applied to the layers at load, "
+                "and the streamer then installs the saved weights uncast."
+            )
 
     @staticmethod
     def _apply_ssd_stream(model, path: str, definition) -> None:
