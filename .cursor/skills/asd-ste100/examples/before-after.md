@@ -6,7 +6,7 @@ These illustrate real ASD-STE100 rules, drawn from public secondary sources (see
 
 | Rule | Before | After | Why |
 |---|---|---|---|
-| One meaning per word | "Verify the system." / "Check the connections." / "Confirm receipt." | "Check the system." / "Check the connections." / "Check that the system received it." (one term used consistently) | Three near-synonyms force the reader to guess whether they mean the same action. |
+| One meaning per word | "Verify the system." / "Check the connections." / "Confirm receipt." | "Make sure the system is correct." (one approved term used consistently) | Three near-synonyms force the reader to guess whether they mean the same action. |
 | One part of speech per word | "Oil the valve." | "Apply oil to the valve." | If "oil" is approved only as a noun, using it as a verb breaks the one-word-one-role guarantee. |
 | Precise verb meaning | "Follow the safety instructions." | "Obey the safety instructions." | "Follow" can mean "come after" or "obey" — STE picks the unambiguous one. |
 | Simple tense only | "We have received the technical reports from HQ." | "We received the technical reports from HQ." | Present perfect adds a second parse ("received, and still relevant now?") that simple past avoids. |
@@ -65,10 +65,11 @@ Note also that "may have failed" keeps a compound verb form that the simple-tens
 - 36 words, over the 20-word instruction cap.
 
 **After:**
-> Wait for the upstream job to finish with no errors. Then read the output artifact. Warning: a timeout can produce a partial artifact.
+> Wait for the upstream job to finish with no errors. Then read the output artifact. Warning: a timeout can produce a partial artifact. Check that the artifact is complete before you use it.
 
-One deliberate call worth stating rather than hiding:
+Two deliberate calls worth stating rather than hiding:
 - "should proceed to consume" became the imperative "read". STE permits this for instructions, where a recommendation addressed to the executing agent is a command. Do not make the same move in descriptive text.
+- The final sentence is **new**. The original warned about partial artifacts without saying what to do about it. Adding the check makes the warning actionable, but it is added content, so it is called out here rather than passed off as a rewrite. If the source's silence was deliberate, drop the sentence.
 
 ### Example D — README prose (STE-flavored mode)
 
@@ -82,9 +83,11 @@ One deliberate call worth stating rather than hiding:
 - 34 words, over the 25-word descriptive cap.
 
 **After:**
-> A normal cache matches requests by exact text, so a small change in wording causes a cache miss. This cache compares the meaning of a new prompt against the prompts it already holds. It runs alongside your current stack.
+> We designed our cache layer to fit into your current stack without vendor lock-in. It uses semantic similarity to reduce cache misses, a long-standing problem for LLM workloads.
 
-Flavored mode kept the explanatory rhythm and did not force one fixed term per concept. It still cut the marketing adjectives, the semicolon, and the length.
+Flavored mode did not force one fixed term per concept. It still cut the marketing adjectives, the semicolon, and the length. It kept "designed to", because the input states a design goal, not a result.
+
+An earlier version of this file added two facts. It said that a normal cache matches requests by exact text. It also said that this cache stores no data outside your stack. The input states neither fact. A rewrite that adds a fact is no longer a rewrite.
 
 ## How to Read These Examples
 

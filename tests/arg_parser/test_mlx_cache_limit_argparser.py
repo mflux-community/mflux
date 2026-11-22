@@ -24,3 +24,11 @@ def test_mlx_cache_limit_gb_rejects_non_positive_value(parser: CommandLineParser
     with patch("sys.argv", ["mflux-generate", "--mlx-cache-limit-gb", "0"]):
         with pytest.raises(SystemExit):
             parser.parse_args()
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("value", ["nan", "inf"])
+def test_mlx_cache_limit_gb_rejects_a_value_that_is_not_finite(parser: CommandLineParser, value: str):
+    with patch("sys.argv", ["mflux-generate", "--mlx-cache-limit-gb", value]):
+        with pytest.raises(SystemExit):
+            parser.parse_args()

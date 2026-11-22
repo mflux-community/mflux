@@ -7,6 +7,7 @@ from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
 from mflux.models.common.latent_creator.latent_creator import Img2Img, LatentCreator
 from mflux.models.common.step_cache.step_cache import StepCache
+from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
 from mflux.models.common.vae.vae_util import VAEUtil
 from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.qwen21.latent_creator.qwen21_latent_creator import Qwen21LatentCreator
@@ -160,6 +161,7 @@ class QwenImage21(nn.Module):
         parameters = {
             **step_cache.generation_parameters(step_cache_ratio),
             **self.compute_precision.generation_parameters(),
+            **VAEDecodeOptions.generation_parameters(self),
         }
         if self.small_text_encoder:
             parameters["small_text_encoder"] = True
@@ -180,6 +182,9 @@ class QwenImage21(nn.Module):
         )
 
     def save_model(self, base_path: str) -> None:
+        from mflux.models.qwen21.weights.qwen21_w8a8 import Qwen21W8A8
+
+        Qwen21W8A8.check_savable(self)
         if self.small_text_encoder:
             raise ValueError("A model built with --small-text-encoder cannot be saved; load it without the flag.")
         ModelSaver.save_model(

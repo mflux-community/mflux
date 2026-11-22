@@ -39,6 +39,7 @@ class MOSSImage(nn.Module):
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         bake_lora: bool = DEFAULT_BAKE_LORA,
+        ssd_stream: bool = False,
     ):
         super().__init__()
         MOSSImageInitializer.init(
@@ -49,6 +50,7 @@ class MOSSImage(nn.Module):
             lora_paths=lora_paths,
             lora_scales=lora_scales,
             bake_lora=bake_lora,
+            ssd_stream=ssd_stream,
         )
         self.bake_lora = bake_lora
 
@@ -121,6 +123,9 @@ class MOSSImage(nn.Module):
         )
 
     def save_model(self, base_path: str) -> None:
+        if self.ssd_stream:
+            # The streamed layers are placeholders between calls, so a save would write a checkpoint without them.
+            raise ValueError("A model loaded with ssd_stream=True cannot be saved. Load it without --ssd-stream.")
         # The weights load lazily. Read them all first: a save over the checkpoint they come from
         # would otherwise truncate a shard before reading it.
         mx.eval(self.parameters())

@@ -16,6 +16,7 @@ import pytest
 from mflux.models.boogu.cli import boogu_image_generate
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.common.resolution.config_resolution import ConfigResolution
+from mflux.models.dreamlite.cli import dreamlite_edit_generate, dreamlite_generate
 from mflux.models.ernie_image.cli import ernie_image_generate, ernie_image_turbo_generate
 from mflux.models.fibo2.cli import fibo2_edit_generate, fibo2_generate
 from mflux.models.flux2.cli import flux2_edit_generate, flux2_generate
@@ -49,6 +50,15 @@ CLI_MODELS = [
     (boogu_image_generate, "boogu-image-turbo", "dev", (), ()),
     (moss_image_generate, "moss-image-sft", "dev", moss_image_generate.FAMILY_MODELS, ()),
     (sensenova_generate, "sensenova-u1.5", "dev", (), ()),
+    # Mobile is the same network, so it runs in both DreamLite commands
+    (dreamlite_generate, "dreamlite", "dev", dreamlite_generate.FAMILY_MODELS, ()),
+    (
+        dreamlite_edit_generate,
+        "dreamlite",
+        "fibo2",
+        dreamlite_generate.FAMILY_MODELS,
+        ("--image-paths", "ref.png"),
+    ),
     (ideogram4_generate, "ideogram-4-fp8", "dev", (), ()),
     (z_image_generate, "z-image", "dev", z_image_generate.FAMILY_MODELS, ()),
     (flux2_generate, "flux2-klein-4b", "dev", flux2_generate.FAMILY_MODELS, ()),
