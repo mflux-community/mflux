@@ -126,6 +126,9 @@ def rotate_quantize(x: mx.array, pad_rows: int = 1) -> tuple[mx.array, mx.array]
 
 def matmul(x: mx.array, weight: mx.array, scale: mx.array) -> mx.array:
     """x (rows, in) in any float dtype @ an int8 convrot weight (out, in) with float32 scales (out,)."""
+    if x.shape[1] != weight.shape[1]:
+        # The kernel takes its K from x, so another width would read the weight rows with the wrong stride.
+        raise ValueError(f"W8A8 input width {x.shape[1]} does not match the weight {tuple(weight.shape)}.")
     rows, n = x.shape[0], weight.shape[0]
     bm = 128 if rows < 8192 else 64
     bn, bk = 8192 // bm, 64
