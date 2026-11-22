@@ -764,10 +764,10 @@ mflux-generate-z-image-turbo \
 
 `--ssd-stream` is for Macs whose RAM is smaller than the model. It keeps only the layer that is running in memory. Each layer is read from the model's saved shards on the SSD just before it runs, the next layer is read while the current one computes, and the layer is dropped after it runs. Without it mflux holds the layers it has used until the run ends, so a model larger than RAM is paged to the swap file, which writes to the SSD.
 
-- It reads raw tensors by their saved names, so the model folder or repo must be in the mflux layout (an `mflux-save` folder or a `mflux-community` repo), not the original publisher's layout.
+- It reads raw tensors by their saved names. The names must match the layers of the model: an `mflux-save` folder and a `mflux-community` repo always match. Some original repos match too (Qwen-Image-2.1); others do not (MOSS-Image). The streamer takes the names from the `*.safetensors.index.json` file of a component, or from the headers of its safetensors files when there is no index.
 - Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
-- It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit.
-- Only MOSS-Image supports it so far, so `--ssd-stream` is only on `mflux-generate-moss-image`, although the argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Its README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream).
+- It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit. Without a cache limit, the MLX cache keeps the buffers of the layers that ran, and the peak memory does not go down.
+- MOSS-Image (`mflux-generate-moss-image`) and Qwen-Image-2.1 text to image (`mflux-generate-qwen-2.1`) support it. The argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Each model README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream), [Qwen-Image-2.1](../qwen21/README.md#streaming-from-the-ssd---ssd-stream).
 - A model that is streamed cannot be saved with `save_model` (it raises an error), because the idle layers are placeholders.
 
 ### Checking that a run does not wear the SSD
