@@ -310,7 +310,7 @@ class TestWeights:
         source = Flux2PrunedTextEncoder.build_encoder(TINY_METADATA)
         raw = tiny_raw(source)
         target = Flux2PrunedTextEncoder.build_encoder(TINY_METADATA)
-        Flux2PrunedTextEncoder.load_weights(target, raw)
+        Flux2PrunedTextEncoder.load_encoder_weights(target, raw)
         for key, value in tree_flatten(target.parameters()):
             if not key.endswith("inv_freq"):
                 assert mx.array_equal(value, raw[key].astype(value.dtype)), key
@@ -321,21 +321,21 @@ class TestWeights:
         raw = tiny_raw(encoder)
         del raw["layers.2.mlp.down_proj.weight"]
         with pytest.raises(ValueError, match="1 missing.*layers.2.mlp.down_proj.weight"):
-            Flux2PrunedTextEncoder.load_weights(encoder, raw)
+            Flux2PrunedTextEncoder.load_encoder_weights(encoder, raw)
 
     def test_an_unexpected_key_is_an_error(self, tiny):
         encoder = Flux2PrunedTextEncoder.build_encoder(TINY_METADATA)
         raw = tiny_raw(encoder)
         raw["lm_head.weight"] = mx.zeros((4, 4))
         with pytest.raises(ValueError, match="1 unexpected.*lm_head.weight"):
-            Flux2PrunedTextEncoder.load_weights(encoder, raw)
+            Flux2PrunedTextEncoder.load_encoder_weights(encoder, raw)
 
     def test_a_wrong_shape_is_an_error(self, tiny):
         encoder = Flux2PrunedTextEncoder.build_encoder(TINY_METADATA)
         raw = tiny_raw(encoder)
         raw["layers.1.mlp.up_proj.weight"] = mx.zeros((128, 64))  # the full-size shape for a pruned layer
         with pytest.raises(ValueError, match="wrong shape.*layers.1.mlp.up_proj.weight"):
-            Flux2PrunedTextEncoder.load_weights(encoder, raw)
+            Flux2PrunedTextEncoder.load_encoder_weights(encoder, raw)
 
 
 @pytest.mark.fast
@@ -357,6 +357,11 @@ class TestPromptEmbeds:
     def test_a_deleted_tap_is_refused(self, tiny):
         with pytest.raises(ValueError, match="was deleted"):
             self.encoder().get_prompt_embeds(mx.zeros((1, 4), dtype=mx.int32), hidden_state_layers=(9, 11, 27))
+
+    def test_a_tap_past_the_built_layers_is_refused(self, tiny):
+        # Original layer 27 is kept and exported, but only the layers up to the last default tap are built.
+        with pytest.raises(ValueError, match="only the layers up to original hidden state 27 are built"):
+            self.encoder().get_prompt_embeds(mx.zeros((1, 4), dtype=mx.int32), hidden_state_layers=(9, 18, 28))
 
     def test_the_prompt_encoder_uses_the_native_path_with_the_callers_length(self, tiny):
         calls = []
@@ -481,6 +486,7 @@ class TestInitializer:
         monkeypatch.setattr(Flux2Initializer, "_init_models", staticmethod(lambda model: None))
         monkeypatch.setattr(Flux2Initializer, "_apply_weights", staticmethod(lambda model, weights, q: setattr(model, "bits", q)))  # fmt: skip
         monkeypatch.setattr(Flux2Initializer, "_apply_lora", staticmethod(lambda *a: (None, None)))
+        reset_cli_globals(monkeypatch)  # init() sets GeneratedImage.weights_repo
         model = SimpleNamespace()
         Flux2Initializer.init(model, AVAILABLE_MODELS["flux2-klein-9b"], quantize=4, small_text_encoder=True)
         assert model.text_encoder == "pruned" and loaded == [4]

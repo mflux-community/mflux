@@ -53,10 +53,17 @@ class Flux2PrunedTextEncoder(nn.Module):
         hidden_state_layers: tuple[int, ...] = ORIGINAL_TAPS,
         position_ids: mx.array | None = None,
     ) -> mx.array:
+        taps = Flux2PrunedTextEncoder.map_taps(self.kept_original_layers, hidden_state_layers)
+        # Only the layers up to the last default tap are built, so a later tap has no hidden state to read.
+        if max(taps) > len(self.encoder.layers):
+            raise ValueError(
+                f"Hidden states {hidden_state_layers} are not available from the pruned text encoder: "
+                f"only the layers up to original hidden state {max(ORIGINAL_TAPS)} are built."
+            )
         return self.encoder.get_prompt_embeds(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            hidden_state_layers=Flux2PrunedTextEncoder.map_taps(self.kept_original_layers, hidden_state_layers),
+            hidden_state_layers=taps,
             position_ids=position_ids,
         )
 
@@ -75,7 +82,7 @@ class Flux2PrunedTextEncoder(nn.Module):
             metadata = json.load(f)
         Flux2PrunedTextEncoder.validate_metadata(metadata)
         encoder = Flux2PrunedTextEncoder.build_encoder(metadata)
-        Flux2PrunedTextEncoder.load_weights(encoder, mx.load(paths[WEIGHTS_FILE]))
+        Flux2PrunedTextEncoder.load_encoder_weights(encoder, mx.load(paths[WEIGHTS_FILE]))
         if bits is not None:
             nn.quantize(
                 encoder,
@@ -189,7 +196,7 @@ class Flux2PrunedTextEncoder(nn.Module):
         )
 
     @staticmethod
-    def load_weights(encoder: Qwen3TextEncoder, raw: dict[str, mx.array]) -> None:
+    def load_encoder_weights(encoder: Qwen3TextEncoder, raw: dict[str, mx.array]) -> None:
         # Layers past the last tap feed nothing, so they are not loaded.
         def beyond(key: str) -> bool:
             return key.startswith("layers.") and int(key.split(".")[1]) >= len(encoder.layers)
