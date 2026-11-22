@@ -69,10 +69,11 @@ class ZImageInitializer:
         if small_text_encoder:
             model.text_encoder = ZImageSmallTextEncoder.load(bits=model.bits)
         ZImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
-        if ssd_stream:
-            ZImageInitializer._apply_ssd_stream(model, path, definition)
         model.float32 = float32
         model.transformer.set_float32(float32)
+        if ssd_stream:
+            # After set_float32, which finds the attention modules by walking the module tree.
+            ZImageInitializer._apply_ssd_stream(model, path, definition)
         model.compute_precision = precision
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
