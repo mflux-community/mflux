@@ -6,7 +6,9 @@ from mflux.callbacks.callback_registry import CallbackRegistry
 from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
+from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
+from mflux.models.common.ssd_stream.streamer import Streamer
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
@@ -38,6 +40,7 @@ class ZImageInitializer:
         float32: bool = False,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ssd_stream: bool = False,
     ) -> None:
         if small_text_encoder:
             ZImageInitializer.validate_small_text_encoder(model_config)
@@ -53,6 +56,7 @@ class ZImageInitializer:
         )
         ZImageInitializer._init_config(model, model_config)
         model.small_text_encoder = small_text_encoder
+        model.ssd_stream = ssd_stream
         if small_text_encoder:
             weights = ZImageInitializer._load_weights_without_text_encoder(path)
         else:
@@ -63,12 +67,27 @@ class ZImageInitializer:
         if small_text_encoder:
             model.text_encoder = ZImageSmallTextEncoder.load(bits=model.bits)
         ZImageInitializer._apply_lora(model, lora_paths, lora_scales, bake_lora, weights)
+        if ssd_stream:
+            ZImageInitializer._apply_ssd_stream(model, path, definition)
         model.float32 = float32
         model.transformer.set_float32(float32)
         model.compute_precision = precision
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)
+
+    @staticmethod
+    def _apply_ssd_stream(model, path: str, definition) -> None:
+        layout = PrequantizedResolution.layout(definition)
+        root = PathResolution.resolve(
+            path=path, patterns=layout["upstream_patterns"], saved_subdirs=layout["saved_subdirs"]
+        )
+        if not model.small_text_encoder:
+            Streamer(cycle=False).wrap(model.text_encoder.layers, root / "text_encoder", "layers.")
+        # The order the transformer runs the groups in.
+        transformer_streamer = Streamer(cycle=True)
+        for group in ("noise_refiner", "context_refiner", "layers"):
+            transformer_streamer.wrap(getattr(model.transformer, group), root / "transformer", f"{group}.")
 
     @staticmethod
     def supports_small_text_encoder(model_config: ModelConfig) -> bool:
