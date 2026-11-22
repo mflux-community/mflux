@@ -309,7 +309,9 @@ class Qwen21Transformer(nn.Module):
             )
             if stored is not None:
                 cache.append(stored)
-            mx.eval(x)
+            # The stored prefix K/V does not depend on x: evaluate it now, or it stays lazy until the next
+            # step and keeps every layer's full K/V alive until then (#1003).
+            mx.eval(x, *(stored or ()))
             if step_cache is not None and index == 0:
                 signal = x[:, -layout.target_tokens :]
                 # only a cached pass can skip: the extract pass must fill every layer's cache

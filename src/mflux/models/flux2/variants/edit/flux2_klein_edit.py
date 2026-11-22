@@ -113,6 +113,10 @@ class Flux2KleinEdit(nn.Module):
             needs_negative_cache=negative_prompt_embeds is not None,
         )
 
+        # Encode the references before the loop, not inside step 1 (#1003).
+        if image_latents is not None:
+            mx.eval(image_latents)
+
         # 4. Denoising loop
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(latents)
@@ -181,7 +185,14 @@ class Flux2KleinEdit(nn.Module):
                 )
 
                 ctx.in_loop(t, latents)
-                mx.eval(latents)
+                # The cached reference K/V is not a dependency of the latents: evaluate it with them at the end
+                # of the extract step, or it stays lazy until step 2 (#1003).
+                cache_arrays = (
+                    [a for c in (kv_cache, negative_kv_cache) if c is not None for a in c.arrays()]
+                    if cache_enabled and step_idx == 0
+                    else []
+                )
+                mx.eval(latents, *cache_arrays)
             except KeyboardInterrupt:  # noqa: PERF203
                 ctx.interruption(t, latents)
                 raise StopImageGenerationException(
