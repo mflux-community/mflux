@@ -95,7 +95,9 @@ def parse_progress(buffer: bytes) -> tuple[list[tuple[int, int]], bytes]:
 
 def step_times(marks: dict[int, float]) -> tuple[float | None, float | None]:
     """From the time at which the bar first showed n steps done, return (first step, median of the other steps)."""
-    if 0 not in marks or 1 not in marks:
+    if 0 not in marks or 1 not in marks or marks[1] <= marks[0]:
+        return None, None
+    if any(marks[n + 1] <= marks[n] for n in marks if n + 1 in marks):
         return None, None
     first = marks[1] - marks[0]
     later = [marks[n + 1] - marks[n] for n in sorted(marks) if n >= 1 and n + 1 in marks]
@@ -218,18 +220,36 @@ def run_once(command: list[str], image: Path, guard: Guard) -> tuple[Row, str]:
             steps, buffer = parse_progress(buffer + chunk)
             for n, _ in steps:
                 marks.setdefault(n, now)
+            # Stamp a frame when its progress fields arrive. Do not wait for the next delimiter.
+            for found in PROGRESS.finditer(buffer):
+                marks.setdefault(int(found.group(1)), now)
 
     reader = threading.Thread(target=read_stderr, daemon=True)
     reader.start()
     killed = None
-    while proc.poll() is None:
-        time.sleep(guard.poll_s)
-        reason = guard.check()
-        if reason:
-            killed = reason
+    try:
+        while True:
+            try:
+                proc.wait(timeout=guard.poll_s)
+                break
+            except subprocess.TimeoutExpired:
+                reason = guard.check()
+                if reason:
+                    killed = reason
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                    break
+    except BaseException:
+        # Interrupted, or the guard failed: kill the whole run, reap it, and close stderr before the error goes up.
+        try:
             os.killpg(proc.pid, signal.SIGKILL)
-            break
-    proc.wait()
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        reader.join(timeout=5)
+        if proc.stderr:
+            proc.stderr.close()
+        raise
     reader.join(timeout=5)
     wall = time.perf_counter() - start
     first, steady = step_times(marks)
@@ -356,7 +376,9 @@ def main(argv: list[str] | None = None) -> int:
             for case_index, (case, extra) in enumerate(cases.items()):
                 for arm in run_order(arms, rep, case_index):
                     image = args.out_dir / f"{arm}_{case}_r{rep}.png"
-                    command = shlex.split(arm_commands[arm].replace("{image}", str(image))) + shlex.split(extra)
+                    command = [
+                        tok.replace("{image}", str(image)) for tok in shlex.split(arm_commands[arm])
+                    ] + shlex.split(extra)
                     before = swap_mb()
                     row, tail = run_once(command, image, Guard(args.min_free_percent, args.swap_limit_mb, before))
                     row.arm, row.case, row.rep = arm, case, rep
