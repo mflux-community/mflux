@@ -59,6 +59,7 @@ class SenseNovaInitializer:
     @staticmethod
     def is_upstream_checkpoint(path: str) -> bool:
         # Upstream layout: model-*.safetensors shards at the root and none of the mflux-save subdirs
+        # Raises FileNotFoundError for that layout when the index or a shard it lists is missing
         root = Path(path).expanduser()
         if not root.is_dir() or not any(shard.is_file() for shard in root.glob("model-*.safetensors")):
             return False
