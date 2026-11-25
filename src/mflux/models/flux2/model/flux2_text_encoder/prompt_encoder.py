@@ -1,6 +1,7 @@
 import mlx.core as mx
 
 from mflux.models.common.tokenizer import Tokenizer
+from mflux.models.flux2.model.flux2_text_encoder.pruned_text_encoder import Flux2PrunedTextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.small_text_encoder import Flux2SmallTextEncoder
 
@@ -10,7 +11,7 @@ class Flux2PromptEncoder:
     def encode_prompt(
         prompt: str | list[str],
         tokenizer: Tokenizer,
-        text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder,
+        text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder | Flux2PrunedTextEncoder,
         num_images_per_prompt: int = 1,
         max_sequence_length: int = 512,
         text_encoder_out_layers: tuple[int, ...] = (9, 18, 27),
@@ -51,7 +52,7 @@ class Flux2PromptEncoder:
     def _get_qwen3_prompt_embeds(
         prompt: str | list[str],
         tokenizer: Tokenizer,
-        text_encoder: Qwen3TextEncoder,
+        text_encoder: Qwen3TextEncoder | Flux2PrunedTextEncoder,
         max_sequence_length: int,
         hidden_state_layers: tuple[int, ...],
     ) -> mx.array:

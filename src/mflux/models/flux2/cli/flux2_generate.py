@@ -6,7 +6,7 @@ from mflux.models.common.compute_precision import ComputePrecision
 from mflux.models.common.config.model_config import AVAILABLE_MODELS, ModelConfig
 from mflux.models.common.resolution.config_resolution import ConfigResolution
 from mflux.models.common.vae.vae_decode_options import VAEDecodeOptions
-from mflux.models.flux2.flux2_initializer import Flux2Initializer
+from mflux.models.flux2.flux2_initializer import SMALL_TEXT_ENCODER_UNSUPPORTED, Flux2Initializer
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.variants import Flux2Klein
 from mflux.utils.dimension_resolver import DimensionResolver
@@ -32,8 +32,8 @@ REJECTED_OPTIONS = {
 CONDITIONAL_OPTIONS = {
     **VAEDecodeOptions.conditional_options(),
     "--small-text-encoder": {
-        "condition": "FLUX.2-klein-4B and klein-base-4B",
-        "reason": "the adapter only fits the 4B conditioning width; any other model exits with an error.",
+        "condition": "FLUX.2-klein-4B / klein-base-4B and klein-9B / klein-9b-kv / klein-base-9B",
+        "reason": "the small encoders only fit the 4B and 9B conditioning widths; any other model exits with an error.",
     },
     "--guidance": {
         "condition": "base (non-distilled) FLUX.2 checkpoints",
@@ -84,7 +84,7 @@ class Flux2Command:
         Flux2Command._check_guidance(args, model_config)
 
         if args.small_text_encoder and not Flux2Initializer.supports_small_text_encoder(model_config):
-            raise ValueError("--small-text-encoder only works with FLUX.2-klein-4B / klein-base-4B.")
+            raise ValueError(SMALL_TEXT_ENCODER_UNSUPPORTED)
         return model_config
 
     @staticmethod
