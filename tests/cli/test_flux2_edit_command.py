@@ -9,12 +9,13 @@ import pytest
 
 from mflux.models.common.config.model_config import AVAILABLE_MODELS
 from mflux.models.flux2.cli import flux2_edit_generate as cli
+from mflux.models.flux2.flux2_initializer import Flux2Initializer
 from mflux.models.flux2.variants import Flux2KleinEdit
 from mflux.utils.exceptions import ModelConfigError
 from tests.cli.helpers.command_fakes import FakeModel, reset_cli_globals
 
 GUIDANCE_ERROR = "--guidance is only supported for FLUX.2 base models. Use --guidance 1.0, or declare a base checkpoint with --base-model."  # fmt: off
-SMALL_TEXT_ENCODER_ERROR = "--small-text-encoder only works with FLUX.2-klein-4B / klein-base-4B."
+SMALL_TEXT_ENCODER_ERROR = "--small-text-encoder only works with FLUX.2-klein-4B / klein-base-4B and FLUX.2-klein-9B / klein-9b-kv / klein-base-9B."  # fmt: skip
 NEGATIVE_PROMPT_ERROR = "--negative-prompt is not supported for FLUX.2. Focus on describing what you want."
 
 
@@ -25,6 +26,11 @@ class FakeFlux2KleinEdit(FakeModel):
         super().__init__(**kwargs)
         # --vae-full-precision switches the decoder's mode on the built model.
         self.vae = SimpleNamespace(decode_mode="legacy")
+
+
+def refuse_small_text_encoder(monkeypatch):
+    # Every klein model now takes the flag, so a refusal needs a config the encoders do not fit.
+    monkeypatch.setattr(Flux2Initializer, "supports_small_text_encoder", staticmethod(lambda config: False))
 
 
 @pytest.fixture(autouse=True)
@@ -264,7 +270,8 @@ def test_main_refuses_guidance_on_a_distilled_model_before_the_small_text_encode
 
 
 @pytest.mark.fast
-def test_main_refuses_the_small_text_encoder_on_a_9b_model(monkeypatch, capsys, ref_png):
+def test_main_refuses_the_small_text_encoder_on_an_unsupported_model(monkeypatch, capsys, ref_png):
+    refuse_small_text_encoder(monkeypatch)
     argv = ["--prompt", "x", "--image-paths", str(ref_png), "--model", "flux2-klein-9b", "--small-text-encoder"]
     code, err = main_exit(monkeypatch, capsys, argv)
     assert code == 2
@@ -393,9 +400,11 @@ def test_validate_returns_the_family_config_without_building_or_reading_files(mo
         (["--model", "/models/my-finetune", "--base-model", "flux2-klein-9b", "--guidance", "3"], GUIDANCE_ERROR),
         (["--model", "flux2-klein-9b", "--small-text-encoder"], SMALL_TEXT_ENCODER_ERROR),
     ],
-    ids=["guidance-9b", "guidance-4b", "guidance-inferred", "guidance-declared", "ste-9b"],
+    ids=["guidance-9b", "guidance-4b", "guidance-inferred", "guidance-declared", "ste-unsupported"],
 )
 def test_validate_refuses_what_the_command_refuses(monkeypatch, ref_png, argv, message):
+    if message == SMALL_TEXT_ENCODER_ERROR:
+        refuse_small_text_encoder(monkeypatch)
     args = args_for(monkeypatch, ["--prompt", "x", "--image-paths", str(ref_png), *argv])
     with pytest.raises(ValueError) as exc_info:
         cli.Flux2EditCommand.validate(args)
@@ -459,6 +468,7 @@ def test_load_passes_a_custom_checkpoint_and_its_inferred_config(monkeypatch, re
 
 @pytest.mark.fast
 def test_load_refuses_without_building(monkeypatch, ref_png):
+    refuse_small_text_encoder(monkeypatch)
     args = args_for(monkeypatch, ["--prompt", "x", "--image-paths", str(ref_png), "--model", "flux2-klein-9b", "--small-text-encoder"])  # fmt: off
     with pytest.raises(ValueError, match="only works with FLUX.2-klein-4B"):
         cli.Flux2EditCommand.load(args)

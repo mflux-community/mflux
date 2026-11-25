@@ -29,6 +29,7 @@ class QwenImage21(nn.Module):
     transformer: Qwen21Transformer
     text_encoder: Qwen21TextEncoder | Qwen21SmallTextEncoder | None
     small_text_encoder: bool = False
+    ssd_stream: bool = False
 
     def __init__(
         self,
@@ -40,6 +41,7 @@ class QwenImage21(nn.Module):
         bake_lora: bool = True,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ssd_stream: bool = False,
     ):
         super().__init__()
         Qwen21Initializer.init(
@@ -52,6 +54,7 @@ class QwenImage21(nn.Module):
             bake_lora=bake_lora,
             compute_precision=compute_precision,
             small_text_encoder=small_text_encoder,
+            ssd_stream=ssd_stream,
         )
 
     def generate_image(
@@ -187,6 +190,9 @@ class QwenImage21(nn.Module):
         Qwen21W8A8.check_savable(self)
         if self.small_text_encoder:
             raise ValueError("A model built with --small-text-encoder cannot be saved; load it without the flag.")
+        if self.ssd_stream:
+            # The idle layers hold placeholders, not weights.
+            raise ValueError("A model loaded with ssd_stream=True cannot be saved. Load it without --ssd-stream.")
         ModelSaver.save_model(
             model=self,
             bits=self.bits,

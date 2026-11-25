@@ -175,6 +175,39 @@ MFLUX_QWEN21_W8A8=~/models/qwen_image_2.1_turbo_int8_convrot.safetensors \
   file still works, without the speedup.
 - It cannot be combined with `-q` or LoRAs. The kernel is mlx-serve's (MIT, `common/quantization/w8a8_kernels`).
 
+### Streaming from the SSD (`--ssd-stream`)
+
+The bf16 weights are 32.4 GB: DiT 14.2 GB, text encoder 17.5 GB, VAE 0.7 GB. Without streaming, a generation keeps the DiT and the text encoder in memory together. `--ssd-stream` runs the 36 text-encoder layers and the 32 DiT blocks one at a time from the SSD. See [SSD streaming](../common/README.md#ssd-streaming---ssd-stream) for how it works.
+
+```sh
+mflux-generate-qwen-2.1 --model qwen-image-2.1-turbo \
+  --ssd-stream --mlx-cache-limit-gb 2 \
+  --width 1024 --height 1024 --seed 1 \
+  --prompt "A red bicycle leaning against a yellow wall in a narrow street, morning light, photo"
+```
+
+- It reads the original `Qwen/Qwen-Image-2.1` and `Qwen/Qwen-Image-2.1-Turbo` repos and `mflux-save` folders.
+- Use a cache limit. Without one, the MLX cache keeps the buffers of the layers that ran, and the peak does not go down.
+- The streamed DiT blocks run without `mx.compile` and without packed projections, and each block's output is evaluated before its weights are dropped.
+- A LoRA stays in memory as a runtime layer, and the base weights under it are streamed. With `--ssd-stream`, `mflux-generate-qwen-2.1` does not bake LoRAs unless you pass `--bake-lora`. In Python, pass `bake_lora=False`.
+- `--ssd-stream` stops with an error, before it reads any weight, in these cases, because each one would otherwise give a wrong image without a message:
+  - with `--bake-lora` and a LoRA: the streamer installs the saved weights over the baked ones.
+  - with `-q`: layers that `-q` has quantized need packed weights. Stream a copy saved with `mflux-save -q N` and do not add `-q`. Streaming a quantized model has not been run.
+  - with `MFLUX_QWEN21_W8A8`: the int8 DiT is not streamed.
+- With `--small-text-encoder`, only the DiT is streamed.
+- Only `mflux-generate-qwen-2.1` has the option. The edit and ControlNet commands do not.
+- A model that was loaded with `ssd_stream=True` cannot be saved: `save_model` raises an error, because the idle layers are placeholders.
+- Measured on an Apple M5 Ultra with 96 GB, macOS 27.2.1, MLX 0.32.4, Qwen-Image-2.1-Turbo bf16 from the original repo, 8 steps, guidance 1, `mx.set_cache_limit(2 GB)`, weight files in the page cache. Each row is one process with three images; the time per step is that of images 2 and 3. Peak is the system-wide wired memory during a generation; footprint is that of the process after the third image.
+
+  | Size | Configuration | Peak wired | Footprint | Time per step |
+  |---|---|---:|---:|---:|
+  | 1024x1024 | without `--ssd-stream` | 26.1 GB | 30.4 GB | 0.78-0.79 s |
+  | 1024x1024 | `--ssd-stream` | 6.1 GB | 4.9 GB | 0.80 s |
+  | 1024x1024 | `--ssd-stream`, no cache limit | 42.7 GB | 44.7 GB | 0.79-0.80 s |
+  | 1536x1536 | `--ssd-stream` | 7.3 GB | 5.1 GB | 1.98 s |
+
+  The images were byte-identical with and without `--ssd-stream`, at both sizes. With a runtime LoRA (Qwen-Image-2.1-Voxel-Style-3000, rank 16, 512x512, one image), the image was byte-identical with and without `--ssd-stream`, and the peak was 2.9 GB instead of 25.5 GB.
+
 ### img2img
 
 Pass `--image-path` and optionally `--image-strength`, like the other models.
