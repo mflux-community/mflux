@@ -74,7 +74,7 @@ These options act on the first reference image. They are MFLUX additions, not pa
 | `--strength 0.6` | Skips the first `1 - strength` of the schedule and starts from the source noised to that point, for subtler edits. The default `1.0` starts from pure noise. |
 | `--enhance-prompt` | Rewrites a terse instruction into a detailed prompt first, following the official prompt-rewrite recipe. Without `--image-paths` it rewrites a text-to-image request (a condensation of the official `system_prompt_t2i.txt`) and, unless `--width`/`--height` are given, renders at the aspect ratio the rewrite proposes. An unparseable reply keeps the original. |
 | `--verify` / `--verify-retries N` | Asks the Qwen3-VL whether the edit applied and the rest is unchanged, and regenerates with the next seed up to `N` times on a failed check. |
-| `--use-step-cache` | Skips transformer blocks 1..N on steps whose first-block output barely changed (threshold `--step-cache-threshold`, default 0.12). Faster, and slightly different output. Needs `--use-kv-cache`. Runs under 10 steps, like the 6-step `viggle_turbo`, skip nothing. |
+| `--use-step-cache` | Skips transformer blocks 1..N on steps whose first-block output barely changed, estimating their residual from recent full steps (threshold `--step-cache-threshold`, default 0.12). Faster, and slightly different output. Needs `--use-kv-cache`. Runs under 10 steps, like the 6-step `viggle_turbo`, skip nothing. |
 
 ```sh
 mflux-generate-qwen-2.1-edit \
