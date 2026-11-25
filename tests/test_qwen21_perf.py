@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import mlx.core as mx
 import pytest
 
@@ -352,6 +354,20 @@ class TestReferenceBlockFusion:
         assert calls == [1]
         attention.use_fused_prologue = False
         composed, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        mx.eval(fused, composed)
+        assert fused.dtype == composed.dtype
+        assert mx.array_equal(fused, composed)
+
+    @pytest.mark.parametrize("head_dim", [64, 128])
+    def test_uncached_attention_fused_prologue_is_bit_identical(self, head_dim, monkeypatch):
+        attention, x, rope, _ = self._cached_attention(head_dim, mx.bfloat16)
+        # a text segment of 8 tokens, then 16 image tokens
+        layout = SimpleNamespace(segments=[(0, 8, True)], prefix_length=8)
+        calls = self._count_kernel_calls(monkeypatch)
+        fused, _ = attention.forward_reference(x, layout, rope, cached=None)
+        assert calls == [1]
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, layout, rope, cached=None)
         mx.eval(fused, composed)
         assert fused.dtype == composed.dtype
         assert mx.array_equal(fused, composed)
