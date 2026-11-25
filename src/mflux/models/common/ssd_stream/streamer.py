@@ -1,4 +1,5 @@
 import json
+import logging
 import struct
 from functools import partial
 from pathlib import Path
@@ -6,6 +7,8 @@ from pathlib import Path
 import mlx.core as mx
 from mlx import nn
 from mlx.utils import tree_flatten, tree_unflatten
+
+logger = logging.getLogger(__name__)
 
 
 class Streamer:
@@ -26,6 +29,11 @@ class Streamer:
         # methods: entry points of a layer other than __call__ that also run it streamed.
         weight_map = Streamer.weight_map(component_dir)
         prefix = Streamer._prefix_in(weight_map, prefix)
+        if not any(key.startswith(f"{prefix}0.") for key in weight_map):
+            logger.warning(
+                f"--ssd-stream found no saved layer that starts with '{prefix}0.' in {component_dir}. "
+                "The layers stay in memory and nothing is streamed."
+            )
         for index, module in enumerate(modules):
             block = StreamedBlock(
                 module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks), methods
