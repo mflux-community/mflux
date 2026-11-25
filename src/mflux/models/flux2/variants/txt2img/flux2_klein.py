@@ -12,6 +12,7 @@ from mflux.models.common.weights.saving.model_saver import ModelSaver
 from mflux.models.flux2.flux2_initializer import Flux2Initializer
 from mflux.models.flux2.latent_creator.flux2_latent_creator import Flux2LatentCreator
 from mflux.models.flux2.model.flux2_text_encoder.prompt_encoder import Flux2PromptEncoder
+from mflux.models.flux2.model.flux2_text_encoder.pruned_text_encoder import Flux2PrunedTextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.small_text_encoder import Flux2SmallTextEncoder
 from mflux.models.flux2.model.flux2_transformer.transformer import Flux2Transformer
@@ -27,7 +28,7 @@ from mflux.utils.image_util import ImageUtil
 class Flux2Klein(nn.Module):
     vae: Flux2VAE
     transformer: Flux2Transformer
-    text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder | None
+    text_encoder: Qwen3TextEncoder | Flux2SmallTextEncoder | Flux2PrunedTextEncoder | None
     small_text_encoder: bool = False
     small_decoder: bool = False
 
@@ -267,8 +268,8 @@ class Flux2Klein(nn.Module):
     def save_model(self, base_path: str) -> None:
         if self.small_text_encoder:
             raise ValueError(
-                "save_model() is not supported with small_text_encoder: it would write Qwen3-0.6B weights "
-                "where FLUX.2-klein's Qwen3-4B text encoder belongs. Build the model without it to save it."
+                "save_model() is not supported with small_text_encoder: it would write the small encoder's weights "
+                "where FLUX.2-klein's text encoder belongs. Build the model without it to save it."
             )
         if self.small_decoder:
             # The saved vae/ folder must hold the full decoder: a load without the flag builds the full VAE.

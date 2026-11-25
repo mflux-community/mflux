@@ -132,6 +132,39 @@ mflux-generate-flux2 \
 - Danbooru-style tag prompts that give an anime image with the native encoder can come out photographic with the adapter (the diffusers reference does the same).
 - Attribution: adapter by AiArtLab ([AiArtLab/qwen3-0.6b-4b-adapter](https://huggingface.co/AiArtLab/qwen3-0.6b-4b-adapter), Apache-2.0); [Qwen/Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B) is Apache-2.0.
 
+### Small text encoder for klein-9B
+On `flux2-klein-9b`, `flux2-klein-9b-kv` and `flux2-klein-base-9b`, `--small-text-encoder` loads a pruned copy of klein-9B's own Qwen3-8B text encoder, [SearchingMan/FLUX.2-klein-9B-Text-Encoder-Pruned-5.1B](https://huggingface.co/SearchingMan/FLUX.2-klein-9B-Text-Encoder-Pruned-5.1B) (5.1B parameters instead of 8B: 26 layers instead of 36, with some attention heads and FFN channels removed). It needs no adapter and keeps the 512-token prompt length, because the conditioning width (12288) is unchanged. The transformer, VAE and tokenizer stay klein's, so the klein `text_encoder` weights are never downloaded.
+
+```sh
+mflux-generate-flux2 \
+  --model flux2-klein-9b \
+  --small-text-encoder \
+  --prompt "A red fox walks through a snowy forest at dusk." \
+  --steps 4 \
+  -q 8
+```
+
+- The klein-9B, klein-9b-kv and klein-base-9B text encoders are identical, so the one pruned encoder fits all three.
+- Only the first 25 of the 26 exported layers are built, because the last hidden state FLUX.2 reads is the output of layer 25. The encoder is checked against the pinned `config.json` and `pruning_metadata.json` before it is built, and the weights must match exactly.
+- `-q` quantizes the pruned encoder like the native one. The first run downloads about 10.2 GB (`config.json`, `pruning_metadata.json` and `model.safetensors` at a pinned revision) instead of the 16.4 GB klein `text_encoder`.
+- A model built with the flag cannot be saved, and the flag is recorded in the image metadata, as for klein-4B.
+- The MLX encoder matches a PyTorch reference built the way the repo's `loading.py` builds it: 2e-7 relative error in float32, 0.4–0.5% in bfloat16. Per token, its output is 0.96–0.98 cosine to the native encoder's on short prompts (the author reports 0.9755).
+- Images stay close to the native encoder. On most prompts the composition is the same, text in the image is spelled correctly, and a German prompt keeps its details. Some prompts get a different composition that still fits the prompt.
+- Tested on `flux2-klein-9b`. `flux2-klein-9b-kv` and `flux2-klein-base-9b` load the same encoder, but no images were compared on them.
+
+The smaller encoder does not lower the peak of a single CLI image: the CLI frees the text encoder before the denoising, and the denoising sets the peak. The saving shows when the encoder stays loaded, as with several `--seed` values, the Python API or a server. Test setup: Apple Silicon Mac, 64 GB, MLX 0.32.0, 1024×1024, 4 steps.
+
+| | Qwen3-8B | `--small-text-encoder` |
+|---|---|---|
+| Peak, one image, bf16 from the Hub | 20.1 GB | 20.1 GB |
+| Peak, one image, `-q 8` model saved with `mflux-save` | 11.6 GB | 11.6 GB |
+| Peak, two seeds, same `-q 8` model | 17.9 GB | 16.9 GB |
+| Text encoder weights, bf16 / `-q 8` | 15.1 / 8.0 GB | 9.8 / 5.2 GB |
+| Download of the text encoder | 16.4 GB | 10.2 GB |
+
+With two seeds the peak drops by less than the weights do, because MLX never evaluates layers 27–35 of the native encoder: FLUX.2 does not read them.
+- Attribution: pruned encoder by SearchingMan, under the FLUX Non-Commercial License (the same as FLUX.2-klein-9B).
+
 ## Small decoder
 [FLUX.2-small-decoder](https://huggingface.co/black-forest-labs/FLUX.2-small-decoder) (Apache-2.0) is a distilled VAE decoder from Black Forest Labs. It has 28M parameters instead of 50M. Add `--small-decoder` to `mflux-generate-flux2` or `mflux-generate-flux2-edit` to use it. Black Forest Labs lists it for all FLUX.2 klein models:
 

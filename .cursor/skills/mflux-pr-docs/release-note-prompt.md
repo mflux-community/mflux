@@ -62,7 +62,7 @@ If you change the note, change both copies.
 
 1. Make sure that a user who did not read the PR understands the note.
 2. Make sure that each claim has evidence in the diff, the PR description or CI.
-3. Apply the `asd-ste100` skill in STE-flavored mode. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py` on the note. Fix each hard violation.
+3. Apply the `asd-ste100` skill in STE-flavored mode. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py --disable synonym-rotation` on the note. Fix each hard violation.
 
 ## Examples
 

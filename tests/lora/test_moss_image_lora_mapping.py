@@ -150,7 +150,7 @@ def test_an_update_under_half_a_bfloat16_step_keeps_its_effect_in_a_runtime_laye
 def test_lora_arguments_come_after_the_existing_positional_ones():
     # MOSSImage(quantize, model_path, model_config) was the signature before LoRA support.
     names = list(inspect.signature(MOSSImage.__init__).parameters)[1:]
-    assert names == ["quantize", "model_path", "model_config", "lora_paths", "lora_scales", "bake_lora"]
+    assert names == ["quantize", "model_path", "model_config", "lora_paths", "lora_scales", "bake_lora", "ssd_stream"]
 
 
 def test_capabilities_report_lora_as_honored_and_unbaked_by_default():

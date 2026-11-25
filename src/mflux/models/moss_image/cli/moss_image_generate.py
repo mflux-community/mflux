@@ -38,10 +38,18 @@ def build_parser() -> CommandLineParser:
     parser.add_lora_arguments(bake_by_default=DEFAULT_BAKE_LORA)
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_step_cache_arguments()
+    parser.add_ssd_stream_arguments()
     parser.add_argument("--uncond-skip-layers", type=int, nargs="*", default=None, metavar="LAYER", help=f"Zero-based transformer layers that the negative CFG branch skips. Pass the flag with no values to skip no layer. Default: {' '.join(map(str, DEFAULT_UNCOND_SKIP_LAYERS))}.")  # fmt: off
     parser.add_output_arguments()
     parser.set_defaults(guidance=DEFAULT_GUIDANCE)
     return parser
+
+
+# Options that have no effect when --ssd-stream is on (the VAE then always decodes in row strips).
+SSD_STREAM_IGNORED_OPTIONS = {
+    "--vae-tiling": "--ssd-stream decodes the image in row strips instead.",
+    "--vae-tile-size": "--ssd-stream decodes the image in row strips instead.",
+}
 
 
 class MOSSImageCommand:
@@ -72,6 +80,7 @@ class MOSSImageCommand:
             model_config=MOSSImageCommand.validate(args),
             quantize=args.quantize,
             model_path=args.model_path,
+            ssd_stream=args.ssd_stream,
             **lora_init_kwargs_from_args(args),
         )
 
@@ -105,6 +114,8 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     CommandLineParser.warn_ignored_options(IGNORED_OPTIONS)
+    if args.ssd_stream:
+        CommandLineParser.warn_ignored_options(SSD_STREAM_IGNORED_OPTIONS)
 
     # 1. Load the model
     model = MOSSImageCommand.load(args)

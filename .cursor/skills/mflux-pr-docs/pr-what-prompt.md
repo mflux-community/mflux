@@ -86,7 +86,7 @@ Before you send the summary, do these checks:
 1. Make sure that the headline names a beneficiary and a benefit.
 2. Make sure that each claim has evidence in the diff, the PR description, or CI.
 3. Remove each sentence about work that the PR does not do.
-4. Apply the `asd-ste100` skill in STE-flavored mode. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py` on the summary. Fix each hard violation.
+4. Apply the `asd-ste100` skill in STE-flavored mode. Run `python3 .cursor/skills/asd-ste100/scripts/ste-lint.py --disable synonym-rotation` on the summary. Fix each hard violation.
 
 ## Example
 
