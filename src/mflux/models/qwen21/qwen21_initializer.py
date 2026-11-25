@@ -10,6 +10,7 @@ from mflux.models.common.config import ModelConfig
 from mflux.models.common.lora.mapping.lora_loader import LoRALoader
 from mflux.models.common.resolution.path_resolution import PathResolution
 from mflux.models.common.resolution.prequantized_resolution import PrequantizedResolution
+from mflux.models.common.ssd_stream.streamer import Streamer
 from mflux.models.common.tokenizer import TokenizerLoader
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
@@ -36,17 +37,21 @@ class Qwen21Initializer:
         bake_lora: bool = True,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ssd_stream: bool = False,
     ) -> None:
         precision = ComputePrecision(compute_precision)
         # MFLUX_QWEN21_W8A8 errors (missing file, quantize or LoRAs) need no download to detect.
         from mflux.models.qwen21.weights.qwen21_w8a8 import Qwen21W8A8
 
-        Qwen21W8A8.validate(quantize, lora_paths)
+        w8a8_file = Qwen21W8A8.validate(quantize, lora_paths)
+        if ssd_stream:
+            Qwen21Initializer._check_ssd_stream(quantize, lora_paths, bake_lora, w8a8_file)
         path = PrequantizedResolution.weights_root(
             model_config, model_path, quantize, has_loras=bool(lora_paths), bake_lora=bake_lora
         )
         Qwen21Initializer.init_config(model, model_config)
         model.small_text_encoder = small_text_encoder
+        model.ssd_stream = ssd_stream
         definition = Qwen21NoTextEncoderWeightDefinition if small_text_encoder else Qwen21WeightDefinition
         root = PathResolution.resolve(path, Qwen21W8A8.download_patterns(definition.get_download_patterns()))
         if root is None:
@@ -66,6 +71,8 @@ class Qwen21Initializer:
         if compute_precision is not None:
             # Last, so it casts the final parameters, whatever quantization and LoRA produced.
             model.transformer.apply_compute_precision(precision)
+        if ssd_stream:
+            Qwen21Initializer._apply_ssd_stream(model, root)
 
     @staticmethod
     def load_components(model, root: Path, weight_definition, quantize: int | None, *, validate: bool = False) -> None:
@@ -132,6 +139,46 @@ class Qwen21Initializer:
         model.model_config = model_config
         model.callbacks = CallbackRegistry()
         model.tiling_config = None
+
+    @staticmethod
+    def _check_ssd_stream(
+        quantize: int | None, lora_paths: list[str] | None, bake_lora: bool, w8a8: Path | None
+    ) -> None:
+        # Each would load, and then give a wrong image without a message. Stop before the weights are read.
+        if quantize is not None:
+            raise ValueError(
+                "--ssd-stream cannot be combined with -q/--quantize: the streamer installs the saved weights over the "
+                "layers, and layers that -q has quantized need packed weights. Stream a copy saved with "
+                "`mflux-save -q N` instead, and do not pass -q."
+            )
+        if lora_paths and bake_lora:
+            raise ValueError(
+                "--ssd-stream cannot be combined with a baked LoRA: the streamer installs the saved weights over the "
+                "layers, which would drop the baked LoRA. Keep the LoRA as runtime layers (--no-bake-lora, or "
+                "bake_lora=False): they stay in memory and the base weights are streamed."
+            )
+        if w8a8 is not None:
+            raise ValueError("--ssd-stream cannot be combined with MFLUX_QWEN21_W8A8: the int8 DiT is not streamed.")
+
+    @staticmethod
+    def _apply_ssd_stream(model, root: Path) -> None:
+        # The original repo and an mflux save name the DiT blocks alike. The text-encoder layers are saved under
+        # model.language_model. (original repo), language_model. (mflux-save) or neither (older text-only saves).
+        Streamer(cycle=True).wrap(
+            model.transformer.transformer_blocks,
+            root / "transformer",
+            "transformer_blocks.",
+            methods=("text_forward", "image_forward"),
+        )
+        # Packing and compiling would hold every block's weights at once.
+        model.transformer.use_packed_projections = False
+        model.transformer.compile_steps = False
+        if not model.small_text_encoder:
+            Streamer(cycle=False).wrap(
+                model.text_encoder.layers,
+                root / "text_encoder",
+                ("layers.", "language_model.layers.", "model.language_model.layers."),
+            )
 
     @staticmethod
     def _init_tokenizers(model, model_path: str) -> None:
