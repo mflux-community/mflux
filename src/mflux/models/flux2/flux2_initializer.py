@@ -10,6 +10,10 @@ from mflux.models.common.vae.block_decoder import VAEBlockDecoder
 from mflux.models.common.weights.loading.loaded_weights import LoadedWeights
 from mflux.models.common.weights.loading.weight_applier import WeightApplier
 from mflux.models.common.weights.loading.weight_loader import WeightLoader
+from mflux.models.flux2.model.flux2_text_encoder.pruned_text_encoder import (
+    SUPPORTED_JOINT_ATTENTION_DIM as PRUNED_JOINT_ATTENTION_DIM,
+    Flux2PrunedTextEncoder,
+)
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.flux2.model.flux2_text_encoder.small_text_encoder import (
     SUPPORTED_JOINT_ATTENTION_DIM,
@@ -22,6 +26,11 @@ from mflux.models.flux2.weights.flux2_lora_mapping import Flux2LoRAMapping
 from mflux.models.flux2.weights.flux2_weight_definition import (
     Flux2KleinNoTextEncoderWeightDefinition,
     Flux2KleinWeightDefinition,
+)
+
+SMALL_TEXT_ENCODER_UNSUPPORTED = (
+    "--small-text-encoder only works with FLUX.2-klein-4B / klein-base-4B and "
+    "FLUX.2-klein-9B / klein-9b-kv / klein-base-9B."
 )
 
 
@@ -61,7 +70,7 @@ class Flux2Initializer:
         Flux2Initializer._init_models(model)
         Flux2Initializer._apply_weights(model, weights, quantize)
         if small_text_encoder:
-            model.text_encoder = Flux2SmallTextEncoder.load(bits=model.bits)
+            model.text_encoder = Flux2Initializer.load_small_text_encoder(model_config, bits=model.bits)
         model.small_decoder = small_decoder
         if small_decoder:
             model.vae = Flux2SmallDecoderLoader.with_small_decoder(model.vae, bits=model.bits)
@@ -73,12 +82,24 @@ class Flux2Initializer:
 
     @staticmethod
     def supports_small_text_encoder(model_config: ModelConfig) -> bool:
-        return model_config.transformer_overrides.get("joint_attention_dim") == SUPPORTED_JOINT_ATTENTION_DIM
+        return model_config.transformer_overrides.get("joint_attention_dim") in (
+            SUPPORTED_JOINT_ATTENTION_DIM,
+            PRUNED_JOINT_ATTENTION_DIM,
+        )
+
+    @staticmethod
+    def load_small_text_encoder(
+        model_config: ModelConfig, bits: int | None
+    ) -> Flux2SmallTextEncoder | Flux2PrunedTextEncoder:
+        # The one place that picks the encoder behind --small-text-encoder.
+        if model_config.transformer_overrides.get("joint_attention_dim") == PRUNED_JOINT_ATTENTION_DIM:
+            return Flux2PrunedTextEncoder.load(bits=bits)
+        return Flux2SmallTextEncoder.load(bits=bits)
 
     @staticmethod
     def validate_small_text_encoder(model_config: ModelConfig) -> None:
         if not Flux2Initializer.supports_small_text_encoder(model_config):
-            raise ValueError("--small-text-encoder only works with FLUX.2-klein-4B / klein-base-4B.")
+            raise ValueError(SMALL_TEXT_ENCODER_UNSUPPORTED)
 
     @staticmethod
     def _init_config(model, model_config: ModelConfig) -> None:

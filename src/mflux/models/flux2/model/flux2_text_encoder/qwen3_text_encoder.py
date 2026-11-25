@@ -22,26 +22,31 @@ class Qwen3TextEncoder(nn.Module):
         attention_bias: bool = False,
         mrope_section: list[int] | None = None,
         attention_scaling: float = 1.0,
+        layer_shapes: list[dict[str, int]] | None = None,
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
+        # Optional per-layer overrides of num_attention_heads, num_key_value_heads and intermediate_size (pruned encoders).
+        shapes = layer_shapes if layer_shapes is not None else [{}] * num_hidden_layers
+        if len(shapes) != num_hidden_layers:
+            raise ValueError(f"layer_shapes has {len(shapes)} entries for {num_hidden_layers} layers.")
         self.layers = [
             Qwen3VLDecoderLayer(
                 hidden_size=hidden_size,
-                num_attention_heads=num_attention_heads,
-                num_key_value_heads=num_key_value_heads,
+                num_attention_heads=shape.get("num_attention_heads", num_attention_heads),
+                num_key_value_heads=shape.get("num_key_value_heads", num_key_value_heads),
                 head_dim=head_dim,
                 max_position_embeddings=max_position_embeddings,
                 rope_theta=rope_theta,
                 mrope_section=None,
                 attention_bias=attention_bias,
                 rms_norm_eps=rms_norm_eps,
-                intermediate_size=intermediate_size,
+                intermediate_size=shape.get("intermediate_size", intermediate_size),
             )
-            for _ in range(num_hidden_layers)
+            for shape in shapes
         ]
         self.norm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
         self.rotary_emb = Qwen3TextRotaryEmbedding(

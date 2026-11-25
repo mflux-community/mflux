@@ -133,6 +133,14 @@ def test_a_folder_without_the_index_file_is_refused_with_the_layout_it_needs(tmp
         Streamer(cycle=False).wrap(StreamTestSupport.blocks(), tmp_path, "layers.")
 
 
+def test_a_prefix_that_matches_no_saved_layer_logs_a_warning(tmp_path, caplog):
+    blocks = StreamTestSupport.blocks()
+    StreamTestSupport.save(blocks, tmp_path)
+    with caplog.at_level("WARNING"):
+        Streamer(cycle=False).wrap(blocks, tmp_path, "missing.")
+    assert "nothing is streamed" in caplog.text
+
+
 class _Projection(nn.Module):
     def __init__(self, linear: nn.Module):
         super().__init__()

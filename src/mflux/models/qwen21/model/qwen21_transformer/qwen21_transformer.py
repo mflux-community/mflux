@@ -72,6 +72,8 @@ class Qwen21Transformer(nn.Module):
         self.proj_out = nn.Linear(self.inner_dim, out_channels, bias=False)
         self._geometry_cache: dict[tuple[int, int, int], tuple[mx.array, mx.array, mx.array | None]] = {}
         self.use_packed_projections = True
+        # Off for --ssd-stream: a streamed block evaluates its output before it drops its weights.
+        self.compile_steps = True
 
     def __call__(
         self,
@@ -95,7 +97,7 @@ class Qwen21Transformer(nn.Module):
             if self._step_fn is None:
                 # compile after the shapes of one denoise step are known; mx.compile retraces
                 # per shape, so prompt-length and resolution changes just compile again
-                self._step_fn = mx.compile(self._forward)
+                self._step_fn = mx.compile(self._forward) if self.compile_steps else self._forward
             return self._step_fn(hidden_states, encoder_hidden_states, timestep_rows, rope_cos, rope_sin, attn_mask)
 
         geometry = (text_len, config.height // 16, config.width // 16)
@@ -110,7 +112,7 @@ class Qwen21Transformer(nn.Module):
             self._text_caches[id(encoder_hidden_states)] = cache
         if self._image_step_fn is None:
             # like _step_fn: retraces per (image-token-count, text-length) shape change
-            self._image_step_fn = mx.compile(self._image_forward)
+            self._image_step_fn = mx.compile(self._image_forward) if self.compile_steps else self._image_forward
         return self._image_step_fn(
             hidden_states,
             timestep,

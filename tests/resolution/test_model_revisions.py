@@ -8,7 +8,7 @@ from mflux.models.common.pid_decoder import pid_decoder
 from mflux.models.common.resolution import path_resolution
 from mflux.models.common.resolution.model_revisions import ModelRevisions
 from mflux.models.common.resolution.path_resolution import PathResolution
-from mflux.models.flux2.model.flux2_text_encoder import small_text_encoder
+from mflux.models.flux2.model.flux2_text_encoder import pruned_text_encoder, small_text_encoder
 from mflux.models.flux2.model.flux2_vae import small_decoder
 from mflux.models.hed import hed
 from mflux.models.lens.model.text_encoder import lens_gpt_oss_encoder
@@ -51,6 +51,7 @@ def test_every_built_in_repo_is_pinned():
         lens_image.VAE_REPO,
         small_text_encoder.ADAPTER_REPO,
         small_text_encoder.SMALL_ENCODER_REPO,
+        pruned_text_encoder.PRUNED_ENCODER_REPO,
         small_decoder.SMALL_DECODER_REPO,
         zimage_small_text_encoder.SMALL_ENCODER_REPO,
         ZenImageEditWeights.REPO,
