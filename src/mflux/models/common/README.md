@@ -768,6 +768,7 @@ mflux-generate-z-image-turbo \
 - Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
 - It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit. Without a cache limit, the MLX cache keeps the buffers of the layers that ran, and the peak memory does not go down.
 - MOSS-Image (`mflux-generate-moss-image`) and Qwen-Image-2.1 text to image (`mflux-generate-qwen-2.1`) support it. The argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Each model README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream), [Qwen-Image-2.1](../qwen21/README.md#streaming-from-the-ssd---ssd-stream).
+- `--stream-lora` (with `--ssd-stream`, MOSS-Image only) also keeps one LoRA file on the SSD and reads each block's part of it just before the block runs, so the whole LoRA is not resident.
 - A model that is streamed cannot be saved with `save_model` (it raises an error), because the idle layers are placeholders.
 
 ### Checking that a run does not wear the SSD

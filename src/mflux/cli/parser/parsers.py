@@ -293,6 +293,9 @@ class CommandLineParser(argparse.ArgumentParser):
     def add_ssd_stream_arguments(self) -> None:
         self.add_argument("--ssd-stream", action=argparse.BooleanOptionalAction, default=False, help="Keep only the layer that is running in memory and read each layer from the model's saved shards on the SSD just before it runs (and one layer ahead while it computes). Needs weight files that name each layer as the model does: an mflux-save folder or a mflux-community repo, or for Qwen-Image-2.1 also the original repo. Meant for Macs whose RAM is smaller than the model; see the README of the model.")
 
+    def add_stream_lora_arguments(self) -> None:
+        self.add_argument("--stream-lora", action=argparse.BooleanOptionalAction, default=False, help="With --ssd-stream, keep the first --lora file on the SSD as well and read each block's part of it just before the block runs. Takes one kohya-named LoRA file; see the MOSS-Image README.")
+
     def add_small_text_encoder_arguments(self, help_text: str | None = None) -> None:
         self.add_argument("--small-text-encoder", action=argparse.BooleanOptionalAction, default=False, help=help_text or "[EXPERIMENTAL] Use a smaller text encoder. On FLUX.2-klein-4B / klein-base-4B: Qwen3-0.6B + the AiArtLab/qwen3-0.6b-4b-adapter in place of Qwen3-4B (needs 1-6 GB less memory for weights depending on -q, downloads ~2.4 GB instead of ~8.0 GB, prompts are capped at 256 tokens). On FLUX.2-klein-9B / klein-9b-kv / klein-base-9B: the pruned 5.1B encoder from SearchingMan/FLUX.2-klein-9B-Text-Encoder-Pruned-5.1B, downloads ~10.2 GB instead of ~16.4 GB. Fine details can drift from the native encoder.")
 

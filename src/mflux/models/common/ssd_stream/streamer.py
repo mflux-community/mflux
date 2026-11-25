@@ -23,9 +23,11 @@ class Streamer:
         modules: list[nn.Module],
         component_dir: Path,
         prefix: str | tuple[str, ...],
+        lora=None,
         methods: tuple[str, ...] = (),
     ) -> None:
         # prefix: the saved name of the layer list. Of several, the first one that names layer 0 is used.
+        # lora: a streamed LoRA that wraps the layers and supplies each block's factors.
         # methods: entry points of a layer other than __call__ that also run it streamed.
         weight_map = Streamer.weight_map(component_dir)
         prefix = Streamer._prefix_in(weight_map, prefix)
@@ -36,7 +38,7 @@ class Streamer:
             )
         for index, module in enumerate(modules):
             block = StreamedBlock(
-                module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks), methods
+                module, f"{prefix}{index}.", weight_map, component_dir, self, len(self.blocks), index, lora, methods
             )
             modules[index] = block
             self.blocks.append(block)
@@ -65,6 +67,8 @@ class Streamer:
         for shard, keys in block.shard_keys.items():
             loaded = mx.load(shard)
             installed.extend(block.installable(key[len(block.prefix) :], loaded[key]) for key in keys)
+        if block.lora is not None:
+            installed.extend(block.lora.factors(block.index))
         mx.async_eval([value for _, value in installed])
         return installed
 
@@ -101,7 +105,10 @@ class StreamedBlock:
             cls._placeholder = mx.zeros((1,))
         return cls._placeholder
 
-    def __init__(self, module, prefix, weight_map, component_dir, streamer, position, methods=()):
+    def __init__(self, module, prefix, weight_map, component_dir, streamer, position, index, lora=None, methods=()):
+        self.lora = lora
+        self.index = index
+        factor_names = [] if lora is None else lora.wrap(module, index)
         self.module = module
         self.prefix = prefix
         self.streamer = streamer
@@ -116,6 +123,7 @@ class StreamedBlock:
             if key.startswith(prefix):
                 self.shard_keys.setdefault(str(component_dir / shard), []).append(key)
         stored = [self.module_key(key[len(prefix) :]) for keys in self.shard_keys.values() for key in keys]
+        stored += factor_names
         self.empty = tree_unflatten([(name, self.placeholder()) for name in stored])
         module.update(self.empty, strict=False)
 
