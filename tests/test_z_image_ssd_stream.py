@@ -22,6 +22,24 @@ pytestmark = pytest.mark.fast
 GROUPS = ("noise_refiner", "context_refiner", "layers")
 
 
+class ZImageStreamSupport:
+    @staticmethod
+    def save_component(folder, module, groups):
+        folder.mkdir()
+        tensors = {f"{group}.{i}.{name}": v for group in groups for i, block in enumerate(getattr(module, group)) for name, v in tree_flatten(block.parameters())}  # fmt: off
+        mx.save_safetensors(str(folder / "0.safetensors"), tensors)
+        (folder / "model.safetensors.index.json").write_text(json.dumps({"weight_map": dict.fromkeys(tensors, "0.safetensors")}))  # fmt: off
+
+    @staticmethod
+    def saved_tiny_transformer(tmp_path):
+        transformer = ZImageTransformer(
+            dim=16, n_layers=1, n_heads=2, in_channels=4, cap_feat_dim=8, axes_dims=[2, 2, 4], axes_lens=[64, 32, 32]
+        )
+        mx.eval(transformer.parameters())
+        ZImageStreamSupport.save_component(tmp_path / "transformer", transformer, GROUPS)
+        return transformer
+
+
 def test_the_streamed_transformer_gives_the_normal_output_for_two_steps_in_a_row(tmp_path):
     mx.random.seed(0)
     transformer = ZImageTransformer(
@@ -33,37 +51,17 @@ def test_the_streamed_transformer_gives_the_normal_output_for_two_steps_in_a_row
     sigmas = mx.array([1.0, 0.5, 0.0])
     expected = [np.array(transformer(x, step, sigmas, cap)) for step in (0, 1)]
 
-    folder = tmp_path / "transformer"
-    folder.mkdir()
-    tensors = {f"{group}.{i}.{name}": v for group in GROUPS for i, block in enumerate(getattr(transformer, group)) for name, v in tree_flatten(block.parameters())}  # fmt: off
-    mx.save_safetensors(str(folder / "0.safetensors"), tensors)
-    (folder / "model.safetensors.index.json").write_text(
-        json.dumps({"weight_map": dict.fromkeys(tensors, "0.safetensors")})
-    )
+    ZImageStreamSupport.save_component(tmp_path / "transformer", transformer, GROUPS)
     model = SimpleNamespace(small_text_encoder=True, transformer=transformer)
     ZImageInitializer._apply_ssd_stream(model, str(tmp_path), ZImageNoTextEncoderWeightDefinition)
 
+    for group in GROUPS:
+        assert all(isinstance(block, StreamedBlock) for block in getattr(transformer, group))
     for step in (0, 1):
         np.testing.assert_array_equal(np.array(transformer(x, step, sigmas, cap)), expected[step])
 
 
-def _save_component(folder, module, groups):
-    folder.mkdir()
-    tensors = {f"{group}.{i}.{name}": v for group in groups for i, block in enumerate(getattr(module, group)) for name, v in tree_flatten(block.parameters())}  # fmt: off
-    mx.save_safetensors(str(folder / "0.safetensors"), tensors)
-    (folder / "model.safetensors.index.json").write_text(json.dumps({"weight_map": dict.fromkeys(tensors, "0.safetensors")}))  # fmt: off
-
-
-def _saved_tiny_transformer(tmp_path):
-    transformer = ZImageTransformer(
-        dim=16, n_layers=1, n_heads=2, in_channels=4, cap_feat_dim=8, axes_dims=[2, 2, 4], axes_lens=[64, 32, 32]
-    )
-    mx.eval(transformer.parameters())
-    _save_component(tmp_path / "transformer", transformer, GROUPS)
-    return transformer
-
-
-def test_the_streamed_text_encoder_gives_the_normal_output_the_normal_output(tmp_path):
+def test_the_streamed_text_encoder_gives_the_normal_output(tmp_path):
     mx.random.seed(1)
     encoder = TextEncoder(
         vocab_size=32,
@@ -78,8 +76,8 @@ def test_the_streamed_text_encoder_gives_the_normal_output_the_normal_output(tmp
     ids = mx.array([[1, 5, 7, 2, 9]])
     expected = np.array(encoder(ids).astype(mx.float32))
 
-    _save_component(tmp_path / "text_encoder", encoder, ("layers",))
-    transformer = _saved_tiny_transformer(tmp_path)
+    ZImageStreamSupport.save_component(tmp_path / "text_encoder", encoder, ("layers",))
+    transformer = ZImageStreamSupport.saved_tiny_transformer(tmp_path)
     model = SimpleNamespace(small_text_encoder=False, text_encoder=encoder, transformer=transformer)
     ZImageInitializer._apply_ssd_stream(model, str(tmp_path), ZImageWeightDefinition)
 
@@ -89,7 +87,7 @@ def test_the_streamed_text_encoder_gives_the_normal_output_the_normal_output(tmp
 
 
 def test_the_small_text_encoder_is_not_streamed(tmp_path):
-    transformer = _saved_tiny_transformer(tmp_path)
+    transformer = ZImageStreamSupport.saved_tiny_transformer(tmp_path)
     small = SimpleNamespace(layers=["untouched"])
     model = SimpleNamespace(small_text_encoder=True, text_encoder=small, transformer=transformer)
     ZImageInitializer._apply_ssd_stream(model, str(tmp_path), ZImageNoTextEncoderWeightDefinition)
