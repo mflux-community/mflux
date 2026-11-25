@@ -73,7 +73,7 @@ class SenseNovaInitializer:
             )
         if not PathResolution._indexed_shards_present(root):
             raise FileNotFoundError(
-                f"{root} is missing shards listed in {index}; "
+                f"{index} in {root} cannot be read, has no weight map, or lists a shard that is missing; "
                 "the upstream checkpoint looks incomplete (copy the whole HuggingFace folder)."
             )
         return True
