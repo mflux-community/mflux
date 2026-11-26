@@ -72,9 +72,12 @@ class MetadataReader:
                         elif key == "creator":
                             end_tag = "</rdf:li>"
                         else:
-                            # Extract tag name from start_tag
-                            tag_name = start_tag.split(":")[1].rstrip(">")
-                            end_tag = f"</{start_tag.split(':')[0]}:{tag_name}>"
+                            # Turn the opening tag "<ns:name>" into its closing form
+                            # "</ns:name>". Splitting on ":" keeps the leading "<" in
+                            # the namespace part, so building the closing tag from the
+                            # pieces produced "</<ns:name>" and index() never found it,
+                            # which made the whole XMP read fail at <xmp:CreatorTool>.
+                            end_tag = "</" + start_tag[1:]
 
                         end_idx = xmp_data.index(end_tag, start_idx)
                         value = xmp_data[start_idx:end_idx]
