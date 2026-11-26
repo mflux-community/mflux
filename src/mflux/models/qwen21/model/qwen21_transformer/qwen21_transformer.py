@@ -273,7 +273,8 @@ class Qwen21Transformer(nn.Module):
             if len(cache) != len(self.transformer_blocks):
                 raise ValueError("Incomplete Qwen-Image-2.1 prefix cache.")
             x = self.img_in(hidden_states[:, -layout.target_tokens :])
-            target_mask = target_mask[layout.prefix_length :]
+            # the prefix is cached, so only target tokens remain: select_rows(None) broadcasts one row
+            target_mask = None
             rope = tuple(v[layout.prefix_length :] for v in rope)
         else:
             images = self.img_in(hidden_states)

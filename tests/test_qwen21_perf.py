@@ -1,15 +1,18 @@
+from types import SimpleNamespace
+
 import mlx.core as mx
 import pytest
 
 from mflux.models.common.config import ModelConfig
 from mflux.models.common.config.config import Config
-from mflux.models.qwen21.model.qwen21_transformer import qwen21_fused_kernels
+from mflux.models.qwen21.model.qwen21_transformer import qwen21_attention, qwen21_fused_kernels
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_attention import Qwen21Attention
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
     fused_qk_norm_rope,
     fused_qk_norm_rope_available,
 )
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen21Transformer
+from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block import Qwen21TransformerBlock
 
 
 @pytest.mark.fast
@@ -336,3 +339,104 @@ class TestTextPrefixCache:
         second = self._run(transformer, embedding, latents)
         assert len(transformer._text_caches) == 1
         assert mx.array_equal(first, second)
+
+
+@pytest.mark.fast
+class TestReferenceBlockFusion:
+    # The cached denoise pass of forward_reference: fused Q/K prologue, broadcast modulation rows and the
+    # compiled gated residual give the same values as the composed ops.
+    @pytest.mark.parametrize("head_dim", [64, 128])
+    def test_cached_attention_fused_prologue_is_bit_identical(self, head_dim, monkeypatch):
+        attention, x, rope, prefix = self._cached_attention(head_dim, mx.bfloat16)
+        calls = self._count_kernel_calls(monkeypatch)
+        fused, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        # the default configuration (norm weights in the projection dtype, eps = 1e-6) runs the kernel
+        assert calls == [1]
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        mx.eval(fused, composed)
+        assert fused.dtype == composed.dtype
+        assert mx.array_equal(fused, composed)
+
+    @pytest.mark.parametrize("head_dim", [64, 128])
+    def test_uncached_attention_fused_prologue_is_bit_identical(self, head_dim, monkeypatch):
+        attention, x, rope, _ = self._cached_attention(head_dim, mx.bfloat16)
+        # a text segment of 8 tokens, then 16 image tokens
+        layout = SimpleNamespace(segments=[(0, 8, True)], prefix_length=8)
+        calls = self._count_kernel_calls(monkeypatch)
+        fused, _ = attention.forward_reference(x, layout, rope, cached=None)
+        assert calls == [1]
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, layout, rope, cached=None)
+        mx.eval(fused, composed)
+        assert fused.dtype == composed.dtype
+        assert mx.array_equal(fused, composed)
+
+    def test_cached_attention_changed_eps_uses_composed_prologue(self, monkeypatch):
+        attention, x, rope, prefix = self._cached_attention(64, mx.bfloat16, scale=0.003)
+        attention.norm_q.eps = attention.norm_k.eps = 1e-3
+        calls = self._count_kernel_calls(monkeypatch)
+        actual, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        assert calls == [0]
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        mx.eval(actual, composed)
+        assert mx.array_equal(actual, composed)
+
+    def test_cached_attention_float32_norm_weights_use_composed_prologue(self, monkeypatch):
+        # bfloat16 projections with float32 norm weights: the composed path rounds the normalized Q/K to
+        # bfloat16 before RoPE, the kernel would rotate the float32 values
+        attention, x, rope, prefix = self._cached_attention(64, mx.float32)
+        calls = self._count_kernel_calls(monkeypatch)
+        actual, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        assert calls == [0]
+        attention.use_fused_prologue = False
+        composed, _ = attention.forward_reference(x, None, rope, cached=prefix)
+        mx.eval(actual, composed)
+        assert actual.dtype == composed.dtype
+        assert mx.array_equal(actual, composed)
+
+    def test_select_rows_without_mask_broadcasts_the_target_row(self):
+        value = mx.random.normal((5, 32)).astype(mx.bfloat16)
+        mask = mx.ones((7,), dtype=mx.bool_)
+        broadcast = Qwen21TransformerBlock.select_rows(value, None)
+        masked = Qwen21TransformerBlock.select_rows(value, mask)
+        assert mx.array_equal(mx.broadcast_to(broadcast, masked.shape), masked)
+
+    def test_gated_residual_matches_composed_ops(self):
+        x, gate, y = (mx.random.normal((1, 9, 32)).astype(mx.bfloat16) for _ in range(3))
+        assert mx.array_equal(Qwen21TransformerBlock.gated_residual(x, gate, y), x + mx.tanh(gate) * y)
+
+    @staticmethod
+    def _cached_attention(head_dim, norm_dtype, scale=1.0):
+        if not fused_qk_norm_rope_available(head_dim):
+            pytest.skip("fused Q/K norm + RoPE kernel unavailable")
+        mx.random.seed(0)
+        attention = Qwen21Attention(dim=2 * head_dim, num_heads=2, head_dim=head_dim)
+        attention.update(
+            {
+                "to_q": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+                "to_k": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+                "to_v": {"weight": mx.random.normal((2 * head_dim, 2 * head_dim)).astype(mx.bfloat16) / 16},
+            }
+        )
+        # the checkpoints store the Q/K norm weights in the same dtype as the projections (bfloat16)
+        attention.norm_q.weight = (1 + mx.random.normal((head_dim,)) / 8).astype(norm_dtype)
+        attention.norm_k.weight = (1 + mx.random.normal((head_dim,)) / 8).astype(norm_dtype)
+        x = (scale * mx.random.normal((1, 24, 2 * head_dim))).astype(mx.bfloat16)
+        angles = mx.arange(24 * head_dim // 2).reshape(24, head_dim // 2).astype(mx.float32) / 64
+        rope = (mx.cos(angles), mx.sin(angles))
+        prefix = tuple(mx.random.normal((1, 2, 8, head_dim)).astype(mx.bfloat16) for _ in range(2))
+        return attention, x, rope, prefix
+
+    @staticmethod
+    def _count_kernel_calls(monkeypatch):
+        calls = [0]
+        kernel = qwen21_attention.fused_qk_norm_rope
+
+        def counted(*args):
+            calls[0] += 1
+            return kernel(*args)
+
+        monkeypatch.setattr(qwen21_attention, "fused_qk_norm_rope", counted)
+        return calls
