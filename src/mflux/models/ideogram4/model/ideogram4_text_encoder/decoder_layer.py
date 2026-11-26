@@ -7,6 +7,8 @@ from mflux.models.ideogram4.model.ideogram4_text_encoder.feed_forward import Qwe
 
 
 class Qwen3VLDecoderLayer(nn.Module):
+    # The fp8 copy of common_models.qwen3_vl's decoder layer, built by the shared Qwen3TextEncoder.
+    # Text-only, so mrope_section is unused and there is no KV cache.
     def __init__(
         self,
         hidden_size: int,
@@ -17,8 +19,11 @@ class Qwen3VLDecoderLayer(nn.Module):
         rope_theta: float,
         rms_norm_eps: float,
         intermediate_size: int,
+        mrope_section: list[int] | None = None,
+        attention_bias: bool = False,
     ):
         super().__init__()
+        del mrope_section
         self.input_layernorm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
         self.self_attn = Qwen3VLAttention(
             hidden_size=hidden_size,
@@ -28,6 +33,7 @@ class Qwen3VLDecoderLayer(nn.Module):
             max_position_embeddings=max_position_embeddings,
             rope_theta=rope_theta,
             rms_norm_eps=rms_norm_eps,
+            attention_bias=attention_bias,
         )
         self.post_attention_layernorm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
         self.mlp = Qwen3VLMLP(
@@ -40,7 +46,7 @@ class Qwen3VLDecoderLayer(nn.Module):
         hidden_states: mx.array,
         attention_mask: mx.array | None = None,
         position_embeddings: tuple[mx.array, mx.array] | None = None,
-    ) -> mx.array:
+    ) -> tuple[mx.array, None]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states = self.self_attn(
@@ -52,4 +58,4 @@ class Qwen3VLDecoderLayer(nn.Module):
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
-        return residual + hidden_states
+        return residual + hidden_states, None

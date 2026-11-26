@@ -12,7 +12,8 @@ from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
 from mflux.models.ideogram4.ideogram4_initializer import Ideogram4Initializer
 from mflux.models.ideogram4.latent_creator import Ideogram4LatentCreator
 from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
-from mflux.models.ideogram4.model.ideogram4_text_encoder import Ideogram4PromptEncoder, Qwen3TextEncoder
+from mflux.models.ideogram4.model.ideogram4_text_encoder import Ideogram4PromptEncoder
+from mflux.models.ideogram4.model.ideogram4_text_encoder.text_encoder import Ideogram4TextEncoder
 from mflux.models.ideogram4.model.ideogram4_transformer import Ideogram4Transformer
 from mflux.models.ideogram4.weights import Ideogram4WeightDefinition
 from mflux.utils.apple_silicon import AppleSiliconUtil
@@ -23,7 +24,7 @@ from mflux.utils.image_util import ImageUtil
 
 class Ideogram4(nn.Module):
     vae: Flux2VAE
-    text_encoder: Qwen3TextEncoder | None
+    text_encoder: Ideogram4TextEncoder | None
     conditional_transformer: Ideogram4Transformer
     unconditional_transformer: Ideogram4Transformer
 
