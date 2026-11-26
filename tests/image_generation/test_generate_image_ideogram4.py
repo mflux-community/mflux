@@ -455,7 +455,7 @@ def test_ideogram4_qwen_taps_toy_shape() -> None:
     model.update(
         tree_map(
             lambda p: (
-                mx.random.randint(0, 255, p.shape).astype(p.dtype)
+                mx.random.randint(0, 127, p.shape).astype(p.dtype)  # fp8 bytes 0x7f and 0xff are NaN from MLX 0.32.3
                 if mx.issubdtype(p.dtype, mx.integer)
                 else (0.5 * mx.random.normal(p.shape)).astype(p.dtype)
             ),
@@ -476,6 +476,11 @@ def test_ideogram4_qwen_taps_toy_shape() -> None:
     mx.eval(embeds, expected, layer_major, wrong_index)
 
     assert embeds.shape == (1, 4, 16)
+    assert mx.all(mx.isfinite(embeds)).item()
+    # Without the layout argument the encoder defaults to Ideogram's interleaved layout
+    default_layout = model.get_prompt_embeds(ids, mask, (1, 2), position_ids=pos)
+    mx.eval(default_layout)
+    assert mx.array_equal(default_layout, embeds)
     assert mx.array_equal(embeds, expected)
     assert not mx.array_equal(embeds, layer_major)
     assert not mx.array_equal(embeds, wrong_index)

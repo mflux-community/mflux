@@ -1,3 +1,5 @@
+import mlx.core as mx
+
 from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.ideogram4.model.ideogram4_text_encoder.decoder_layer import Qwen3VLDecoderLayer
 
@@ -33,4 +35,22 @@ class Ideogram4TextEncoder(Qwen3TextEncoder):
             rms_norm_eps=rms_norm_eps,
             head_dim=head_dim,
             decoder_layer_class=Qwen3VLDecoderLayer,
+        )
+
+    def get_prompt_embeds(
+        self,
+        input_ids: mx.array,
+        attention_mask: mx.array | None = None,
+        hidden_state_layers: tuple[int, ...] = HIDDEN_STATE_LAYERS,
+        position_ids: mx.array | None = None,
+        interleave_layers: bool = True,
+    ) -> mx.array:
+        # Same arguments as Qwen3TextEncoder.get_prompt_embeds, with Ideogram's taps and interleaved layout as defaults.
+        # Before this class, position_ids was the third positional argument; pass it by keyword.
+        return super().get_prompt_embeds(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            hidden_state_layers=hidden_state_layers,
+            position_ids=position_ids,
+            interleave_layers=interleave_layers,
         )

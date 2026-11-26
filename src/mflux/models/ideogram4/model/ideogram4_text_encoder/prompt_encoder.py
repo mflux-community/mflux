@@ -6,7 +6,6 @@ import mlx.core as mx
 import numpy as np
 
 from mflux.models.common.tokenizer import Tokenizer
-from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_encoder import Qwen3TextEncoder
 from mflux.models.ideogram4.model.ideogram4_text_encoder.caption import Ideogram4Caption
 from mflux.models.ideogram4.model.ideogram4_text_encoder.text_encoder import Ideogram4TextEncoder
 
@@ -91,7 +90,7 @@ class Ideogram4PromptEncoder:
         width: int,
         height: int,
         inputs: dict[str, Any],
-        text_encoder: Qwen3TextEncoder | None,
+        text_encoder: Ideogram4TextEncoder | None,
         prompt_cache: dict[tuple[str, int, int], mx.array],
     ) -> mx.array:
         cache_key = (prompt, width, height)
