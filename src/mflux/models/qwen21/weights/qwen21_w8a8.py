@@ -94,7 +94,8 @@ class Qwen21W8A8:
 
     @staticmethod
     def _check_quant(weights: dict) -> None:
-        for key in [k for k in weights if k.endswith(".comfy_quant")]:
+        quant_keys = [k for k in weights if k.endswith(".comfy_quant")]
+        for key in quant_keys:
             config = json.loads(bytes(memoryview(weights.pop(key).astype(mx.uint8))).decode())
             # e.g. {"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}
             if (
@@ -103,6 +104,19 @@ class Qwen21W8A8:
                 or int(config.get("convrot_groupsize", 0)) != GROUP
             ):
                 raise ValueError(f"{key}: unsupported quantization {config}")
+        # W8A8Linear rotates the activations, so an int8 weight stored without the rotation would give x H W^T
+        # instead of x W^T without any error: every int8 weight needs its convrot entry.
+        int8 = [
+            key.removesuffix(".weight")
+            for key, value in weights.items()
+            if key.endswith(".weight") and value.dtype == mx.int8
+        ]
+        missing = sorted(f"{prefix}.comfy_quant" for prefix in int8 if f"{prefix}.comfy_quant" not in quant_keys)
+        if missing:
+            raise ValueError(
+                f"int8 weights without quantization metadata: missing {missing[:5]} ({len(missing)}); an int8_convrot "
+                f'file stores e.g. {{"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": {GROUP}}} there'
+            )
 
     @staticmethod
     def _same_kind(expected: mx.Dtype, found: mx.Dtype) -> bool:
