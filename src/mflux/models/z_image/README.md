@@ -230,6 +230,43 @@ Measured as a decode of saved latents, with only the VAE loaded. Test setup: App
 
 Before this change, `--low-ram` selected the tiled decode for Z-Image without a flag.
 
+## Streaming from the SSD (`--ssd-stream`)
+
+The bf16 Z-Image Turbo model is 20.5 GB, more than the RAM of many Macs. With `mflux-generate-z-image-turbo --ssd-stream`, the 36 text-encoder layers and the 34 transformer blocks (2 noise refiner, 2 context refiner, 30 main) run one at a time from the SSD. See [SSD streaming](../common/README.md#ssd-streaming---ssd-stream) for how it works and how to check that a run does not write to the SSD.
+
+Get the files. The model must be a `mflux-community` repo (or an `mflux-save` folder), because the streamer reads the saved layers by name:
+
+```sh
+hf download mflux-community/z-image-turbo-mflux-bf16   # 20.5 GB: text encoder 8.0, transformer 12.3, VAE 0.2
+```
+
+Run it:
+
+```sh
+mflux-generate-z-image-turbo \
+  --model mflux-community/z-image-turbo-mflux-bf16 \
+  --steps 8 --width 768 --height 1024 --seed 42 \
+  --ssd-stream --mlx-cache-limit-gb 0.256 \
+  --prompt "a fisherman mending a net on a foggy pier, a lighthouse behind him"
+```
+
+- `--ssd-stream` stops with an error, before it reads any weight, in these cases, because each one would otherwise give a wrong image without a message:
+  - with `-q`: the streamer installs the saved weights over the layers, and layers that `-q` has quantized need packed weights. To stream a quantized model, use one that is already quantized and do not add `-q`. Streaming a quantized model has not been run.
+  - with `--bake-lora` and a `--lora`: the streamer would install the saved weights over the baked ones and drop the LoRA. Z-Image bakes by default, so pass `--no-bake-lora` with a LoRA. A LoRA run this way stays in memory; it has not been run.
+  - with `--compute-precision`: the cast is applied to the layers at load, and the streamer then installs the saved weights uncast.
+- A model that was loaded with `ssd_stream=True` cannot be saved: `save_model` raises an error, because the idle layers are placeholders.
+- With `--small-text-encoder` the student encoder is loaded as usual and is not streamed; the transformer is.
+- The step is not compiled with `mx.compile` while streaming, because the streamer installs and removes each block's weights around the call.
+- Measured on an Apple M1 with 8 GiB and macOS 14.6.1, MLX 0.32.0, bf16, 768x1024, 8 steps, seed 42, no LoRA, two runs from the same command:
+
+  | Run | Time | SSD writes | Swap-outs | Peak footprint |
+  |---|---|---|---|---|
+  | 1 | 224.5 s | 19.5 MB | 0 | 2.22 GB |
+  | 2 | 220.4 s | 15.6 MB | 0 | 2.22 GB |
+
+  The SSD writes are about the idle level for a run of this length. The two images are identical pixel for pixel.
+- Not measured: a LoRA, a pre-quantized repo, other sizes, and chips newer than the M1.
+
 ## Training
 
 Use `mflux-train` with a training config that targets `z-image` or `z-image-turbo`. We automatically load the Z-Image Turbo training adapter ([ostris/zimage_turbo_training_adapter](https://huggingface.co/ostris/zimage_turbo_training_adapter)) only when training the turbo model; base Z-Image training does not use the assistant LoRA. You can start from the [example config](../common/training/_example/train.json). For the data/images folder layout, see the common training docs ([Training (LoRA)](../common/README.md#training-lora)).

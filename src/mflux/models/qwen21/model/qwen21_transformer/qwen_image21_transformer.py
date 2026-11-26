@@ -7,10 +7,11 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer import Qwen
 class StepCache:
     """First-block step skipping (FBCache-style) for the prefix-cached target pass.
 
-    The blocks after the first reuse the previous step's hidden state while a relative-L1
-    signal on the first block's output, accumulated over steps, stays under the threshold.
-    norm_out and proj_out always re-run with the current timestep, so skipped steps still
-    track the schedule. Use one instance per guidance branch.
+    While the accumulated relative-L1 change in the first block's output stays under the
+    threshold, the remaining blocks are skipped and their residual is extrapolated from the
+    last two full evaluations and added to the current first-block output. norm_out and
+    proj_out always re-run with the current timestep, so skipped steps still track the
+    schedule. Use one instance per guidance branch.
     """
 
     def __init__(self, threshold: float = 0.12) -> None:
@@ -18,17 +19,32 @@ class StepCache:
         self.hidden: mx.array | None = None
         self._signal: mx.array | None = None
         self._accumulated = 0.0
+        self._residual: mx.array | None = None
+        self._residual_slope: mx.array | None = None
+        self._steps_since_store = 0
 
     def should_skip(self, signal: mx.array) -> bool:
-        if self._signal is None:
+        if self._signal is None or self._residual is None:
             return False
+        self._steps_since_store += 1
         self._accumulated += float(mx.mean(mx.abs(signal - self._signal)) / (mx.mean(mx.abs(signal)) + 1e-6))
         if self._accumulated < self.threshold:
+            residual = self._residual
+            if self._residual_slope is not None:
+                residual = residual + self._steps_since_store * self._residual_slope
+            self.hidden = (signal.astype(mx.float32) + residual).astype(signal.dtype)
             return True
         self._accumulated = 0.0
         return False
 
     def store(self, hidden: mx.array, signal: mx.array) -> None:
+        residual = hidden.astype(mx.float32) - signal.astype(mx.float32)
+        if self._residual is not None and self._steps_since_store:
+            self._residual_slope = (residual - self._residual) / self._steps_since_store
+        else:
+            self._residual_slope = None
+        self._residual = residual
+        self._steps_since_store = 0
         self.hidden = hidden
         self._signal = signal
 

@@ -39,6 +39,7 @@ def build_parser() -> CommandLineParser:
     parser.add_image_generator_arguments(supports_metadata_config=True)
     parser.add_step_cache_arguments()
     parser.add_ssd_stream_arguments()
+    parser.add_stream_lora_arguments()
     parser.add_argument("--uncond-skip-layers", type=int, nargs="*", default=None, metavar="LAYER", help=f"Zero-based transformer layers that the negative CFG branch skips. Pass the flag with no values to skip no layer. Default: {' '.join(map(str, DEFAULT_UNCOND_SKIP_LAYERS))}.")  # fmt: off
     parser.add_output_arguments()
     parser.set_defaults(guidance=DEFAULT_GUIDANCE)
@@ -81,6 +82,7 @@ class MOSSImageCommand:
             quantize=args.quantize,
             model_path=args.model_path,
             ssd_stream=args.ssd_stream,
+            stream_lora=args.stream_lora,
             **lora_init_kwargs_from_args(args),
         )
 

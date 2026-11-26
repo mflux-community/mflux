@@ -28,6 +28,7 @@ class ZImage(nn.Module):
     vae: VAE
     text_encoder: TextEncoder | ZImageSmallTextEncoder
     small_text_encoder: bool = False
+    ssd_stream: bool = False
     transformer: ZImageTransformer
 
     def __init__(
@@ -41,6 +42,7 @@ class ZImage(nn.Module):
         float32: bool = False,
         compute_precision: mx.Dtype | None = None,
         small_text_encoder: bool = False,
+        ssd_stream: bool = False,
     ):
         super().__init__()
         ZImageInitializer.init(
@@ -54,6 +56,7 @@ class ZImage(nn.Module):
             float32=float32,
             compute_precision=compute_precision,
             small_text_encoder=small_text_encoder,
+            ssd_stream=ssd_stream,
         )
 
     def generate_image(
@@ -112,7 +115,8 @@ class ZImage(nn.Module):
         # 3. Create callback context and call before_loop
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(latents)
-        predict = self._predict(self.transformer)
+        # A compiled trace would not see the weights the streamer installs and removes around each block.
+        predict = self._predict(self.transformer, compile_predict=not self.ssd_stream)
 
         for t in config.time_steps:
             try:
@@ -227,6 +231,9 @@ class ZImage(nn.Module):
                 "save_model() is not supported with small_text_encoder: it would write the Qwen3-1.7B student "
                 "where Z-Image's Qwen3-4B text encoder belongs. Build the model without it to save it."
             )
+        if self.ssd_stream:
+            # The streamed layers are placeholders between calls, so a save would write a checkpoint without them.
+            raise ValueError("A model loaded with ssd_stream=True cannot be saved. Load it without --ssd-stream.")
         ModelSaver.save_model(
             model=self,
             bits=self.bits,
@@ -235,7 +242,7 @@ class ZImage(nn.Module):
         )
 
     @staticmethod
-    def _predict(transformer: ZImageTransformer):
+    def _predict(transformer: ZImageTransformer, compile_predict: bool = True):
         def predict(
             latents: mx.array,
             timestep: mx.array,
@@ -260,6 +267,6 @@ class ZImage(nn.Module):
             )
             return noise + guidance * (noise - negative_noise)
 
-        if AppleSiliconUtil.is_m1_or_m2():
+        if not compile_predict or AppleSiliconUtil.is_m1_or_m2():
             return predict
         return mx.compile(predict)
