@@ -1,8 +1,6 @@
 import mlx.core as mx
 from mlx import nn
 
-from mflux.models.common.config import ModelConfig
-
 
 class Attention3D(nn.Module):
     def __init__(self, channels: int):
@@ -15,12 +13,13 @@ class Attention3D(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         B, C, T, H, W = x.shape
+        dtype = x.dtype
         residual = x
         x = x.transpose(0, 2, 1, 3, 4)
         x = x.reshape(B * T, C, H * W)
         x = x.transpose(0, 2, 1)
 
-        x = self.group_norm(x.astype(mx.float32)).astype(ModelConfig.precision)
+        x = self.group_norm(x.astype(mx.float32)).astype(dtype)
 
         q = self.to_q(x)
         k = self.to_k(x)
