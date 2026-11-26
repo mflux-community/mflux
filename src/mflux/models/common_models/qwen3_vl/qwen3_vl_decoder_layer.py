@@ -1,3 +1,5 @@
+from typing import Callable
+
 import mlx.core as mx
 from mlx import nn
 
@@ -19,6 +21,7 @@ class Qwen3VLDecoderLayer(nn.Module):
         attention_bias: bool,
         rms_norm_eps: float,
         intermediate_size: int,
+        linear_class: Callable[..., nn.Module] = nn.Linear,
     ):
         super().__init__()
         self.input_layernorm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
@@ -32,11 +35,13 @@ class Qwen3VLDecoderLayer(nn.Module):
             mrope_section=mrope_section,
             attention_bias=attention_bias,
             rms_norm_eps=rms_norm_eps,
+            linear_class=linear_class,
         )
         self.post_attention_layernorm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
         self.mlp = Qwen3VLMLP(
             hidden_size=hidden_size,
             intermediate_size=intermediate_size,
+            linear_class=linear_class,
         )
 
     def __call__(

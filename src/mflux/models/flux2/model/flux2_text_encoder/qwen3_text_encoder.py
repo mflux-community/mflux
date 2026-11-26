@@ -9,8 +9,7 @@ from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_rotary_embedding imp
 
 
 class Qwen3TextEncoder(nn.Module):
-    # decoder_layer_class builds each layer. Ideogram 4 passes its fp8 decoder layer; the layer returns
-    # (hidden_states, cache) and takes (hidden_states, attention_mask, position_embeddings).
+    # linear_class builds every projection in the decoder layers. Ideogram 4 passes Fp8Linear.
     def __init__(
         self,
         vocab_size: int = 151936,
@@ -27,7 +26,7 @@ class Qwen3TextEncoder(nn.Module):
         mrope_section: list[int] | None = None,
         attention_scaling: float = 1.0,
         layer_shapes: list[dict[str, int]] | None = None,
-        decoder_layer_class: Callable[..., nn.Module] = Qwen3VLDecoderLayer,
+        linear_class: Callable[..., nn.Module] = nn.Linear,
     ):
         super().__init__()
         self.vocab_size = vocab_size
@@ -39,7 +38,7 @@ class Qwen3TextEncoder(nn.Module):
         if len(shapes) != num_hidden_layers:
             raise ValueError(f"layer_shapes has {len(shapes)} entries for {num_hidden_layers} layers.")
         self.layers = [
-            decoder_layer_class(
+            Qwen3VLDecoderLayer(
                 hidden_size=hidden_size,
                 num_attention_heads=shape.get("num_attention_heads", num_attention_heads),
                 num_key_value_heads=shape.get("num_key_value_heads", num_key_value_heads),
@@ -50,6 +49,7 @@ class Qwen3TextEncoder(nn.Module):
                 attention_bias=attention_bias,
                 rms_norm_eps=rms_norm_eps,
                 intermediate_size=shape.get("intermediate_size", intermediate_size),
+                linear_class=linear_class,
             )
             for shape in shapes
         ]
@@ -109,7 +109,12 @@ class Qwen3TextEncoder(nn.Module):
         # Match HF behavior: include embedding output as the first hidden state.
         hidden_states_list = [hidden_states] if output_hidden_states else None
         for layer in self.layers:
-            hidden_states, _ = layer(hidden_states, attention_mask_4d, position_embeddings)
+            hidden_states, _ = layer(
+                hidden_states,
+                attention_mask_4d,
+                position_embeddings,
+                past_key_value=None,
+            )
             if output_hidden_states:
                 hidden_states_list.append(hidden_states)
 

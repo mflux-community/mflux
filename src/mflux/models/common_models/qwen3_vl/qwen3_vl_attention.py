@@ -1,4 +1,5 @@
 import math
+from typing import Callable
 
 import mlx.core as mx
 from mlx import nn
@@ -21,6 +22,7 @@ class Qwen3VLAttention(nn.Module):
         mrope_section: list[int] | None = None,
         attention_bias: bool = False,
         rms_norm_eps: float = 1e-6,
+        linear_class: Callable[..., nn.Module] = nn.Linear,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -29,10 +31,10 @@ class Qwen3VLAttention(nn.Module):
         self.head_dim = head_dim
         self.num_key_value_groups = num_attention_heads // num_key_value_heads
         self.scaling = 1.0 / math.sqrt(self.head_dim)
-        self.q_proj = nn.Linear(hidden_size, num_attention_heads * head_dim, bias=attention_bias)
-        self.k_proj = nn.Linear(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
-        self.v_proj = nn.Linear(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
-        self.o_proj = nn.Linear(num_attention_heads * head_dim, hidden_size, bias=attention_bias)
+        self.q_proj = linear_class(hidden_size, num_attention_heads * head_dim, bias=attention_bias)
+        self.k_proj = linear_class(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
+        self.v_proj = linear_class(hidden_size, num_key_value_heads * head_dim, bias=attention_bias)
+        self.o_proj = linear_class(num_attention_heads * head_dim, hidden_size, bias=attention_bias)
         self.q_norm = Qwen3VLRMSNorm(head_dim, eps=rms_norm_eps)
         self.k_norm = Qwen3VLRMSNorm(head_dim, eps=rms_norm_eps)
         self.mrope_section = mrope_section or [24, 20, 20]
