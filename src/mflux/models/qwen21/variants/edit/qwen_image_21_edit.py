@@ -205,6 +205,8 @@ class QwenImage21Edit(nn.Module):
         negative_step_cache = (
             StepCache(step_cache_threshold) if step_cache is not None and negative is not None else None
         )
+        # Encode the references and the negative prompt before the loop, not inside step 1's peak (#1003).
+        mx.eval([a for a in (condition_latents, negative[0] if negative else None) if a is not None])
         ctx = self.callbacks.start(seed=seed, prompt=prompt, config=config)
         ctx.before_loop(latents)
         with self.transformer.inference_projections():
