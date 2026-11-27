@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import subprocess
 
 from mflux.callbacks.instances.battery_saver import BatterySaver
 from mflux.utils.exceptions import StopImageGenerationException
@@ -72,3 +73,27 @@ def test_battery_saver_equal_to_limit():
 
         # Check the exception message contains the correct limit and percentage
         assert "10%" in str(excinfo.value)
+
+
+@pytest.mark.fast
+def test_get_machine_model_handles_system_profiler_timeout():
+    """system_profiler can hang on some Macs (e.g. Mac Studio). The timeout
+    ensures mflux proceeds instead of blocking forever."""
+    # Reset the cached class attribute so the method actually runs
+    BatterySaver._machine_model = None
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="system_profiler", timeout=10)):
+        model = BatterySaver._get_machine_model()
+        assert model == "Unknown"
+    BatterySaver._machine_model = None  # clean up for other tests
+
+
+@pytest.mark.fast
+def test_get_battery_percentage_handles_pmset_timeout():
+    """pmset can also hang; the timeout ensures graceful degradation."""
+    with (
+        patch.object(BatterySaver, "_is_machine_battery_powered", return_value=True),
+        patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="pmset", timeout=5)),
+    ):
+        battery_saver = BatterySaver()
+        percentage = battery_saver._get_battery_percentage()
+        assert percentage is None
