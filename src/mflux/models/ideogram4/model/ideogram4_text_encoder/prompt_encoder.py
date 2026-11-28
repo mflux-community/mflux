@@ -7,7 +7,7 @@ import numpy as np
 
 from mflux.models.common.tokenizer import Tokenizer
 from mflux.models.ideogram4.model.ideogram4_text_encoder.caption import Ideogram4Caption
-from mflux.models.ideogram4.model.ideogram4_text_encoder.text_encoder import Qwen3TextEncoder
+from mflux.models.ideogram4.model.ideogram4_text_encoder.text_encoder import Ideogram4TextEncoder
 
 
 class Ideogram4PromptEncoder:
@@ -90,7 +90,7 @@ class Ideogram4PromptEncoder:
         width: int,
         height: int,
         inputs: dict[str, Any],
-        text_encoder: Qwen3TextEncoder | None,
+        text_encoder: Ideogram4TextEncoder | None,
         prompt_cache: dict[tuple[str, int, int], mx.array],
     ) -> mx.array:
         cache_key = (prompt, width, height)
@@ -101,9 +101,11 @@ class Ideogram4PromptEncoder:
         attention_mask = (inputs["indicator"] == 3).astype(mx.int32)
         pos_2d = inputs["text_position_ids"][:, :, 0]
         embeds = text_encoder.get_prompt_embeds(
-            inputs["token_ids"],
-            attention_mask,
-            pos_2d,
+            input_ids=inputs["token_ids"],
+            attention_mask=attention_mask,
+            hidden_state_layers=Ideogram4TextEncoder.HIDDEN_STATE_LAYERS,
+            position_ids=pos_2d,
+            interleave_layers=True,
         )
         embeds = embeds * attention_mask[..., None].astype(embeds.dtype)
         embeds = embeds.astype(mx.float32)

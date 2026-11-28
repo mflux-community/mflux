@@ -62,6 +62,17 @@ def test_w8a8_linear_matches_the_float_projection(backend):
 
 
 @pytest.mark.fast
+@pytest.mark.parametrize("width", [256, 768])
+def test_w8a8_linear_rejects_another_input_width(backend, width):
+    # The kernel takes its K from the input: a narrower or wider row would read the weight with the wrong stride.
+    layer = W8A8Linear(512, 384)
+    with pytest.raises(ValueError, match=r"input width .* does not match the weight \(384, 512\)"):
+        layer(mx.zeros((1, width), dtype=mx.bfloat16))
+    with pytest.raises(ValueError, match="does not match the weight"):
+        W8A8Linear.fused(mx.zeros((2, 3, width), dtype=mx.bfloat16), (layer.weight, layer.scale, [384]))
+
+
+@pytest.mark.fast
 @pytest.mark.parametrize("rows", [1, 14, 77, 129])
 @pytest.mark.parametrize("out", [64, 96, 200, 384])
 def test_gemm_partial_tiles_match_the_integer_product(rows, out):
@@ -151,6 +162,19 @@ def test_load_rejects_another_quantization(tmp_path):
         str(path), {"transformer_blocks.0.attn.to_q.comfy_quant": mx.array(np.frombuffer(bad.encode(), np.uint8))}
     )
     with pytest.raises(ValueError, match="unsupported quantization"):
+        Qwen21W8A8.load(model, path)
+
+
+@pytest.mark.fast
+@pytest.mark.parametrize("prefix", ["transformer_blocks.1.attn.to_k", "transformer_blocks.0.img_mlp.gate_up"])
+def test_load_rejects_an_int8_weight_without_convrot_metadata(tmp_path, prefix):
+    # The activations are rotated at run time, so an unrotated int8 weight would silently give x H W^T.
+    path, stored = write_int8_convrot(tmp_path, QwenImage21Transformer(TINY))
+    del stored[prefix + ".comfy_quant"]
+    mx.save_safetensors(str(path), stored)
+    model = QwenImage21Transformer(TINY)
+    Qwen21W8A8.convert(model)
+    with pytest.raises(ValueError, match=rf"without quantization metadata: missing \['{prefix}\.comfy_quant'\] \(1\)"):
         Qwen21W8A8.load(model, path)
 
 

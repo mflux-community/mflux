@@ -16,7 +16,13 @@ DEFAULT_MODEL = "qwen-image-2.1"
 # Same architecture as the default model. The Turbo checkpoint brings its own schedule.
 FAMILY_MODELS = ("qwen-image-2.1-turbo",)
 IGNORED_OPTIONS = {"--lora-style": "Named LoRA styles are only supported by the Flux in-context CLI; use --lora."}
-CONDITIONAL_OPTIONS = qwen21_vae_options.CONDITIONAL_TILING
+CONDITIONAL_OPTIONS = {
+    **qwen21_vae_options.CONDITIONAL_TILING,
+    "--ssd-stream": {
+        "condition": "a bf16 or pre-quantized checkpoint (the original repo or an mflux-save folder), without -q, MFLUX_QWEN21_W8A8 or --bake-lora with a LoRA",
+        "reason": "the other combinations exit with an error before a weight is read. With --ssd-stream a LoRA stays a runtime layer unless --bake-lora is given.",
+    },
+}
 
 
 def build_parser() -> CommandLineParser:
@@ -31,6 +37,7 @@ def build_parser() -> CommandLineParser:
     parser.add_vae_full_precision_arguments(help=qwen21_vae_options.FULL_PRECISION_HELP)
     parser.add_output_arguments()
     parser.add_step_cache_arguments()
+    parser.add_ssd_stream_arguments()
     return parser
 
 
@@ -50,13 +57,18 @@ def main():
     )
     Qwen21TurboScheduler.check_args(parser, args, model_config)
 
+    lora_kwargs = lora_init_kwargs_from_args(args)
+    if args.ssd_stream and not CommandLineParser._option_was_provided("--bake-lora", "--no-bake-lora"):
+        # The streamer installs the saved weights over the layers and would drop a baked LoRA: keep it a runtime layer.
+        lora_kwargs["bake_lora"] = False
     qwen = QwenImage21(
         quantize=args.quantize,
         model_path=args.model_path,
         model_config=model_config,
         compute_precision=ComputePrecision.dtype_for(args.compute_precision),
         small_text_encoder=args.small_text_encoder,
-        **lora_init_kwargs_from_args(args),
+        ssd_stream=args.ssd_stream,
+        **lora_kwargs,
     )
     VAEDecodeOptions.apply(args, qwen)
 

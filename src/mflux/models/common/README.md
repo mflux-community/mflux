@@ -22,6 +22,7 @@ This README covers stable, shared patterns. For model-specific usage, see each m
 - [Float16 compute (Apple M1 family)](#float16-compute-apple-m1-family)
 - [Resource and inspection options](#resource-and-inspection-options)
 - [MLX cache limit](#mlx-cache-limit)
+- [SSD streaming (`--ssd-stream`)](#ssd-streaming---ssd-stream)
 - [Cache locations](#cache-locations)
 - [Capabilities by task](#capabilities-by-task)
 - [Command reference](#command-reference)
@@ -756,6 +757,31 @@ mflux-generate-z-image-turbo \
 - Value must be positive (`> 0`).
 - The value is converted internally using decimal gigabytes (`GB * 1000^3`).
 - Works in both normal mode and `--low-ram` mode.
+
+---
+
+## SSD streaming (`--ssd-stream`)
+
+`--ssd-stream` is for Macs whose RAM is smaller than the model. It keeps only the layer that is running in memory. Each layer is read from the model's saved shards on the SSD just before it runs, the next layer is read while the current one computes, and the layer is dropped after it runs. Without it mflux holds the layers it has used until the run ends, so a model larger than RAM is paged to the swap file, which writes to the SSD.
+
+- It reads raw tensors by their saved names. The names must match the layers of the model: an `mflux-save` folder and a `mflux-community` repo always match. Some original repos match too (Qwen-Image-2.1); others do not (MOSS-Image). The streamer takes the names from the `*.safetensors.index.json` file of a component, or from the headers of its safetensors files when there is no index.
+- Streaming reads the whole model from the SSD at every step, so it needs a fast internal SSD.
+- It is a separate option from `--low-ram`. Use `--mlx-cache-limit-gb` for a cache limit. Without a cache limit, the MLX cache keeps the buffers of the layers that ran, and the peak memory does not go down.
+- MOSS-Image (`mflux-generate-moss-image`), Z-Image Turbo (`mflux-generate-z-image-turbo`) and Qwen-Image-2.1 text to image (`mflux-generate-qwen-2.1`) support it. The argument helper (`add_ssd_stream_arguments`) and the streamer (`ssd_stream/streamer.py`) are shared. Each model README lists what it supports, what it rejects and what it ignores: [MOSS-Image](../moss_image/README.md#streaming-from-the-ssd---ssd-stream), [Z-Image](../z_image/README.md#streaming-from-the-ssd---ssd-stream), [Qwen-Image-2.1](../qwen21/README.md#streaming-from-the-ssd---ssd-stream).
+- `--stream-lora` (with `--ssd-stream`, MOSS-Image only) also keeps one LoRA file on the SSD and reads each block's part of it just before the block runs, so the whole LoRA is not resident.
+- A model that is streamed cannot be saved with `save_model` (it raises an error), because the idle layers are placeholders.
+
+### Checking that a run does not wear the SSD
+
+Swap writes are what wear the SSD, and a run that fits in RAM writes almost nothing. Read three counters before and after a run and subtract:
+
+```sh
+ioreg -c IOBlockStorageDriver -r -w0 | awk '/^\+-o/{match($0,/id 0x[0-9a-f]+/); print "driver " substr($0,RSTART,RLENGTH)} match($0,/"Bytes \(Write\)"=[0-9]+/){print "  " substr($0,RSTART,RLENGTH)}'   # bytes written, a running total per driver
+vm_stat | grep Swapouts                                                     # pages written to swap (16 KB each on Apple silicon)
+sysctl vm.swapusage                                                         # swap file in use
+```
+
+`ioreg` prints one counter for each storage driver, under the driver's id. With external drives attached there are several: read the counters before and after the run, and use the one that moves during the run. The counter covers every process on the machine, so close other apps first. An idle machine wrote about 8 MB per 90 s on one M1 with 8 GiB. If a run writes far more than that, or `Swapouts` rises, the model is paging: close other apps, lower the resolution, or stop the run.
 
 ---
 

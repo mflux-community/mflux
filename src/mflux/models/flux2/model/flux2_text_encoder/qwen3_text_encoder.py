@@ -1,3 +1,5 @@
+from typing import Callable
+
 import mlx.core as mx
 from mlx import nn
 
@@ -7,6 +9,7 @@ from mflux.models.flux2.model.flux2_text_encoder.qwen3_text_rotary_embedding imp
 
 
 class Qwen3TextEncoder(nn.Module):
+    # linear_class builds every projection in the decoder layers. Ideogram 4 passes Fp8Linear.
     def __init__(
         self,
         vocab_size: int = 151936,
@@ -22,26 +25,33 @@ class Qwen3TextEncoder(nn.Module):
         attention_bias: bool = False,
         mrope_section: list[int] | None = None,
         attention_scaling: float = 1.0,
+        layer_shapes: list[dict[str, int]] | None = None,
+        linear_class: Callable[..., nn.Module] = nn.Linear,
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
+        # Optional per-layer overrides of num_attention_heads, num_key_value_heads and intermediate_size (pruned encoders).
+        shapes = layer_shapes if layer_shapes is not None else [{}] * num_hidden_layers
+        if len(shapes) != num_hidden_layers:
+            raise ValueError(f"layer_shapes has {len(shapes)} entries for {num_hidden_layers} layers.")
         self.layers = [
             Qwen3VLDecoderLayer(
                 hidden_size=hidden_size,
-                num_attention_heads=num_attention_heads,
-                num_key_value_heads=num_key_value_heads,
+                num_attention_heads=shape.get("num_attention_heads", num_attention_heads),
+                num_key_value_heads=shape.get("num_key_value_heads", num_key_value_heads),
                 head_dim=head_dim,
                 max_position_embeddings=max_position_embeddings,
                 rope_theta=rope_theta,
                 mrope_section=None,
                 attention_bias=attention_bias,
                 rms_norm_eps=rms_norm_eps,
-                intermediate_size=intermediate_size,
+                intermediate_size=shape.get("intermediate_size", intermediate_size),
+                linear_class=linear_class,
             )
-            for _ in range(num_hidden_layers)
+            for shape in shapes
         ]
         self.norm = Qwen3VLRMSNorm(hidden_size, eps=rms_norm_eps)
         self.rotary_emb = Qwen3TextRotaryEmbedding(
@@ -117,6 +127,7 @@ class Qwen3TextEncoder(nn.Module):
         attention_mask: mx.array | None = None,
         hidden_state_layers: tuple[int, ...] = (9, 18, 27),
         position_ids: mx.array | None = None,
+        interleave_layers: bool = False,
     ) -> mx.array:
         _, hidden_states_list = self(
             input_ids=input_ids,
@@ -128,5 +139,8 @@ class Qwen3TextEncoder(nn.Module):
             raise RuntimeError("Hidden states not available for prompt embedding.")
         stacked = mx.stack([hidden_states_list[i] for i in hidden_state_layers], axis=1)
         batch_size, num_layers, seq_len, hidden_dim = stacked.shape
+        if interleave_layers:
+            # Ideogram 4 layout: the layers are the innermost axis, feature index = h * num_layers + layer.
+            return mx.transpose(stacked, (0, 2, 3, 1)).reshape(batch_size, seq_len, hidden_dim * num_layers)
         prompt_embeds = mx.transpose(stacked, (0, 2, 1, 3)).reshape(batch_size, seq_len, num_layers * hidden_dim)
         return prompt_embeds

@@ -41,11 +41,16 @@ class Flux2KVCache:
     def store_reference(self, stream: StreamType, layer_idx: int | None, key: mx.array, value: mx.array) -> None:
         if not self.is_extracting:
             return
-        # mflux uses [txt, target, ref], so reference tokens are the trailing slice.
+        # mflux uses [txt, target, ref], so reference tokens are the trailing slice. Copy them, so the cache
+        # does not keep each layer's full K/V buffer alive as a view (#1003).
         self._slots(stream)[self._layer_idx(layer_idx)] = (
-            key[:, :, -self.num_ref_tokens :, :],
-            value[:, :, -self.num_ref_tokens :, :],
+            mx.contiguous(key[:, :, -self.num_ref_tokens :, :]),
+            mx.contiguous(value[:, :, -self.num_ref_tokens :, :]),
         )
+
+    def arrays(self) -> list[mx.array]:
+        # The stored reference K/V of every layer, for evaluating the cache right after the extract step.
+        return [array for slot in (*self._double, *self._single) if slot is not None for array in slot]
 
     def append_reference(
         self,
