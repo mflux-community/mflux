@@ -105,14 +105,17 @@ class ZImageTransformer(nn.Module):
         x_emb = self.all_x_embedder[key](x_emb)
         x_emb = mx.where(x_pad_mask[:, None], self.x_pad_token, x_emb)
         x_freqs_cis = self.rope_embedder(x_pos_ids)
-        x_attn_mask = mx.ones((1, x_emb.shape[0]), dtype=mx.bool_)
         x_emb = mx.expand_dims(x_emb, axis=0)
 
+        # No attention mask: the pad tokens above and below get the pad token embedding and then
+        # attend and are attended to, so every mask here was all-True. attention.py turns an
+        # all-True mask into an all-zero additive one, which SDPA reads for nothing.
+        #
         # Noise refiner
         for layer in self.noise_refiner:
             x_emb = layer(
                 x=x_emb,
-                attn_mask=x_attn_mask,
+                attn_mask=None,
                 freqs_cis=x_freqs_cis,
                 t_emb=t_emb,
             )
@@ -121,14 +124,13 @@ class ZImageTransformer(nn.Module):
         cap_emb = self.cap_embedder[1](self.cap_embedder[0](cap_emb))
         cap_emb = mx.where(cap_pad_mask[:, None], self.cap_pad_token, cap_emb)
         cap_freqs_cis = self.rope_embedder(cap_pos_ids)
-        cap_attn_mask = mx.ones((1, cap_emb.shape[0]), dtype=mx.bool_)
         cap_emb = mx.expand_dims(cap_emb, axis=0)
 
         # Context refiner
         for layer in self.context_refiner:
             cap_emb = layer(
                 x=cap_emb,
-                attn_mask=cap_attn_mask,
+                attn_mask=None,
                 freqs_cis=cap_freqs_cis,
             )
 
@@ -136,7 +138,6 @@ class ZImageTransformer(nn.Module):
         x_len = x_emb.shape[1]
         unified = mx.concatenate([x_emb, cap_emb], axis=1)
         unified_freqs_cis = mx.concatenate([x_freqs_cis, cap_freqs_cis], axis=0)
-        unified_attn_mask = mx.ones((1, unified.shape[1]), dtype=mx.bool_)
 
         # Optional gradient checkpointing (see Krea2Transformer); the training adapter turns it on.
         gradient_checkpointing = getattr(self, "gradient_checkpointing", False)
@@ -144,7 +145,7 @@ class ZImageTransformer(nn.Module):
             run = nn.utils.checkpoint(layer) if gradient_checkpointing else layer
             unified = run(
                 x=unified,
-                attn_mask=unified_attn_mask,
+                attn_mask=None,
                 freqs_cis=unified_freqs_cis,
                 t_emb=t_emb,
             )
