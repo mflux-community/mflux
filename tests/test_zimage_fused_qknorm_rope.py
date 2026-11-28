@@ -1,6 +1,7 @@
 import mlx.core as mx
 import pytest
 
+from mflux.models.qwen21.model.qwen21_transformer import qwen21_fused_kernels
 from mflux.models.qwen21.model.qwen21_transformer.qwen21_fused_kernels import (
     fused_qk_norm_rope,
     fused_qk_norm_rope_available,
@@ -90,3 +91,20 @@ class TestZImageFusedQkNormRope:
     def test_disable_env_falls_back(self, monkeypatch):
         monkeypatch.setenv(ZImageAttention.DISABLE_FUSED_ENV, "1")
         assert not fused_qk_norm_rope_available(HEAD_DIM, 1e-5, ZImageAttention.DISABLE_FUSED_ENV)
+
+    def test_failed_eps_kernel_does_not_disable_the_default_kernel(self, monkeypatch):
+        self._require_kernel(1e-6)
+        monkeypatch.delenv(ZImageAttention.DISABLE_FUSED_ENV, raising=False)
+        monkeypatch.setattr(qwen21_fused_kernels, "_fused_qk_norm_rope_unavailable", False)
+        monkeypatch.setattr(qwen21_fused_kernels, "_fused_qk_norm_rope_unavailable_eps", set())
+        monkeypatch.setattr(qwen21_fused_kernels, "_fused_qk_norm_rope_kernels", {})
+        real = mx.fast.metal_kernel
+
+        def failing_for_eps(**kwargs):
+            if kwargs["name"] != "fused_qk_norm_rope":
+                raise RuntimeError("unsupported")
+            return real(**kwargs)
+
+        monkeypatch.setattr(mx.fast, "metal_kernel", failing_for_eps)
+        assert not fused_qk_norm_rope_available(HEAD_DIM, 1e-5, ZImageAttention.DISABLE_FUSED_ENV)
+        assert fused_qk_norm_rope_available(HEAD_DIM, 1e-6, ZImageAttention.DISABLE_FUSED_ENV)

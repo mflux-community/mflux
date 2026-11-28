@@ -73,15 +73,18 @@ _FUSED_QK_NORM_ROPE_SOURCE = """
 
 _fused_qk_norm_rope_kernels: dict[float, object] = {}
 _fused_qk_norm_rope_kernel = None  # eps 1e-6 kernel, kept for the Qwen tests
-_fused_qk_norm_rope_unavailable = False
+_fused_qk_norm_rope_unavailable = False  # eps 1e-6 kernel only
+_fused_qk_norm_rope_unavailable_eps: set[float] = set()  # other eps values, so one failure stays separate
 
 
 def _get_kernel(eps: float = 1e-6):
     global _fused_qk_norm_rope_kernel, _fused_qk_norm_rope_unavailable
     eps = float(eps)  # an int such as 0 would render as the invalid Metal literal "0f"
-    if _fused_qk_norm_rope_unavailable or not mx.metal.is_available() or mx.default_device() != mx.gpu:
+    if not mx.metal.is_available() or mx.default_device() != mx.gpu:
         return None
     if eps != 1e-6:
+        if eps in _fused_qk_norm_rope_unavailable_eps:
+            return None
         kernel = _fused_qk_norm_rope_kernels.get(eps)
         if kernel is None:
             try:
@@ -94,10 +97,12 @@ def _get_kernel(eps: float = 1e-6):
                     compile_options={"math_mode": "safe"},
                 )
             except (RuntimeError, ValueError):
-                _fused_qk_norm_rope_unavailable = True
+                _fused_qk_norm_rope_unavailable_eps.add(eps)
                 return None
             _fused_qk_norm_rope_kernels[eps] = kernel
         return kernel
+    if _fused_qk_norm_rope_unavailable:
+        return None
     if _fused_qk_norm_rope_kernel is None:
         try:
             _fused_qk_norm_rope_kernel = mx.fast.metal_kernel(
