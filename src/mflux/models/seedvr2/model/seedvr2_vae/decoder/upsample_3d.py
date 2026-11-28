@@ -36,13 +36,20 @@ class Upsample3D(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         B, C, T, H, W = x.shape
-        x = self.upscale_conv(x)
         sf = self.spatial_factor
         tf = self.temporal_factor
+        if T == 1 and tf > 1:
+            # Single-frame upsampling discards all temporal slices except t=0,
+            # so compute only the kept channels of the 1x1 upscale projection.
+            w0 = self.upscale_conv.weight.reshape(sf, sf, tf, C, C)[:, :, 0, :, :].reshape(sf * sf * C, C)
+            b0 = self.upscale_conv.bias.reshape(sf, sf, tf, C)[:, :, 0, :].reshape(sf * sf * C)
+            x2d = x[:, :, 0, :, :].transpose(0, 2, 3, 1)
+            y = mx.addmm(b0, x2d, w0.T)
+            y = y.reshape(B, H, W, sf, sf, C).transpose(0, 5, 1, 3, 2, 4).reshape(B, C, 1, H * sf, W * sf)
+            return self.conv(y)
+        x = self.upscale_conv(x)
         x = x.reshape(B, sf, sf, tf, C, T, H, W)
         x = x.transpose(0, 4, 5, 3, 6, 1, 7, 2)
         x = x.reshape(B, C, T * tf, H * sf, W * sf)
-        if T == 1 and tf > 1:
-            x = x[:, :, :1, :, :]
         x = self.conv(x)
         return x
