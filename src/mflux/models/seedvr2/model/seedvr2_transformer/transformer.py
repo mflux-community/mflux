@@ -102,6 +102,9 @@ class SeedVR2Transformer(nn.Module):
         txt: mx.array,
         timestep: mx.array,
     ) -> mx.array:
+        dtype = self.vid_in.proj.bias.dtype
+        vid = vid.astype(dtype)
+        txt = txt.astype(dtype)
         txt = self.txt_in(txt)
         txt_shape = mx.full((txt.shape[0], 1), txt.shape[1], dtype=mx.int32)
         vid, vid_shape = self.vid_in(vid)

@@ -22,7 +22,7 @@ class TimeEmbedding(nn.Module):
         emb = TimeEmbedding._get_timestep_embedding(
             timesteps=timestep,
             embedding_dim=self.sinusoidal_dim,
-        )
+        ).astype(self.proj_in.bias.dtype)
         emb = self.proj_in(emb)
         emb = nn.silu(emb)
         emb = self.proj_hid(emb)

@@ -37,6 +37,7 @@ class SeedVR2VAE(nn.Module):
 
     def encode(self, x: mx.array) -> mx.array:
         x = x[:, :, None, :, :] if x.ndim == 4 else x
+        x = x.astype(self.encoder.conv_in.bias.dtype)
         h = self.encoder(x)
         mean, _ = mx.split(h, 2, axis=1)
         latent = mean
@@ -45,6 +46,6 @@ class SeedVR2VAE(nn.Module):
 
     def decode(self, z: mx.array) -> mx.array:
         z = z[:, :, None, :, :] if z.ndim == 4 else z
-        z = z / self.scaling_factor
+        z = (z / self.scaling_factor).astype(self.decoder.conv_in.bias.dtype)
         decoded = self.decoder(z)
         return decoded

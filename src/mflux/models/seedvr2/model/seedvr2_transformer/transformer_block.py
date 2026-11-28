@@ -107,4 +107,4 @@ class TransformerBlock(nn.Module):
 
     @staticmethod
     def _rms_norm(x: mx.array, eps: float = 1e-5) -> mx.array:
-        return mx.fast.rms_norm(x, mx.ones(x.shape[-1]), eps)
+        return mx.fast.rms_norm(x, mx.ones(x.shape[-1], dtype=x.dtype), eps)

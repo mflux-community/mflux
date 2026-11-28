@@ -1,7 +1,9 @@
 from typing import List
 
+import mlx.core as mx
 import mlx.nn as nn
 
+from mflux.models.common.config.model_config import ModelConfig
 from mflux.models.common.weights.loading.weight_definition import ComponentDefinition, TokenizerDefinition
 from mflux.models.seedvr2.weights.seedvr2_weight_mapping import SeedVR2WeightMapping
 
@@ -17,12 +19,14 @@ class SeedVR2WeightDefinition3B:
                 loading_mode="mlx_native",
                 mapping_getter=lambda: SeedVR2WeightMapping.get_transformer_mapping(num_blocks=32),
                 weight_files=["seedvr2_ema_3b_fp16.safetensors"],
+                weight_transform=SeedVR2WeightDefinition._cast_transformer_weight,
             ),
             ComponentDefinition(
                 name="vae",
                 hf_subdir=".",
                 num_blocks=4,
                 loading_mode="mlx_native",
+                precision=ModelConfig.precision,
                 mapping_getter=SeedVR2WeightMapping.get_vae_mapping,
                 weight_files=["ema_vae_fp16.safetensors"],
             ),
@@ -57,12 +61,14 @@ class SeedVR2WeightDefinition7B:
                     num_blocks=36, use_output_ada=False
                 ),
                 weight_files=["seedvr2_ema_7b_fp16.safetensors"],
+                weight_transform=SeedVR2WeightDefinition._cast_transformer_weight,
             ),
             ComponentDefinition(
                 name="vae",
                 hf_subdir=".",
                 num_blocks=4,
                 loading_mode="mlx_native",
+                precision=ModelConfig.precision,
                 mapping_getter=SeedVR2WeightMapping.get_vae_mapping,
                 weight_files=["ema_vae_fp16.safetensors"],
             ),
@@ -117,3 +123,11 @@ class SeedVR2WeightDefinition:
                 return False
 
         return True
+
+    @staticmethod
+    def _cast_transformer_weight(key: str, tensor: mx.array) -> mx.array:
+        # Keep RoPE frequencies at their stored precision; bf16's 7-bit mantissa introduces
+        # large phase error on high pixel-space frequencies (7B up to ~402 rad).
+        if key.endswith(".rope.freqs"):
+            return tensor
+        return tensor if tensor.dtype == ModelConfig.precision else tensor.astype(ModelConfig.precision)
