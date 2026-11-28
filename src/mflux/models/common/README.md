@@ -576,6 +576,16 @@ print(metadata)
 ```
 </details>
 
+### What `generation_time_seconds` measures
+
+`generation_time_seconds` is the time from the start of a timer to the end of generation. It does not include the model load. The start and end of the timer depend on the model family:
+
+- **Z-Image and most other models:** the timer starts at the start of the denoising loop. It ends after the VAE decode, so the value includes the decode.
+- **FLUX variants (txt2img, ControlNet, Kontext, Fill, In-Context, Depth):** the timer starts at the start of the denoising loop. The code reads it before MLX evaluates the lazy VAE decode, so the value does not include the decode.
+- **Lens and Ming:** the timer starts before the prompt encoding, so the value includes the prompt encoding.
+
+Work that MLX has not yet evaluated when the loop starts, such as a lazy text-encoder pass, falls inside the first step. So the first step takes longer than later steps. Do not divide the value by the step count to get the time per step. For Lens and Ming, the prompt encoding is in the total but is not in the first step.
+
 ---
 
 ## PiD pixel-diffusion decode
